@@ -20,7 +20,7 @@ RUN --mount=type=secret,id=ca,required=false \
 
 # ---- Runtime: Node.js without a package manager, as an unprivileged user ----
 FROM docker.io/library/alpine:3.22
-RUN apk upgrade --no-cache && apk add --no-cache nodejs tini && \
+RUN apk upgrade --no-cache && apk add --no-cache nodejs tini tar && \
     addgroup -g 1000 -S node && adduser -u 1000 -S -G node -h /home/node node && \
     mkdir -p /data && chown node:node /data
 WORKDIR /app
@@ -28,6 +28,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
 COPY public ./public
+COPY scripts/bundle.mjs ./scripts/bundle.mjs
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4310 CC_DATA_DIR=/data
 USER node
 VOLUME ["/data"]
@@ -35,4 +36,5 @@ EXPOSE 4310
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:4310/healthz >/dev/null || exit 1
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "src/server.js"]
+# The launcher runs the version chosen in Settings → Update & recovery, and rolls back one that does not start.
+CMD ["node", "src/launcher.js"]

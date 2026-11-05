@@ -1,6 +1,6 @@
 {
   "name": "commandcenter",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "One place for a Solution Engineer to watch every Checkmarx One POV tenant: scans, failures, new projects and findings, refreshed every 10 minutes.",
   "type": "module",
@@ -9,10 +9,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node src/launcher.js",
     "dev": "node --watch src/server.js",
     "demo": "node scripts/demo.mjs",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "serve": "node src/server.js",
+    "bundle": "node scripts/bundle.mjs"
   },
   "dependencies": {
     "nodemailer": "^6.10.1",

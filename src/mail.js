@@ -155,7 +155,7 @@ export class Mailer {
 
   get settings() {
     const s = this.#db.read('settings', {}).smtp ?? {};
-    return { host: s.host ?? '', port: s.port ?? 587, secure: Boolean(s.secure), user: s.user ?? '', from: s.from ?? '', hasPassword: Boolean(s.pass) };
+    return { host: s.host ?? '', port: s.port ?? 587, secure: Boolean(s.secure), user: s.user ?? '', from: s.from ?? '', fromName: s.fromName ?? '', checkCert: s.checkCert !== false, hasPassword: Boolean(s.pass), testedAt: s.testedAt ?? null };
   }
 
   get configured() {
@@ -166,32 +166,58 @@ export class Mailer {
     const all = this.#db.read('settings', {});
     const before = all.smtp ?? {};
     const port = Math.trunc(Number(body.port));
+    const host = text(body.host, 253).replace(/^smtps?:\/\//i, '');
+    if (/[\s/]/.test(host)) throw fail(400, 'The SMTP host is a name such as smtp.office365.com, without a path.');
     all.smtp = {
-      host: text(body.host, 253),
+      host,
       port: port > 0 && port < 65536 ? port : 587,
-      secure: Boolean(body.secure),
+      // Port and TLS mode go together: 465 is TLS from the start, 587 / 25 / 2525 upgrade with STARTTLS.
+      secure: port === 465 ? true : [587, 25, 2525].includes(port) ? false : Boolean(body.secure),
       user: text(body.user, 254),
       from: text(body.from, 300),
-      pass: body.pass ? this.#db.seal(body.pass) : body.clearPass ? '' : before.pass ?? '',
+      fromName: text(body.fromName, 120),
+      checkCert: body.checkCert !== false,
+      // A new host never inherits the old host's password.
+      pass: body.pass ? this.#db.seal(body.pass) : body.clearPass || host !== before.host ? '' : before.pass ?? '',
+      testedAt: null,
     };
     this.#db.write('settings', all);
     return this.settings;
   }
 
+  #from() {
+    const s = this.settings;
+    return s.fromName ? { name: s.fromName, address: s.from } : s.from;
+  }
+
   #transport() {
     const s = this.#db.read('settings', {}).smtp ?? {};
-    if (!s.host || !s.from) throw fail(400, 'No email server is set up (Settings → Email).');
-    return nodemailer.createTransport({ host: s.host, port: s.port, secure: s.secure, auth: s.user ? { user: s.user, pass: s.pass ? this.#db.open(s.pass) : '' } : undefined, connectionTimeout: 20_000 });
+    if (!s.host || !s.from) throw fail(400, 'No email server is set up (Settings → Email server).');
+    return nodemailer.createTransport({
+      host: s.host,
+      port: s.port,
+      secure: s.secure,
+      requireTLS: !s.secure && Boolean(s.user), // the password only ever goes over an encrypted connection
+      auth: s.user ? { user: s.user, pass: s.pass ? this.#db.open(s.pass) : '' } : undefined,
+      tls: { rejectUnauthorized: s.checkCert !== false },
+      connectionTimeout: 20_000,
+    });
+  }
+
+  /** Connect and sign in, sending nothing. */
+  async verify() {
+    await this.#transport().verify();
+    const all = this.#db.read('settings', {});
+    all.smtp = { ...(all.smtp ?? {}), testedAt: new Date().toISOString() };
+    this.#db.write('settings', all);
   }
 
   async test(to) {
-    const s = this.settings;
-    await this.#transport().sendMail({ from: s.from, to, subject: 'CommandCenter test email', text: 'Your email server works with CommandCenter.' });
+    await this.#transport().sendMail({ from: this.#from(), to, subject: 'CommandCenter test email', text: 'Your email server works with CommandCenter.' });
   }
 
   async send(msg, { replyTo, attachments = [] } = {}) {
-    const s = this.settings;
-    const info = await this.#transport().sendMail({ from: s.from, replyTo: replyTo || undefined, to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.body, attachments });
+    const info = await this.#transport().sendMail({ from: this.#from(), replyTo: replyTo || undefined, to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.body, attachments });
     return info.messageId ?? '';
   }
 

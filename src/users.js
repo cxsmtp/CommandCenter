@@ -57,6 +57,7 @@ export const passwordProblem = (p) => (String(p ?? '').length < 10 ? 'Use at lea
 export class Users {
   #db;
   #sessions = new Map();
+  sessionMs = SESSION_MS;
 
   constructor(db) {
     this.#db = db;
@@ -250,7 +251,7 @@ export class Users {
     const ok = checkPassword(password, user?.password ?? 'scrypt$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
     if (!user || !ok || user.active === false) throw fail(401, 'That email and password do not match.');
     const token = randomBytes(32).toString('base64url');
-    this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + SESSION_MS });
+    this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs });
     return { token, user: publicUser(user) };
   }
 
@@ -258,7 +259,7 @@ export class Users {
     if (!token) return null;
     const s = this.#sessions.get(hashToken(token));
     if (!s || s.exp < Date.now()) return null;
-    s.exp = Date.now() + SESSION_MS;
+    s.exp = Date.now() + this.sessionMs;
     const user = this.#all().find((u) => u.id === s.userId);
     return user && user.active !== false ? publicUser(user) : null;
   }

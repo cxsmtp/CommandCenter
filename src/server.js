@@ -7,7 +7,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Db, fail, text } from './db.js';
+import { Db, fail, text, email as cleanEmail } from './db.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
 import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted } from './opportunities.js';
@@ -16,6 +16,10 @@ import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
+import { Updater, RESTART_CODE } from './updates.js';
+import { Audit } from './audit.js';
+import { X509Certificate } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { criteriaForecast, creditsForecast, activityForecast, portfolioForecast } from './forecast.js';
 import { resultsPage } from './results.js';
 import { platformView, AI_POWERED, STATE as PLATFORM_STATE } from './platform.js';
@@ -26,6 +30,7 @@ import { tenantColours } from '../public/tenant-colour.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
+const STARTED_AT = new Date().toISOString();
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
 const MAX_BODY = 512 * 1024;
@@ -34,15 +39,27 @@ const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']
 const POLLED_STAGES = new Set(['pov']);
 const DEFAULT_SETTINGS = { orgName: 'Command Center', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true };
 
-export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true' } = {}) {
+export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null } = {}) {
   const db = new Db(dataDir);
   const users = new Users(db);
   const catalog = new Catalog(db);
   const opps = new Opportunities(db, { users, catalog });
   const mailer = new Mailer(db);
-  const settings = () => ({ ...DEFAULT_SETTINGS, ...db.read('settings', {}), smtp: undefined });
+  // What the page may see of the settings: never the email server's or the proxy's secrets.
+  const settings = () => {
+    const { smtp, network, lastWeeklyDrafts, ...rest } = { ...DEFAULT_SETTINGS, ...db.read('settings', {}) };
+    return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
+  };
   const fullSettings = () => db.read('settings', {});
   const firstAdmin = users.ensureAdmin();
+  const audit = new Audit(db);
+  const updater = new Updater({ dataDir, currentVersion: VERSION, ...(updaterOptions ?? {}) });
+  users.sessionMs = (settings().security.sessionHours || 12) * 3600e3;
+  const restartServer = (actor, why) => {
+    if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start CommandCenter with "npm start" or the container image.');
+    audit.record(actor, 'system', `Restarted the server (${why})`);
+    setTimeout(() => process.exit(RESTART_CODE), 300);
+  };
 
   const monitor = new Monitor({
     source: {
@@ -272,7 +289,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const throttle = (key) => {
     const now = Date.now();
     const list = (attempts.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
-    if (list.length >= 10) throw fail(429, 'Too many sign-in attempts. Wait a few minutes.');
+    if (list.length >= (settings().security.maxAttempts || 10)) throw fail(429, 'Too many sign-in attempts. Wait a few minutes.');
     list.push(now);
     attempts.set(key, list);
   };
@@ -324,7 +341,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
     if (route === 'GET /stream') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
-      res.write(': connected\n\n');
+      res.write(`event: hello\ndata: ${JSON.stringify({ version: VERSION })}\n\n`);
       const client = { res, userId: user.id };
       clients.add(client);
       const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
@@ -339,11 +356,17 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (route === 'GET /users') return send(res, 200, { users: [...users.visibleIds(user)].map((id) => users.get(id)).filter(Boolean), tree: users.tree(user) });
     if (route === 'POST /users') {
       need(user, 'users.manage');
-      return send(res, 201, { user: users.add(user, await readBody(req)) });
+      const added = users.add(user, await readBody(req));
+      audit.record(user, 'people', `Added ${added.name} (${added.roleLabel})`, { id: added.id });
+      return send(res, 201, { user: added });
     }
     if (route === 'PATCH /users/:id') {
       if (parts[1] !== user.id) need(user, 'users.manage');
-      return send(res, 200, { user: users.update(user, parts[1], await readBody(req)) });
+      const b = await readBody(req);
+      const changed = users.update(user, parts[1], b);
+      const fields = Object.keys(b).filter((k) => k !== 'prefs');
+      if (parts[1] !== user.id || fields.length) audit.record(user, 'people', `Changed ${changed.name}: ${fields.map((k) => (k === 'password' ? 'password reset' : k)).join(', ') || 'preferences'}`, { id: changed.id });
+      return send(res, 200, { user: changed });
     }
     if (route === 'DELETE /users/:id') {
       need(user, 'users.manage');
@@ -353,7 +376,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         opp.ownerId = heir;
         (opp.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Handed over from ${gone?.name ?? 'a removed person'}` });
       });
-      return send(res, 200, { user: users.remove(user, parts[1]) });
+      const removed = users.remove(user, parts[1]);
+      audit.record(user, 'people', `Removed ${removed.name}; their opportunities went to ${users.get(heir)?.name ?? 'their manager'}`, { id: removed.id });
+      return send(res, 200, { user: removed });
     }
 
     // Settings
@@ -368,22 +393,28 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (['auto', 'light', 'dark'].includes(b.defaultMode)) all.defaultMode = b.defaultMode;
       if ('weeklyDrafts' in b) all.weeklyDrafts = Boolean(b.weeklyDrafts);
       db.write('settings', all);
+      audit.record(user, 'settings', `Changed organisation settings: ${Object.keys(b).join(', ')}`);
       monitor.setInterval(all.refreshMinutes);
       monitor.reschedule();
       return send(res, 200, { settings: settings() });
     }
     if (route === 'PUT /settings/smtp') {
       need(user, 'settings.manage');
-      return send(res, 200, { smtp: mailer.save(await readBody(req)) });
+      const smtp = mailer.save(await readBody(req));
+      audit.record(user, 'settings', `Changed the email server (${smtp.host}:${smtp.port})`);
+      return send(res, 200, { smtp });
     }
     if (route === 'POST /settings/smtp/test') {
       need(user, 'settings.manage');
+      const b = await readBody(req);
+      const to = cleanEmail(b.to) || user.email;
       try {
-        await mailer.test(user.email);
+        await mailer.test(to);
       } catch (error) {
-        throw fail(400, `The email server did not take the test email: ${scrubText(error.message)}`);
+        throw fail(400, smtpHint(error));
       }
-      return send(res, 200, { ok: true, to: user.email });
+      audit.record(user, 'settings', `Sent a test email to ${to}`);
+      return send(res, 200, { ok: true, to });
     }
     if (route === 'PUT /settings/roles') {
       need(user, 'roles.manage');
@@ -393,23 +424,167 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const all = fullSettings();
       all.roles = matrix;
       db.write('settings', all);
+      audit.record(user, 'settings', 'Changed what each role may do', { matrix });
       return send(res, 200, { matrix });
+    }
+
+    if (route === 'POST /settings/smtp/verify') {
+      need(user, 'settings.manage');
+      try {
+        await mailer.verify();
+      } catch (error) {
+        throw fail(400, smtpHint(error));
+      }
+      return send(res, 200, { ok: true, smtp: mailer.settings });
+    }
+    if (route === 'PUT /settings/security') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = fullSettings();
+      const hours = Math.trunc(Number(b.sessionHours));
+      const attempts = Math.trunc(Number(b.maxAttempts));
+      all.security = { sessionHours: hours >= 1 && hours <= 168 ? hours : 12, maxAttempts: attempts >= 3 && attempts <= 100 ? attempts : 10 };
+      db.write('settings', all);
+      users.sessionMs = all.security.sessionHours * 3600e3;
+      audit.record(user, 'settings', `Sign-ins last ${all.security.sessionHours} h; ${all.security.maxAttempts} attempts per 15 min`);
+      return send(res, 200, { security: all.security });
+    }
+
+    // Network & proxy, trusted certificates
+    if (route === 'GET /settings/network') {
+      need(user, 'settings.manage');
+      const n = fullSettings().network ?? {};
+      return send(res, 200, { network: { proxy: n.proxy ?? '', proxyUser: n.proxyUser ?? '', hasProxyPass: Boolean(n.proxyPass), noProxy: n.noProxy ?? '', active: Boolean(process.env.HTTPS_PROXY) }, allowlist: allowlist(), certs: certList(), launched: updater.launched, restartNeeded: restartNeeded() });
+    }
+    if (route === 'PUT /settings/network') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = fullSettings();
+      const before = all.network ?? {};
+      let proxy = text(b.proxy, 500);
+      if (proxy) {
+        try {
+          const u = new URL(proxy);
+          if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error();
+          proxy = `${u.protocol}//${u.host}`;
+        } catch {
+          throw fail(400, 'The proxy is an address such as http://proxy.company.com:8080 (the user name and password go in their own fields).');
+        }
+      }
+      all.network = { proxy, proxyUser: text(b.proxyUser, 200), proxyPass: b.proxyPass ? db.seal(b.proxyPass) : b.proxyUser && before.proxyUser === b.proxyUser ? before.proxyPass ?? '' : '', noProxy: text(b.noProxy, 1000) };
+      db.write('settings', all);
+      audit.record(user, 'settings', proxy ? `Set the company proxy to ${proxy}` : 'Removed the company proxy');
+      if (b.restart && updater.launched) restartServer(user, 'network settings');
+      return send(res, 200, { ok: true, restarting: Boolean(b.restart && updater.launched) });
+    }
+    if (route === 'POST /settings/certs') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const pems = String(b.pem ?? '').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
+      if (!pems.length) throw fail(400, 'That is not a certificate: paste or upload a PEM file (-----BEGIN CERTIFICATE-----).');
+      const list = readCerts();
+      let added = 0;
+      for (const pem of pems.slice(0, 50)) {
+        let cert;
+        try {
+          cert = new X509Certificate(pem);
+        } catch {
+          throw fail(400, 'One of those certificates cannot be read.');
+        }
+        if (list.some((c) => c.fingerprint === cert.fingerprint256)) continue;
+        list.push({ fingerprint: cert.fingerprint256, subject: cert.subject.replace(/\n/g, ', '), issuer: cert.issuer.replace(/\n/g, ', '), validTo: cert.validTo, ca: cert.ca, pem: cert.toString(), addedBy: user.name, addedAt: new Date().toISOString() });
+        added += 1;
+      }
+      writeCerts(list);
+      audit.record(user, 'settings', `Trusted ${added} certificate${added === 1 ? '' : 's'}`);
+      return send(res, 200, { certs: certList(), added, restartNeeded: restartNeeded() });
+    }
+    if (m === 'DELETE' && parts[0] === 'settings' && parts[1] === 'certs' && parts[2]) {
+      need(user, 'settings.manage');
+      const fp = decodeURIComponent(parts[2]);
+      writeCerts(readCerts().filter((c) => c.fingerprint !== fp));
+      audit.record(user, 'settings', `Stopped trusting certificate ${fp.slice(0, 23)}…`);
+      return send(res, 200, { certs: certList(), restartNeeded: restartNeeded() });
+    }
+
+    // Update & recovery
+    if (route === 'GET /updates') {
+      need(user, 'settings.manage');
+      return send(res, 200, updater.status());
+    }
+    if (route === 'POST /updates/check') {
+      need(user, 'settings.manage');
+      try {
+        return send(res, 200, await updater.check());
+      } catch (error) {
+        throw fail(502, `Could not read the published releases: ${scrubText(error.message)}`);
+      }
+    }
+    if (route === 'POST /updates/install') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const r = await updater.install(text(b.version, 40) || undefined, { by: user.name });
+      audit.record(user, 'system', `Installed version ${r.version}; restarting into it`);
+      return send(res, 202, r);
+    }
+    if (route === 'POST /updates/rollback') {
+      need(user, 'settings.manage');
+      const r = updater.rollback({ by: user.name });
+      audit.record(user, 'system', `Went back to ${r.version}`);
+      return send(res, 202, r);
+    }
+    if (route === 'PUT /updates/auto') {
+      need(user, 'settings.manage');
+      const a = updater.setAuto(await readBody(req));
+      audit.record(user, 'system', a.enabled ? `Turned on auto-update at ${String(a.hour).padStart(2, '0')}:00` : 'Turned off auto-update');
+      return send(res, 200, updater.status());
+    }
+    if (route === 'POST /system/restart') {
+      need(user, 'settings.manage');
+      restartServer(user, 'from Settings');
+      return send(res, 202, { restarting: true });
+    }
+    if (route === 'POST /system/backup') {
+      need(user, 'settings.manage');
+      const name = updater.backup('manual');
+      audit.record(user, 'system', `Took a backup (${name})`);
+      return send(res, 200, { backup: name, backups: backups() });
+    }
+    if (route === 'GET /system/backup/download') {
+      need(user, 'settings.manage');
+      audit.record(user, 'system', 'Downloaded a backup of the data');
+      res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="commandcenter-backup-${new Date().toISOString().slice(0, 10)}.tar.gz"`, 'Cache-Control': 'no-store' });
+      const tar = spawn('tar', ['-czf', '-', '--exclude=./app', '--exclude=./backups', '-C', dataDir, '.']);
+      tar.stdout.pipe(res);
+      tar.on('error', () => res.end());
+      return;
+    }
+    if (route === 'GET /system/about') {
+      return send(res, 200, { version: VERSION, node: process.version, repo: updater.status().repo, licence: 'Internal use', startedAt: STARTED_AT, launched: updater.launched, dataDir: can(user, 'settings.manage') ? dataDir : undefined, backups: can(user, 'settings.manage') ? backups() : undefined, audit: can(user, 'settings.manage') ? audit.verify() : undefined });
+    }
+    if (route === 'GET /audit') {
+      need(user, 'settings.manage');
+      return send(res, 200, { entries: audit.list({ type: url.searchParams.get('type') ?? '', limit: 500 }), chain: audit.verify() });
     }
 
     // Capability catalogue
     if (route === 'GET /catalog') return send(res, 200, { catalog: catalog.list(), categories: catalog.categories() });
     if (route === 'POST /catalog') {
       need(user, 'catalog.manage');
-      return send(res, 200, { capability: catalog.save(await readBody(req)) });
+      const capability = catalog.save(await readBody(req));
+      audit.record(user, 'catalog', `Saved capability "${capability.name}"`, { id: capability.id });
+      return send(res, 200, { capability });
     }
     if (route === 'POST /catalog/reset') {
       need(user, 'catalog.manage');
       catalog.reset();
+      audit.record(user, 'catalog', 'Restored the built-in capability catalogue');
       return send(res, 200, { catalog: catalog.list() });
     }
     if (m === 'DELETE' && parts[0] === 'catalog' && parts[1]) {
       need(user, 'catalog.manage');
       catalog.remove(parts[1]);
+      audit.record(user, 'catalog', `Deleted capability ${parts[1]}`);
       return send(res, 200, { ok: true });
     }
 
@@ -701,11 +876,91 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
   });
+  // ——— Helpers for Settings ———
+  const certFile = path.join(dataDir, 'certs', 'trusted.json');
+  const readCerts = () => {
+    try {
+      return JSON.parse(fs.readFileSync(certFile, 'utf8'));
+    } catch {
+      return [];
+    }
+  };
+  const writeCerts = (list) => {
+    fs.mkdirSync(path.dirname(certFile), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(certFile, JSON.stringify(list, null, 1), { mode: 0o600 });
+    // The launcher hands this file to the server it starts (NODE_EXTRA_CA_CERTS).
+    fs.writeFileSync(path.join(dataDir, 'certs', 'trusted.pem'), list.map((c) => c.pem.trim()).join('\n') + (list.length ? '\n' : ''), { mode: 0o644 });
+  };
+  const certList = () => readCerts().map(({ pem, ...c }) => c);
+  const startedCerts = (() => {
+    try {
+      return fs.readFileSync(path.join(dataDir, 'certs', 'trusted.pem'), 'utf8');
+    } catch {
+      return '';
+    }
+  })();
+  const startedNetwork = JSON.stringify(db.read('settings', {}).network ?? {});
+  const restartNeeded = () => {
+    let now = '';
+    try {
+      now = fs.readFileSync(path.join(dataDir, 'certs', 'trusted.pem'), 'utf8');
+    } catch {}
+    return now !== startedCerts || JSON.stringify(db.read('settings', {}).network ?? {}) !== startedNetwork;
+  };
+  const backups = () => {
+    try {
+      return fs.readdirSync(path.join(dataDir, 'backups')).sort().reverse().slice(0, 10);
+    } catch {
+      return [];
+    }
+  };
+  /** Every connection the server makes or takes, for the network team. */
+  const allowlist = () => {
+    const out = [{ direction: 'in', host: 'this server', port: Number(process.env.PORT) || 4310, why: 'People opening CommandCenter (HTTPS when behind your reverse proxy)' }];
+    const seen = new Set();
+    for (const o of opps.raw().filter((x) => x.tenant && !['won', 'lost'].includes(x.stage))) {
+      for (const [label, addr] of [['IAM (sign-in, users)', o.tenant.iamUrl], ['API (projects, scans, results, credits, logs)', o.tenant.baseUrl]]) {
+        try {
+          const h = new URL(addr).host;
+          if (seen.has(h)) continue;
+          seen.add(h);
+          out.push({ direction: 'out', host: h, port: 443, why: `Checkmarx One ${label} — POV tenants` });
+        } catch {}
+      }
+    }
+    const smtp = mailer.settings;
+    if (smtp.host) out.push({ direction: 'out', host: smtp.host, port: smtp.port, why: 'Email server (SMTP)' });
+    for (const h of ['api.github.com', 'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']) out.push({ direction: 'out', host: h, port: 443, why: 'Updates: published releases and their downloads' });
+    return out;
+  };
+  const can = (u, p) => users.can(u, p, fullSettings());
+  updater.start();
+
   server.on('close', () => {
+    updater.stop();
     monitor.stop();
     clearInterval(hourly);
   });
-  return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts };
+  return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit };
+}
+
+/** An email server error, said so it can be fixed. */
+function smtpHint(error) {
+  const m = String(error?.message ?? error);
+  const code = error?.code ?? '';
+  const hints = [
+    [/wrong version number|ssl3_get_record|EPROTO/i, 'The port and the TLS setting do not match: port 465 is TLS from the start, 587 / 25 upgrade with STARTTLS.'],
+    [/SmtpClientAuthentication is disabled|5\.7\.139|5\.7\.57/i, 'Microsoft 365 has SMTP sign-in turned off for this mailbox: turn on Authenticated SMTP (admin center → the mailbox → Mail → Manage email apps).'],
+    [/Application-specific password required|5\.7\.9|534-5\.7/i, 'Gmail needs an App Password here, not the account password.'],
+    [/EAUTH|535|Invalid login|authentication failed/i, 'The user name or password is not accepted by the email server.'],
+    [/ENOTFOUND|EAI_AGAIN/i, 'The email server’s name cannot be found (DNS). Check the host.'],
+    [/ECONNREFUSED/i, 'The email server refused the connection on that port.'],
+    [/ETIMEDOUT|ESOCKET|timeout/i, 'No answer from the email server: a firewall may block the port.'],
+    [/self[- ]signed|unable to verify|certificate/i, 'The email server’s certificate is not trusted here: add your company root certificate under Network & certificates, or turn off “Check the server’s certificate” for an internal relay.'],
+    [/requireTLS|STARTTLS/i, 'The email server does not offer STARTTLS, so the password would travel unencrypted: use port 465 with TLS, or a server that offers STARTTLS.'],
+  ];
+  const hint = hints.find(([re]) => re.test(m) || re.test(code))?.[1];
+  return `${hint ?? 'The email server did not accept the connection.'} (${scrubText(m).slice(0, 200)})`;
 }
 
 /** A key is only saved once Checkmarx One accepts it: one sign-in and one cheap read. */
