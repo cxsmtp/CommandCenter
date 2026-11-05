@@ -6,6 +6,7 @@
  */
 import PptxGenJS from 'pptxgenjs';
 import { CRITERION_STATUS, SESSION_TYPES, progressOf } from './opportunities.js';
+import { platformView } from './platform.js';
 
 const INK = '2A1C13';
 const PAPER = 'FBF7F0';
@@ -17,7 +18,7 @@ const HEAD = 'Georgia';
 const BODY = 'Calibri';
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
 
-export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Command Center' }) {
+export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Command Center', catalog = null }) {
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE'; // 13.33 × 7.5 in
   pptx.title = `${opp.customer} — POV results`;
@@ -36,18 +37,11 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     return slide;
   };
 
-  // 1 — Cover
-  const cover = pptx.addSlide();
-  cover.background = { color: INK };
-  cover.addShape(pptx.ShapeType.rect, { x: 0.35, y: 0.35, w: 12.63, h: 6.8, fill: { type: 'none' }, line: { color: BRASS, width: 0.75, dashType: 'dash' } });
-  cover.addText('PROOF OF VALUE', { x: 1, y: 2.0, w: 11.3, h: 0.4, fontFace: BODY, fontSize: 12, color: BRASS, charSpacing: 8, align: 'center' });
-  cover.addText(opp.customer, { x: 1, y: 2.5, w: 11.3, h: 1.2, fontFace: HEAD, fontSize: 48, color: 'F1E6D2', align: 'center' });
-  cover.addShape(pptx.ShapeType.line, { x: 6.07, y: 3.85, w: 1.2, h: 0, line: { color: BRASS, width: 1 } });
-  cover.addText('Checkmarx One · Results', { x: 1, y: 4.05, w: 11.3, h: 0.5, fontFace: HEAD, fontSize: 20, color: 'D8C19A', align: 'center', italic: true });
-  cover.addText(`${day(opp.startDate)} – ${day(opp.endDate)}${owner?.name ? `  ·  ${owner.name}${owner.title ? `, ${owner.title}` : ''}` : ''}`, { x: 1, y: 5.4, w: 11.3, h: 0.4, fontFace: BODY, fontSize: 12, color: 'A99178', align: 'center' });
+  // 1 — The platform slide, as designed, with only this POV's engines and their status
+  platformSlide(pptx, platformView(opp, catalog));
 
   // 2 — The answer
-  const answer = page(p.percent === 100 ? 'Every success criterion was met' : `${p.met} of ${p.total} success criteria met`, 'The answer');
+  const answer = page(p.percent === 100 ? 'Every success criterion was met' : `${p.met} of ${p.total} success criteria met`, `${opp.customer} · ${day(opp.startDate)} – ${day(opp.endDate)}${owner?.name ? ` · ${owner.name}` : ''}`);
   const figures = [
     [`${p.percent}%`, 'criteria met'],
     [`${p.mustMet}/${p.must}`, 'must-haves met'],
@@ -106,4 +100,135 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   next.addText((steps.length ? steps : ['Agree the rollout plan and the first teams', 'Confirm the commercial proposal', 'Schedule the onboarding']).slice(0, 8).map((t) => ({ text: t, options: { bullet: { code: '25C6' }, paraSpaceAfter: 10 } })), { x: 0.6, y: 1.8, w: 12.1, h: 4.5, fontFace: BODY, fontSize: 18, color: INK, valign: 'top' });
 
   return pptx.write({ outputType: 'nodebuffer' });
+}
+
+// ——— The platform slide ———
+// Drawn on the original slide's own grid (1332 × 729 px) so every element keeps its place: nothing moves when an
+// engine is not part of the POV, its place is simply left empty.
+const W = 1332;
+const H = 729;
+const X = (px) => (px * 13.333) / W;
+const Y = (px) => (px * 7.5) / H;
+const BG = '140920';
+const VIOLET = '6B34FD';
+const FONT = 'Arial';
+const SYMBOL = 'Segoe UI Symbol';
+const DIM = 'B9B0CC';
+const MARK = {
+  done: { glyph: '✓', color: 'FF2D2D' },
+  progress: { glyph: '◷', color: '3CCF8E' },
+  planned: { glyph: '◷', color: 'F5C518' },
+  missed: { glyph: '✕', color: '8A8197' },
+};
+const hex = (c) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
+const mix = (a, b, t) => hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * t).toString(16).padStart(2, '0')).join('').toUpperCase();
+const SPARKLE = 'FFD44D';
+
+function platformSlide(pptx, view) {
+  const slide = pptx.addSlide();
+  slide.background = { color: BG };
+  const shown = new Set();
+  for (const pl of view.pillars) {
+    shown.add(pl.key);
+    for (const g of pl.groups ?? []) shown.add(g.key);
+  }
+  const has = (key) => shown.has(key);
+  const pillar = (key) => view.pillars.find((x) => x.key === key);
+
+  // Title, with its violet-to-coral gradient one letter at a time
+  const grad = 'Age of AI-Generated Risk';
+  slide.addText(
+    [{ text: 'AppSec for the ', options: { color: 'FFFFFF' } }, ...[...grad].map((ch, i) => ({ text: ch, options: { color: mix('BF4BD6', 'F2592D', i / (grad.length - 1)) } }))],
+    { x: X(60), y: Y(28), w: X(1212), h: Y(85), fontFace: FONT, fontSize: 46, align: 'center', valign: 'middle', margin: 0 },
+  );
+  [['One Platform.', 270], ['Every Surface.', 569], ['One Risk View.', 872]].forEach(([t, x]) => slide.addText(t, { x: X(x - 10), y: Y(135), w: X(210), h: Y(34), fontFace: FONT, fontSize: 19, bold: true, color: 'FFFFFF', margin: 0 }));
+
+  // The frame: rounded, its line running orange to violet
+  const fx0 = 55, fx1 = 1300, fy0 = 221, fy1 = 631, r = 12;
+  const lineAt = (x0, y0, x1, y1, color) => slide.addShape(pptx.ShapeType.line, { x: X(Math.min(x0, x1)), y: Y(Math.min(y0, y1)), w: X(Math.abs(x1 - x0)) || 0.001, h: Y(Math.abs(y1 - y0)) || 0.001, line: { color, width: 2.25 } });
+  const colourAt = (x) => mix('F25933', '8C3DF8', (x - fx0) / (fx1 - fx0));
+  const steps = 48;
+  for (let i = 0; i < steps; i += 1) {
+    const a = fx0 + r + ((fx1 - fx0 - 2 * r) * i) / steps;
+    const b = fx0 + r + ((fx1 - fx0 - 2 * r) * (i + 1)) / steps;
+    // The pill sits on the top edge: the line stops either side of it.
+    if (!(a > 556 && b < 778)) lineAt(a, fy0, b, fy0, colourAt(a));
+    lineAt(a, fy1, b, fy1, colourAt(a));
+  }
+  lineAt(fx0, fy0 + r, fx0, fy1 - r, colourAt(fx0));
+  lineAt(fx1, fy0 + r, fx1, fy1 - r, colourAt(fx1));
+  for (const [cx, cy, a0] of [[fx0, fy0, 180], [fx1 - 2 * r, fy0, 270], [fx1 - 2 * r, fy1 - 2 * r, 0], [fx0, fy1 - 2 * r, 90]]) {
+    slide.addShape(pptx.ShapeType.arc, { x: X(cx), y: Y(cy), w: X(2 * r), h: Y(2 * r), angleRange: [a0, a0 + 90], line: { color: colourAt(cx + r), width: 2.25 }, fill: { type: 'none' } });
+  }
+  slide.addShape(pptx.ShapeType.roundRect, { x: X(556), y: Y(201), w: X(220), h: Y(43), rectRadius: 0.22, fill: { color: VIOLET }, line: { color: 'A98BFF', width: 1 } });
+  slide.addText('Checkmarx One', { x: X(556), y: Y(201), w: X(220), h: Y(43), fontFace: FONT, fontSize: 16, color: 'FFFFFF', align: 'center', valign: 'middle', margin: 0 });
+
+  const sparkles = (x, y, n = 1) => slide.addText('✦'.repeat(n), { x: X(x), y: Y(y), w: X(30 * n), h: Y(28), fontFace: SYMBOL, fontSize: 17, color: SPARKLE, margin: 0, valign: 'middle' });
+  const icon = (x, y, color, glyph) => {
+    slide.addShape(pptx.ShapeType.ellipse, { x: X(x), y: Y(y), w: X(42), h: Y(42), fill: { color: mix(BG, color, 0.12) }, line: { color, width: 1.25 } });
+    slide.addText(glyph, { x: X(x), y: Y(y), w: X(42), h: Y(42), fontFace: FONT, fontSize: glyph.length > 2 ? 7 : 9, bold: true, color, align: 'center', valign: 'middle', margin: 0 });
+  };
+  const header = (x, y, title, sub, color, uw, star) => {
+    slide.addText(title, { x: X(x), y: Y(y - 12), w: X(360), h: Y(26), fontFace: FONT, fontSize: 14, bold: true, color, margin: 0 });
+    slide.addText(sub, { x: X(x), y: Y(y + 13), w: X(360), h: Y(26), fontFace: FONT, fontSize: 14, color: 'FFFFFF', margin: 0 });
+    slide.addShape(pptx.ShapeType.line, { x: X(x), y: Y(y + 47), w: X(uw), h: 0.001, line: { color, width: 1 } });
+    if (star) sparkles(star, y + 12);
+  };
+  const markRun = (state) => ({ text: ` ${MARK[state].glyph}`, options: { fontFace: SYMBOL, color: MARK[state].color, bold: true } });
+  const nameRun = (it) => ({ text: it.label, options: { color: it.state === 'done' ? 'FFFFFF' : DIM, bold: it.state === 'done' } });
+
+  // Capture all risks
+  if (has('capture')) {
+    const c = pillar('capture');
+    header(80, 287, 'CAPTURE ALL RISKS', 'Fusion Scanning Architecture', 'F25928', 192, 344);
+    const slots = { code: [358, 0], supply: [425, 0], aisc: [493, 3], runtime: [559, 1] };
+    const titleW = { code: 0, supply: 0, aisc: 206, runtime: 146 };
+    for (const g of c.groups) {
+      const [y, stars] = slots[g.key] ?? [];
+      if (y === undefined) continue;
+      icon(78, y - 7, 'F25928', g.icon);
+      slide.addText(g.title, { x: X(129), y: Y(y - 5), w: X(330), h: Y(22), fontFace: FONT, fontSize: 13, bold: true, color: 'FFFFFF', margin: 0 });
+      if (stars) sparkles(129 + titleW[g.key], y - 8, stars);
+      const runs = [];
+      g.items.forEach((it, i) => {
+        if (i) runs.push({ text: '  ·  ', options: { color: DIM } });
+        runs.push(nameRun(it), markRun(it.state));
+      });
+      slide.addText(runs, { x: X(129), y: Y(y + 15), w: X(370), h: Y(20), fontFace: FONT, fontSize: 8.5, margin: 0, valign: 'top' });
+    }
+  }
+
+  // Eliminate & prevent risks, govern & unify risks: one row per agent or capability, each in its own place
+  const rows = (key, x, headerY, title, sub, color, uw, slotYs, starAfter) => {
+    const pl = pillar(key);
+    if (!pl) return;
+    header(x, headerY, title, sub, color, uw);
+    const ids = key === 'prevent' ? ['dev-assist', 'ai-triage', 'ai-remediation'] : ['risk-orchestration', 'analytics', 'policy', 'mcp'];
+    const extra = pl.rows.filter((r) => !ids.includes(r.id));
+    ids.forEach((id, i) => {
+      const row = pl.rows.find((r) => r.id === id);
+      if (!row) return;
+      const y = slotYs[i];
+      icon(x - 1, y - 21, color, row.icon);
+      slide.addText([nameRun({ ...row, state: row.state === 'done' ? 'done' : 'x' }), ...(starAfter[id] ? [{ text: ' ✦', options: { fontFace: SYMBOL, color: SPARKLE } }] : []), markRun(row.state)].map((r, k) => (k === 0 ? { ...r, options: { ...r.options, color: 'FFFFFF', bold: true } } : r)), { x: X(x + 56), y: Y(y - (row.sub ? 18 : 12)), w: X(330), h: Y(24), fontFace: FONT, fontSize: 13, margin: 0, valign: 'middle' });
+      if (row.sub) slide.addText(row.sub, { x: X(x + 56), y: Y(y + 4), w: X(300), h: Y(16), fontFace: FONT, fontSize: 8, color: DIM, margin: 0 });
+    });
+    // New agents or capabilities added to the catalogue in this group: listed under the last row.
+    if (extra.length) slide.addText(extra.flatMap((it, i) => [...(i ? [{ text: '  ·  ', options: { color: DIM } }] : []), nameRun(it), markRun(it.state)]), { x: X(x + 56), y: Y(slotYs[slotYs.length - 1] + 26), w: X(320), h: Y(20), fontFace: FONT, fontSize: 8.5, margin: 0 });
+  };
+  rows('prevent', 531, 291, 'ELIMINATE & PREVENT RISKS', 'Assist Family of Agents', VIOLET, 193, [377, 443, 510], { 'dev-assist': 1, 'ai-triage': 1, 'ai-remediation': 1 });
+  rows('govern', 945, 287, 'GOVERN & UNIFY RISKS', 'Orchestration/Posture Management', 'A822BF', 195, [372, 439, 508, 569], { mcp: 1 });
+
+  // The key, just inside the frame, and the footer band
+  slide.addText(
+    [
+      { text: '✓', options: { fontFace: SYMBOL, color: MARK.done.color, bold: true } }, { text: ' Proven     ', options: { color: DIM } },
+      { text: '◷', options: { fontFace: SYMBOL, color: MARK.progress.color, bold: true } }, { text: ' In progress     ', options: { color: DIM } },
+      { text: '◷', options: { fontFace: SYMBOL, color: MARK.planned.color, bold: true } }, { text: ' Planned', options: { color: DIM } },
+    ],
+    { x: X(80), y: Y(605), w: X(600), h: Y(18), fontFace: FONT, fontSize: 8, margin: 0 },
+  );
+  slide.addShape(pptx.ShapeType.rect, { x: 0, y: Y(669), w: 13.333, h: Y(60), fill: { color: VIOLET }, line: { color: VIOLET } });
+  slide.addText('Checkmarx', { x: X(52), y: Y(686), w: X(200), h: Y(26), fontFace: FONT, fontSize: 11, bold: true, color: 'FFFFFF', margin: 0, valign: 'middle' });
+  slide.addText('1', { x: X(1240), y: Y(686), w: X(50), h: Y(26), fontFace: FONT, fontSize: 8, color: 'FFFFFF', margin: 0, valign: 'middle', align: 'right' });
 }

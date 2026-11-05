@@ -22,7 +22,7 @@ export const CATEGORIES = [
   ['aisc', 'AI Supply Chain Security'],
   ['runtime', 'Runtime Security'],
   ['agents', 'Checkmarx One Assist — agents'],
-  ['aspm', 'Application Security Posture Management'],
+  ['aspm', 'Govern & unify — orchestration / posture management'],
   ['scm', 'Source code management'],
   ['ci', 'CI/CD & build'],
   ['cli', 'CLI, API & portal'],
@@ -57,6 +57,8 @@ export const DEFAULT_CATALOG = [
   // ——— AI Supply Chain Security ———
   c('aisc', 'aisc', 'AI Inventory', 'AI Supply Chain Security — AI Inventory (AI-BOM)', { engines: ['aisc', 'ai-inventory', 'aibom', 'ai-supply-chain'], keywords: ['ai inventory', 'ai-bom', 'aibom', 'ai supply chain', 'aisc', 'models in use'] }, { proof: 'Show the AI models, frameworks and providers found in the code, and their risks.', tech: `${SCANS} one of: aisc, ai-inventory, aibom (engine name to confirm on the tenant: edit this rule once seen). Otherwise confirmed by the SE.` }),
   c('llm-scanner', 'aisc', 'LLM Scanner', 'AI Supply Chain Security — LLM Scanner', { engines: ['llm-scanner', 'llmscanner', 'llm'], keywords: ['llm scanner', 'prompt injection', 'llm risk'] }, { isNew: true, proof: 'Show LLM-specific risks found in the application code (prompt injection, insecure output handling…).', tech: `${SCANS} llm-scanner (engine name to confirm on the tenant). Otherwise confirmed by the SE.` }),
+  c('mcp-scanner', 'aisc', 'MCP Scanner', 'AI Supply Chain Security — MCP Scanner', { engines: ['mcp-scanner', 'mcpscanner'], keywords: ['mcp scanner', 'mcp server risk', 'tool poisoning'] }, { isNew: true, proof: 'Scan the MCP servers the customer’s developers and agents use; show the risky tools and permissions found.', tech: `${SCANS} mcp-scanner (engine name to confirm on the tenant). Otherwise confirmed by the SE.` }),
+  c('skills-scanner', 'aisc', 'Skills Scanner', 'AI Supply Chain Security — Skills Scanner', { engines: ['skills-scanner', 'skillsscanner'], keywords: ['skills scanner', 'agent skills', 'skill files'] }, { isNew: true, proof: 'Scan the agent skills and rules files in the customer’s repositories; show the risky instructions found.', tech: `${SCANS} skills-scanner (engine name to confirm on the tenant). Otherwise confirmed by the SE.` }),
   // ——— Runtime Security ———
   c('dast-ai', 'runtime', 'DAST for AI', 'DAST for AI', { engines: ['dast-ai', 'dast'], keywords: ['dast for ai', 'ai red team', 'llm pentest', 'dast'] }, { isNew: true, proof: 'Run DAST for AI against the customer’s AI endpoint; show the findings.', tech: `${SCANS} dast or dast-ai (DAST scans may not appear in /api/scans on every tenant: confirm by hand then).` }),
   c('dast', 'runtime', 'DAST', 'DAST', { engines: ['dast'], keywords: ['dast', 'dynamic scan', 'zap'] }, { proof: 'Scan the agreed web application; correlate with SAST where possible.', tech: `${SCANS} "dast" (else confirmed by hand).` }),
@@ -64,7 +66,7 @@ export const DEFAULT_CATALOG = [
   c('dev-assist', 'agents', 'Developer Assist', 'Checkmarx One Assist — Developer Assist (prevention in the IDE & coding assistants)', { origins: ['vs code', 'vscode', 'jetbrains', 'intellij', 'cursor', 'windsurf', 'kiro', 'visual studio', 'copilot'], keywords: ['developer assist', 'one assist', 'coding assistant', 'cursor', 'copilot', 'windsurf'] }, { proof: 'In the developer’s IDE or coding assistant, show a vulnerability prevented as the code is written, and the fix it proposes.', tech: 'Scans whose origin (sourceOrigin / user agent in GET /api/scans) names an IDE or coding assistant: VS Code, JetBrains, Visual Studio, Cursor, Windsurf, Kiro, Copilot.' }),
   c('ai-triage', 'agents', 'Triage Assist', 'Checkmarx One Assist — Triage Assist (attackability-first ranking)', { actions: ['triage'], keywords: ['triage assist', 'ai triage', 'attackability', 'auto triage'] }, { isNew: true, proof: 'Run Triage Assist on the agreed findings; show the attackability ranking and the not-exploitable verdicts.', tech: 'AI triage actions counted by GET /api/credits/consumption in the last 30 days (actionType containing "triage").' }),
   c('ai-remediation', 'agents', 'Remediation Assist', 'Checkmarx One Assist — Remediation Assist (merge-ready fixes)', { actions: ['remediation'], keywords: ['remediation assist', 'ai remediation', 'auto remediation', 'ai fix', 'merge-ready'] }, { isNew: true, proof: 'Generate a fix for an agreed finding and open the merge-ready pull request; show the rescan confirming it.', tech: 'AI remediation actions counted by GET /api/credits/consumption in the last 30 days (actionType containing "remediation").' }),
-  c('mcp', 'agents', 'Checkmarx MCP', 'Checkmarx MCP server (agent & platform access)', { origins: ['mcp'], keywords: ['mcp', 'model context protocol', 'agent access'] }, { proof: 'Connect the customer’s agent (Claude, Copilot, Cursor…) to the Checkmarx MCP server and query findings or start a scan from it.', tech: 'Scans whose origin or user agent names "mcp" (GET /api/scans). MCP queries alone leave no scan: confirmed by the SE then.' }),
+  c('mcp', 'aspm', 'Checkmarx MCP', 'Checkmarx MCP server (agent & platform access)', { origins: ['mcp'], keywords: ['mcp', 'model context protocol', 'agent access'] }, { proof: 'Connect the customer’s agent (Claude, Copilot, Cursor…) to the Checkmarx MCP server and query findings or start a scan from it.', tech: 'Scans whose origin or user agent names "mcp" (GET /api/scans). MCP queries alone leave no scan: confirmed by the SE then.' }),
   // ——— ASPM ———
   c('risk-orchestration', 'aspm', 'Risk Orchestration', 'ASPM — Risk Orchestration (applications & risk)', { keywords: ['risk orchestration', 'application risk', 'aspm', 'risk score', 'business impact'] }, { isNew: true, proof: 'Group projects into applications with their criticality; show the unified risk score and the top risks across engines.', tech: `Applications are read from GET /api/applications by Checkmarx One itself; this read does not count them yet. ${MANUAL}` }),
   c('policy', 'aspm', 'Policy Management', 'Policy Management (rules, break build)', { keywords: ['policy', 'break build', 'break the build', 'threshold', 'gate', 'violation'] }, { proof: 'Create a policy, show a violation on a project and the pipeline breaking on it.', tech: MANUAL }),
@@ -233,4 +235,20 @@ export function evaluate(capability, facts, notesText = '') {
 function wordIn(hay, needle) {
   const n = needle.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(^|[^a-z0-9])${n}($|[^a-z0-9])`, 'i').test(hay);
+}
+
+/** The scans in a snapshot that prove a rule (its engines, scan types or origins), newest first. */
+export function provingScans(rule, snapshot, limit = 12) {
+  const d = rule?.detect ?? {};
+  const out = [];
+  for (const s of snapshot?.scans ?? []) {
+    if (!/completed|partial/i.test(s.status)) continue;
+    const why = [];
+    for (const e of d.engines ?? []) if ((s.engines ?? []).includes(e)) why.push(`${e} engine`);
+    for (const t of d.scanTypes ?? []) if (s.scanType === t) why.push(t === 'fusion' ? 'Fusion scan' : 'LAST scan');
+    const origin = [s.origin, s.originRaw, s.userAgent].filter(Boolean).join(' ').toLowerCase();
+    for (const o of d.origins ?? []) if (wordIn(origin, o)) why.push(`from ${s.origin || o}`);
+    if (why.length) out.push({ id: s.id, project: s.projectName, branch: s.branch, status: s.status, at: s.updatedAt ?? s.createdAt, startedAt: s.createdAt, initiator: s.initiator, origin: s.origin, engines: s.engines, scanType: s.scanType, why: [...new Set(why)] });
+  }
+  return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, limit);
 }

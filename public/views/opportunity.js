@@ -95,7 +95,7 @@ function overview(d) {
   const openTasks = (o.tasks ?? []).filter((t) => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
   const notes = [...(o.notes ?? [])].sort((a, b) => (b.pinned - a.pinned) || b.at.localeCompare(a.at)).slice(0, 4);
   const success = o.povResult === 'successful';
-  return `${success ? `<section class="panel success-banner"><div class="body row center"><div style="flex:1;min-width:260px"><div class="small muted" style="text-transform:uppercase;letter-spacing:.18em">The POV was successful</div><h2 style="margin-top:4px">Share the final presentation</h2><div class="small muted">${r.progress.met} of ${r.progress.total} criteria met. The deck is made from the criteria, the sessions and what Checkmarx One showed.</div></div><button class="btn" data-act="deck">Download presentation</button>${current.canEdit ? '<button class="btn primary" data-act="share-deck">Email it to the stakeholders</button>' : ''}</div></section>` : ''}
+  return `${success ? `<section class="panel success-banner"><div class="body row center"><div style="flex:1;min-width:260px"><div class="small muted" style="text-transform:uppercase;letter-spacing:.18em">The POV was successful</div><h2 style="margin-top:4px">Share the final presentation</h2><div class="small muted">${r.progress.met} of ${r.progress.total} criteria met. The deck is made from the criteria, the sessions and what Checkmarx One showed.</div></div><a class="btn" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="deck">Download presentation</button>${current.canEdit ? '<button class="btn primary" data-act="share-deck">Email it to the stakeholders</button>' : ''}</div></section>` : ''}
   ${o.stage === 'completed' && !o.povResult && current.canEdit ? '<section class="panel"><div class="body row center"><span style="flex:1">The POV is complete. Was it successful?</span><button class="btn primary" data-result="successful">Successful</button><button class="btn" data-result="unsuccessful">Not successful</button></div></section>' : ''}
   <div class="layout"><div class="stack">
     ${r.alerts.length ? `<section class="panel"><div class="head"><h3>Needs attention</h3>${r.muted ? '<span class="badge">Muted</span>' : ''}</div><div class="body">${alertList(r.alerts, r.muted)}</div></section>` : ''}
@@ -369,8 +369,11 @@ function email(d) {
 function report(d) {
   const o = d.opportunity;
   return `<section class="panel"><div class="body stack">
+    <p style="margin:0"><b>The results page</b> opens with the Checkmarx One platform slide, showing only this POV's engines with their status. Select any engine for its record: progress, the scans and evidence that prove it, notes, links and every timestamp up to the POV's completion. The other slides follow. Printing it gives a PDF of every slide, then one page per engine.</p>
+    <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="dl-results">Download the page (HTML)</button><button class="btn" data-act="deck">Download the presentation (.pptx)</button></div>
+    <hr style="border:0;border-top:1px solid var(--line);width:100%">
     <p style="margin:0">The success-criteria report: the answer first, every criterion with its status and evidence, the sessions held and what the tenant showed. It prints to PDF from the browser.</p>
-    <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button><button class="btn" data-act="deck">Final presentation (.pptx)</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
+    <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
     <p class="small muted" style="margin:0">To keep it with the customer's documents, save it as PDF and put it in the SharePoint site${o.sharepointUrl ? '' : ' (add its link under Edit details)'}. Publishing to SharePoint by itself needs a Microsoft Graph app registration; the report layout will follow the formats you supply.</p>
   </div></section>`;
 }
@@ -528,6 +531,7 @@ const WIRES = {
   },
   report(main) {
     on(main, '[data-act="dl-report"]', () => attempt(() => download(`/opportunities/${oid()}/report?download=1`)));
+    on(main, '[data-act="dl-results"]', () => attempt(() => download(`/opportunities/${oid()}/results?download=1`), 'Results page downloaded'));
     on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
   },
 };

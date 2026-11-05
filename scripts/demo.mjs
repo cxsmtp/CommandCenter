@@ -46,7 +46,7 @@ app.db.write('users', list);
 
 const day = (n) => new Date(now + n * 86400e3).toISOString().slice(0, 10);
 const asUser = (u) => ({ ...users.get(u.id) });
-function make(owner, body, { tenant, criteria = [], notes = [], sessions = [], stakeholders = [], tasks = [], met = [] } = {}) {
+function make(owner, body, { tenant, criteria = [], notes = [], sessions = [], stakeholders = [], tasks = [], met = [], progress = [] } = {}) {
   const who = asUser(owner);
   let o = opps.create(who, { ...body, capabilities: criteria }, {});
   if (tenant) o = opps.setTenant(who, o.id, { apiKey: apiKeyFor(mock.origin, tenant) }, {});
@@ -55,11 +55,12 @@ function make(owner, body, { tenant, criteria = [], notes = [], sessions = [], s
   for (const s of sessions) opps.upsertItem(who, o.id, 'sessions', s, {});
   for (const s of stakeholders) opps.upsertItem(who, o.id, 'stakeholders', s, {});
   for (const t of tasks) opps.upsertItem(who, o.id, 'tasks', t, {});
-  for (const c of opps.get(o.id).criteria.filter((c) => met.includes(c.capabilityId))) opps.upsertItem(who, o.id, 'criteria', { ...c, status: 'met' }, {});
+  for (const c of opps.get(o.id).criteria.filter((c) => progress.includes(c.capabilityId))) opps.upsertItem(who, o.id, 'criteria', { ...c, status: 'in_progress' }, {});
+  for (const c of opps.get(o.id).criteria.filter((c) => met.includes(c.capabilityId))) opps.upsertItem(who, o.id, 'criteria', { ...c, status: 'met', notes: 'Shown to the AppSec team; they confirmed the results.' }, {});
   return o;
 }
 make(ses[0], { customer: 'Acme Bank', name: 'AppSec platform FY27', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006XX0000001/view', sharepointUrl: 'https://example.sharepoint.com/sites/AcmeBankPOV', startDate: day(-12), endDate: day(4), amount: '$420k ARR', discovery: { goals: 'Replace the current SAST tool; one platform for SAST, SCA and IaC.', painPoints: 'Too many false positives; developers ignore results.', languages: 'Java, TypeScript, Python', scm: ['github', 'gitlab'], ci: ['jenkins', 'github-actions'], tracking: ['jira'], requested: ['sast', 'sca', 'fusion', 'jenkins', 'jira'] } }, {
-  tenant: 'acme-bank', criteria: ['sast', 'sca', 'iac', 'fusion', 'ai-triage', 'jenkins', 'github-actions', 'github', 'jira', 'sso'], met: ['sast', 'sca'],
+  tenant: 'acme-bank', criteria: ['sast', 'fusion', 'secrets', 'iac', 'sca', 'containers', 'malicious', 'aisc', 'llm-scanner', 'mcp-scanner', 'dast-ai', 'dev-assist', 'ai-triage', 'ai-remediation', 'analytics', 'policy', 'mcp', 'jenkins', 'github-actions', 'github', 'jira', 'sso'], met: ['sast', 'sca', 'fusion', 'iac', 'jenkins', 'dev-assist', 'mcp'], progress: ['secrets', 'containers', 'ai-triage', 'llm-scanner', 'analytics', 'github-actions'],
   notes: ['Champion: Priya (AppSec lead). Wants Jira tickets created from critical findings.', 'Jenkins pipeline scans running on 5 core apps.'],
   sessions: [{ date: day(-20), type: 'discovery', title: 'Discovery with AppSec team', attendees: 'Priya Rao, Tom Lee', notes: 'Current tool: legacy SAST. Pain: false positives, slow scans.' }, { date: day(-10), type: 'technical', title: 'Jenkins and GitHub integration', notes: 'Plugin installed, first pipeline green.' }],
   stakeholders: [{ name: 'Priya Rao', email: 'priya.rao@acme-bank.example', title: 'AppSec Lead', side: 'customer' }, { name: 'Tom Lee', email: 'tom.lee@acme-bank.example', title: 'DevOps Manager', side: 'customer' }, { name: 'Jordan AE', email: 'jordan.ae@company.example', title: 'Account Executive', side: 'internal' }],

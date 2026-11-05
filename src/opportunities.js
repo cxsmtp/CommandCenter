@@ -109,8 +109,8 @@ export class Opportunities {
     applyFields(opp, body);
     if (!opp.customer) throw fail(400, 'Give the customer name.');
     opp.name ||= opp.customer;
-    for (const id of strList(body.capabilities, 200, 60)) this.#addCriterion(opp, { capabilityId: id });
     log(opp, actor, `Created the opportunity (${STAGES[opp.stage]})`);
+    for (const id of strList(body.capabilities, 200, 60)) this.#addCriterion(opp, { capabilityId: id }, actor);
     const all = this.#all();
     all.push(opp);
     this.#save(all);

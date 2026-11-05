@@ -218,6 +218,7 @@ test('people in the tenant: IAM users and sign-ins joined with who scanned', asy
   }, now);
   assert.equal(p.total, 3);
   assert.deepEqual(p.users.map((u) => [u.username, u.status]), [['ana@c.com', 'active'], ['jenkins-ci', 'active'], ['cy@c.com', 'quiet'], ['bo@c.com', 'never']]);
+  assert.equal(p.active, 1, 'CI accounts are listed, not counted');
   assert.equal(p.users.find((u) => u.username === 'jenkins-ci').inIam, false);
   const denied = peopleActivity({ people: { users: [], denied: true }, scans: [{ initiator: 'x@c.com', createdAt: iso(1) }] }, now);
   assert.equal(denied.iamRead, false);
@@ -244,4 +245,15 @@ test('a custom criterion can name its own engine', async () => {
   const c = r.body.opportunity.criteria.find((x) => x.title === 'AI Red Teaming');
   assert.deepEqual(c.engines, ['sca']);
   assert.equal(r.body.evidence[c.id].level, 'detected');
+});
+
+test('the results page: the platform slide with only the selected engines, and each engine’s record', async () => {
+  const r = await call('tl', `/api/opportunities/${ids.alpha}/results`, { raw: true });
+  assert.equal(r.status, 200);
+  assert.match(r.body, /AppSec for the/);
+  assert.match(r.body, /data-e="/);
+  assert.match(r.body, /Fusion SAST/);
+  assert.ok(!r.body.includes('>Skills Scanner<'), 'an engine the POV did not select is not on the slide');
+  assert.match(r.body, /Scans that proved it/);
+  assert.match(r.body, /@page \{ size: 13.333in 7.297in/);
 });

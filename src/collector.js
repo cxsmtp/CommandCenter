@@ -323,14 +323,17 @@ export function peopleActivity(snapshot, now = Date.now()) {
   });
   const rank = { active: 0, quiet: 1, inactive: 2, unknown: 3, never: 4 };
   list.sort((a, b) => rank[a.status] - rank[b.status] || (b.scans7d + (b.logins7d ?? 0)) - (a.scans7d + (a.logins7d ?? 0)));
+  const iamRead = Boolean(iam && !iam.denied);
+  // The figures count people: IAM accounts when IAM is readable (CI and service accounts are listed, not counted).
+  const counted = iamRead ? list.filter((r) => r.inIam) : list;
   return {
-    iamRead: Boolean(iam && !iam.denied),
+    iamRead,
     eventsKnown: Boolean(iam?.eventsKnown),
     users: list,
-    total: iam && !iam.denied ? iam.users.length : null,
-    active: list.filter((r) => r.status === 'active').length,
-    quiet: list.filter((r) => r.status === 'quiet').length,
-    inactive: list.filter((r) => ['inactive', 'never'].includes(r.status)).length,
+    total: iamRead ? iam.users.length : null,
+    active: counted.filter((r) => r.status === 'active').length,
+    quiet: counted.filter((r) => r.status === 'quiet').length,
+    inactive: counted.filter((r) => ['inactive', 'never'].includes(r.status)).length,
   };
 }
 

@@ -9,13 +9,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Db, fail, text } from './db.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
-import { Catalog, CATEGORIES, tenantFacts, evaluate } from './catalog.js';
+import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
 import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted } from './opportunities.js';
 import { Monitor } from './monitor.js';
 import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
+import { resultsPage } from './results.js';
+import { platformView, AI_POWERED, STATE as PLATFORM_STATE } from './platform.js';
+import { randomBytes } from 'node:crypto';
 import { CxClient } from './cxone/client.js';
 import { deriveConnection, publicConnection, scrubText } from './cxone/endpoints.js';
 import { tenantColours } from '../public/tenant-colour.js';
@@ -492,6 +495,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         opps.removeItem(user, id, sub, parts[3], s);
         return done();
       }
+      if (sub === 'results' && m === 'GET') {
+        const opp = viewOpp(user, id);
+        const nonce = randomBytes(12).toString('base64');
+        const html = resultsPage(resultsData(opp), { nonce });
+        if (url.searchParams.get('download')) return file(res, `${opp.customer} - POV results.html`, 'text/html; charset=utf-8', resultsPage(resultsData(opp)));
+        return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; frame-ancestors 'self'` });
+      }
       if (sub === 'deck' && m === 'GET') {
         const opp = viewOpp(user, id);
         return file(res, `${opp.customer} - POV results.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', await deckOf(opp));
@@ -549,9 +559,63 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     return send(res, 404, { error: 'Not found.' });
   }
 
+  /** Everything the results page shows, for one opportunity. */
+  function resultsData(raw) {
+    const opp = placed(raw);
+    const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
+    const evidence = evidenceOf(opp);
+    const groups = Object.fromEntries([...catalog.categories(), ['custom', 'Other']]);
+    const history = opp.history ?? [];
+    const completed = [...history].reverse().find((h) => /Marked the POV successful|→ POV completed/.test(h.what));
+    const criteria = (opp.criteria ?? [])
+      .filter((c) => c.status !== 'na')
+      .map((c) => {
+        const cap = c.capabilityId ? catalog.get(c.capabilityId) : null;
+        const rule = { detect: { ...(cap?.detect ?? {}), engines: [...(cap?.detect?.engines ?? []), ...(c.engines ?? [])], origins: [...(cap?.detect?.origins ?? []), ...(c.origins ?? [])] } };
+        return {
+          id: c.id,
+          capabilityId: c.capabilityId,
+          title: c.title,
+          group: groups[c.category] ?? 'Other',
+          priority: c.priority,
+          state: PLATFORM_STATE[c.status] ?? 'planned',
+          ai: AI_POWERED.has(c.capabilityId),
+          cxName: cap?.cxName ?? '',
+          proof: cap?.proof ?? '',
+          tech: cap?.tech ?? '',
+          notes: c.notes,
+          evidenceLink: c.evidenceLink,
+          confirmedAt: c.confirmedAt,
+          confirmedBy: c.confirmedBy ? users.get(c.confirmedBy)?.name ?? '' : '',
+          evidence: evidence[c.id],
+          scans: snap ? provingScans(rule, snap) : [],
+          timeline: history.filter((h) => h.what.includes(`"${c.title}"`)).map((h) => ({ at: h.at, what: h.what.replace(`"${c.title}": `, '').replace(` "${c.title}"`, ''), by: users.get(h.by)?.name ?? '' })),
+        };
+      });
+    return {
+      org: settings().orgName,
+      customer: opp.customer,
+      name: opp.name,
+      owner: users.get(opp.ownerId),
+      startDate: opp.startDate,
+      endDate: opp.endDate,
+      stage: opp.stage,
+      povResult: opp.povResult ?? '',
+      completedAt: completed?.at ?? opp.outcome?.closedAt ?? null,
+      generatedAt: new Date().toISOString(),
+      summary: opp.summary ?? '',
+      progress: progressOf(opp),
+      platform: platformView(opp, catalog),
+      criteria,
+      tenant: opp.tenant ? monitor.live(opp.id).summary : null,
+      sessions: [...(opp.sessions ?? [])].sort((a, b) => a.date.localeCompare(b.date)).map((x) => ({ date: x.date, title: x.title, type: SESSION_TYPES[x.type] ?? '' })),
+      next: (opp.tasks ?? []).filter((t) => !t.done).map((t) => t.title).slice(0, 8),
+    };
+  }
+
   function deckOf(opp) {
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
-    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName });
+    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog });
   }
 
   /** One text file: the tenant's read, every failed scan of the last 7 days and each failed engine's log. */
