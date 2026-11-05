@@ -21,6 +21,9 @@
 | Store API keys so CommandCenter can do things in the tenant (rescan, triage). | Holding customers' tenant keys is already a responsibility. Write access would make CommandCenter a way into every POV tenant. | CommandCenter only reads. Keys are encrypted at rest, never returned to the browser, checked against Checkmarx One before they are saved, and only sent to the tenant's own hosts. Troubleshooting covers what an SE needs (logs, the bundle) without write access. |
 | Poll as fast as possible ("every minute"). | 9 SEs × 3 POVs each, every minute, is a steady load on customers' tenants for little gain. | Every 10 minutes by default (changeable), with a manual "Refresh now", and live updates pushed to every open page as soon as a read finishes. |
 
+| Count who is active from scans alone. | A security lead who signs in every day to triage but never starts a scan would look idle, and a CI account would look like the busiest person. | IAM users and sign-ins are joined with scan initiators. Accounts that are not in IAM are labelled as service or CI accounts. When the key cannot read IAM, the page says so instead of guessing. |
+| Generate the final deck for every POV that ends. | A deck that shows a failed POV as finished, sent to the customer, does harm. | The deck is offered only once the SE marks the POV **successful**. It is attached to the completion email only when the SE ticks the box. |
+
 ## Still to do
 
 These are waiting on inputs that were promised:

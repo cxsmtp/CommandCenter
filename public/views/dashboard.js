@@ -20,7 +20,7 @@ export async function renderDashboard(main, { crumbs }) {
   const t = o.totals;
 
   if (!o.rows.length && !owner) {
-    main.innerHTML = `<div class="hero-empty"><h1>Every opportunity, in one place</h1><p>Start with the discovery: log the opportunity, what the customer asked for and the success criteria they want to see. When the POV starts, paste the tenant's Checkmarx One API key: CommandCenter reads it every ${o.intervalMinutes} minutes and shows its scans, failures, Fusion and LAST scans, credits and the integrations already tested.</p>${can('opps.create') ? '<button class="btn primary" data-action="new-opp">＋ New opportunity</button>' : ''}</div>`;
+    main.innerHTML = `<div class="hero-empty"><h1>Every opportunity, in one place</h1><p>Start with the discovery: log the opportunity, what the customer asked for and the success criteria they want to see. When the POV starts, paste the tenant's Checkmarx One API key: CommandCenter reads it every ${o.intervalMinutes} minutes and shows its scans, failures, Fusion and LAST scans, credits and the integrations already tested.</p>${can('opps.create') ? '<button class="btn primary" data-action="new-opp">New opportunity</button>' : ''}</div>`;
     return;
   }
 
@@ -52,6 +52,7 @@ export async function renderDashboard(main, { crumbs }) {
       ${kpi('Scans 24h', fmt(t.scans24h), '', `${fmt(t.failed24h)} failed`)}
       ${kpi('Fusion / LAST 7d', `${fmt(t.fusion7d)} / ${fmt(t.last7d)}`)}
       ${kpi('Credits available', fmt(t.creditsAvailable), '', t.creditsUsed30d !== null ? `${fmt(Math.round(t.creditsUsed30d))} used in 30 d` : '')}
+      ${kpi('People active', t.usersTotal !== null ? `${fmt(t.usersActive)} / ${fmt(t.usersTotal)}` : '—', '', 'in POV tenants, last 2 days')}
       ${kpi('Critical / High', `${fmt(t.critical)} / ${fmt(t.high)}`)}
       ${kpi('Criteria met', t.criteriaTotal ? `${Math.round((100 * t.criteriaMet) / t.criteriaTotal)}%` : '—', '', `${t.criteriaMet} of ${t.criteriaTotal}`)}
     </div>
@@ -119,7 +120,7 @@ function card(r) {
   const health = r.live ? (r.live.refreshing ? 'loading' : r.live.health) : null;
   return `<article class="card ${r.muted ? 'muted-card' : ''}" style="--tc:${tc(r.colour)}" data-go="#/opp/${esc(r.id)}" tabindex="0">
     <div class="card-head">
-      <div><div class="card-title">${esc(r.customer)}</div><div class="card-sub">${esc([r.name !== r.customer ? r.name : '', r.owner.name, r.tenant ? `${r.tenant.tenant} · ${r.tenant.regionLabel}` : ''].filter(Boolean).join(' · '))}</div></div>
+      <div><div class="card-title">${esc(r.customer)}</div>${r.povResult === 'successful' ? '<div class="small ok-t" style="letter-spacing:.12em;text-transform:uppercase">POV successful</div>' : ''}<div class="card-sub">${esc([r.name !== r.customer ? r.name : '', r.owner.name, r.tenant ? `${r.tenant.tenant} · ${r.tenant.regionLabel}` : ''].filter(Boolean).join(' · '))}</div></div>
       <div class="badges">${daysBadge(r)}${stageBadge(r.stage)}</div>
     </div>
     ${r.progress.total ? progressBar(r.progress) : '<div class="small muted">No success criteria yet</div>'}
@@ -132,7 +133,7 @@ function card(r) {
       <div class="stat"><div class="v">${fmt(s.running + s.queued)}</div><div class="l">Running</div></div>
       <div class="stat ${s.failed24h ? 'bad' : ''}"><div class="v">${fmt(s.failed24h)}</div><div class="l">Failed 24h</div></div>
     </div>
-    <div class="row center small">${s.fusion7d ? `<span class="badge fusion">Fusion ${s.fusion7d}</span>` : ''}${s.last7d ? `<span class="badge last">LAST ${s.last7d}</span>` : ''}${s.credits?.available != null ? `<span class="badge">Credits ${fmt(s.credits.available)}</span>` : ''}${(s.origins ?? []).slice(0, 3).map((x) => `<span class="badge">${esc(x.name)}</span>`).join('')}</div>
+    <div class="row center small">${s.fusion7d ? `<span class="badge fusion">Fusion ${s.fusion7d}</span>` : ''}${s.last7d ? `<span class="badge last">LAST ${s.last7d}</span>` : ''}${s.credits?.available != null ? `<span class="badge">Credits ${fmt(s.credits.available)}</span>` : ''}${s.users?.total != null ? `<span class="badge ${s.users.active ? 'ok' : 'warn'}">People ${s.users.active}/${s.users.total} active</span>` : ''}${(s.origins ?? []).slice(0, 3).map((x) => `<span class="badge">${esc(x.name)}</span>`).join('')}</div>
     ${sevBar(s.findings)}${sevLegend(s.findings, s.delta)}`
         : ''
     }
@@ -146,11 +147,12 @@ const COLUMNS = [
   { label: 'SE', key: (r) => r.owner.name, html: (r) => `${esc(r.owner.name)}${r.managers[0] ? `<div class="small muted">→ ${esc(r.managers[0].name)}</div>` : ''}` },
   { label: 'Stage', key: (r) => Object.keys(state.meta.stages).indexOf(r.stage), html: (r) => `${stageBadge(r.stage)} ${daysBadge(r)}` },
   { label: 'Criteria', n: true, key: (r) => r.progress.percent, html: (r) => (r.progress.total ? `<b>${r.progress.percent}%</b><div class="small muted">${r.progress.met}/${r.progress.total}</div>` : '—') },
-  { label: 'Health', key: (r) => (r.muted ? 9 : r.alerts.filter((a) => a.level === 'bad').length * -10 - r.alerts.length), html: (r) => (r.alerts.length ? `<div class="alerts">${r.alerts.slice(0, 2).map((a) => `<div class="a ${r.muted ? 'muted' : a.level === 'bad' ? 'bad-t' : 'warn-t'}"><span class="dot ${r.muted ? '' : a.level}"></span>${esc(a.what)}</div>`).join('')}${r.alerts.length > 2 ? `<div class="small muted">+${r.alerts.length - 2} more</div>` : ''}${r.muted ? '<div class="small muted">🔕 muted</div>' : ''}</div>` : r.live ? `<span class="health"><span class="dot ${r.live.health}"></span>${esc(HEALTH[r.live.health])}</span>` : '<span class="muted small">No tenant</span>') },
+  { label: 'Health', key: (r) => (r.muted ? 9 : r.alerts.filter((a) => a.level === 'bad').length * -10 - r.alerts.length), html: (r) => (r.alerts.length ? `<div class="alerts">${r.alerts.slice(0, 2).map((a) => `<div class="a ${r.muted ? 'muted' : a.level === 'bad' ? 'bad-t' : 'warn-t'}"><span class="dot ${r.muted ? '' : a.level}"></span>${esc(a.what)}</div>`).join('')}${r.alerts.length > 2 ? `<div class="small muted">+${r.alerts.length - 2} more</div>` : ''}${r.muted ? '<div class="small muted">Muted</div>' : ''}</div>` : r.live ? `<span class="health"><span class="dot ${r.live.health}"></span>${esc(HEALTH[r.live.health])}</span>` : '<span class="muted small">No tenant</span>') },
   { label: 'Scans 24h', n: true, key: (r) => r.live?.summary?.scans24h ?? -1, html: (r) => (r.live?.summary ? `${fmt(r.live.summary.scans24h)}${r.live.summary.failed24h ? ` <span class="bad-t small">(${r.live.summary.failed24h} ✕)</span>` : ''}` : '—') },
   { label: 'Running', n: true, key: (r) => (r.live?.summary ? r.live.summary.running + r.live.summary.queued : -1), html: (r) => (r.live?.summary ? fmt(r.live.summary.running + r.live.summary.queued) : '—') },
   { label: 'Fusion / LAST', n: true, key: (r) => r.live?.summary?.fusion7d ?? -1, html: (r) => (r.live?.summary ? `${fmt(r.live.summary.fusion7d)} / ${fmt(r.live.summary.last7d)}` : '—') },
   { label: 'C / H', n: true, key: (r) => (r.live?.summary?.findings ? r.live.summary.findings.critical * 1000 + r.live.summary.findings.high : -1), html: (r) => (r.live?.summary?.findings ? `${fmt(r.live.summary.findings.critical)} / ${fmt(r.live.summary.findings.high)}` : '—') },
+  { label: 'People', n: true, key: (r) => r.live?.summary?.users?.active ?? -1, html: (r) => (r.live?.summary?.users?.total != null ? `${fmt(r.live.summary.users.active)}/${fmt(r.live.summary.users.total)}` : '—') },
   { label: 'Credits', n: true, key: (r) => r.live?.summary?.credits?.available ?? -1, html: (r) => fmt(r.live?.summary?.credits?.available) },
   { label: 'Last activity', key: (r) => Date.parse(r.live?.summary?.lastActivityAt ?? r.updatedAt) || 0, html: (r) => `<span title="${esc(when(r.live?.summary?.lastActivityAt ?? r.updatedAt))}">${ago(r.live?.summary?.lastActivityAt ?? r.updatedAt)}</span>` },
   { label: 'Links', html: (r) => `${r.salesforceUrl ? `<a href="${esc(r.salesforceUrl)}" target="_blank" rel="noopener noreferrer" title="Salesforce">SF↗</a> ` : ''}${r.sharepointUrl ? `<a href="${esc(r.sharepointUrl)}" target="_blank" rel="noopener noreferrer" title="SharePoint">SP↗</a>` : ''}` },

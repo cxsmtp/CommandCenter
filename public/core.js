@@ -132,7 +132,7 @@ export const KIND = {
   canceled: ['⊘', 'Scan canceled'],
   running: ['▶', 'Scan running'],
   queued: ['…', 'Scan queued'],
-  project: ['＋', 'Project created'],
+  project: ['+', 'Project created'],
   other: ['•', 'Scan'],
 };
 
@@ -166,7 +166,7 @@ export function daysBadge(r) {
 }
 export function alertList(alerts, muted) {
   if (!alerts?.length) return '';
-  return `<div class="alerts">${alerts.map((a) => `<div class="a ${muted ? 'muted' : a.level === 'bad' ? 'bad-t' : 'warn-t'}"><span class="dot ${muted ? '' : a.level}"></span>${esc(a.what)}</div>`).join('')}${muted ? '<div class="a muted small">🔕 Muted</div>' : ''}</div>`;
+  return `<div class="alerts">${alerts.map((a) => `<div class="a ${muted ? 'muted' : a.level === 'bad' ? 'bad-t' : 'warn-t'}"><span class="dot ${muted ? '' : a.level}"></span>${esc(a.what)}</div>`).join('')}${muted ? '<div class="a muted small">Muted</div>' : ''}</div>`;
 }
 
 /** A sortable table. `columns`: [{ label, key(row), html(row), n }]. Sorting is kept per table id. */

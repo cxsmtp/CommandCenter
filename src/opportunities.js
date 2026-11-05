@@ -144,7 +144,9 @@ export class Opportunities {
         if (opp.stage === 'pov' && !opp.startDate) opp.startDate = new Date().toISOString().slice(0, 10);
         if (['won', 'lost'].includes(opp.stage)) opp.outcome = { result: opp.stage, reason: text(body.outcomeReason, 1000), closedAt: new Date().toISOString() };
       }
-      if (changed.length) log(opp, actor, `Changed ${changed.join(', ')}`);
+      if (changed.includes('povResult')) log(opp, actor, opp.povResult ? `Marked the POV ${opp.povResult}` : 'Cleared the POV result');
+      const rest = changed.filter((k) => k !== 'povResult');
+      if (rest.length) log(opp, actor, `Changed ${rest.join(', ')}`);
     });
   }
 
@@ -267,6 +269,8 @@ const CLEANERS = {
       notes: text(c.notes, 4000),
       evidenceLink: httpUrl(c.evidenceLink),
       keywords: strList(c.keywords, 20, 60).map((k) => k.toLowerCase()),
+      engines: strList(c.engines, 20, 60).map((k) => k.toLowerCase()),
+      origins: strList(c.origins, 20, 60).map((k) => k.toLowerCase()),
       due: dateOnly(c.due),
       confirmedBy: confirmed ? actor?.id ?? '' : status === 'met' ? existing?.confirmedBy ?? '' : '',
       confirmedAt: confirmed ? new Date().toISOString() : status === 'met' ? existing?.confirmedAt ?? null : null,
@@ -295,6 +299,7 @@ function applyFields(opp, b) {
   if ('startDate' in b) set('startDate', dateOnly(b.startDate));
   if ('endDate' in b) set('endDate', dateOnly(b.endDate));
   if ('summary' in b) set('summary', text(b.summary, 4000));
+  if ('povResult' in b && ['', 'successful', 'unsuccessful'].includes(b.povResult)) set('povResult', b.povResult);
   if (b.discovery && typeof b.discovery === 'object') {
     const d = { ...(opp.discovery ?? {}) };
     for (const k of DISCOVERY_TEXT) if (k in b.discovery) d[k] = text(b.discovery[k], 20000);

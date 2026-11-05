@@ -18,7 +18,6 @@ export const TEMPLATES = {
   blank: 'Blank email',
 };
 
-const catLabel = Object.fromEntries(CATEGORIES);
 const fmtDate = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 const bullet = (items) => items.filter(Boolean).map((x) => `  • ${x}`).join('\n');
 const nice = (list) => (list ?? []).filter(Boolean).join(', ');
@@ -35,6 +34,7 @@ export function draft(template, opp, { owner, live, catalog }) {
   const d = opp.discovery ?? {};
   const p = progressOf(opp);
   const capName = (id) => catalog.get(id)?.name ?? id;
+  const catLabel = Object.fromEntries([...(catalog.categories?.() ?? CATEGORIES), ['custom', 'Other']]);
   const criteriaByCat = () => {
     const groups = new Map();
     for (const c of opp.criteria ?? []) {
@@ -141,9 +141,9 @@ export function cleanMessage(m) {
 }
 
 /** The message as a .eml file, to open in the SE's own mail client. */
-export function toEml(msg, from) {
+export function toEml(msg, from, attachments = []) {
   return new Promise((resolve, reject) => {
-    new MailComposer({ from: from || undefined, to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.body, headers: { 'X-Unsent': '1' } }).compile().build((err, raw) => (err ? reject(err) : resolve(raw)));
+    new MailComposer({ from: from || undefined, to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.body, attachments, headers: { 'X-Unsent': '1' } }).compile().build((err, raw) => (err ? reject(err) : resolve(raw)));
   });
 }
 
@@ -189,9 +189,9 @@ export class Mailer {
     await this.#transport().sendMail({ from: s.from, to, subject: 'CommandCenter test email', text: 'Your email server works with CommandCenter.' });
   }
 
-  async send(msg, { replyTo } = {}) {
+  async send(msg, { replyTo, attachments = [] } = {}) {
     const s = this.settings;
-    const info = await this.#transport().sendMail({ from: s.from, replyTo: replyTo || undefined, to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.body });
+    const info = await this.#transport().sendMail({ from: s.from, replyTo: replyTo || undefined, to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.body, attachments });
     return info.messageId ?? '';
   }
 

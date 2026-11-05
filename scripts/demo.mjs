@@ -66,11 +66,11 @@ make(ses[0], { customer: 'Acme Bank', name: 'AppSec platform FY27', salesforceUr
   tasks: [{ title: 'Show Jira feedback app', due: day(1) }, { title: 'Fusion results readout', due: day(3) }],
 });
 make(ses[1], { customer: 'Globex', startDate: day(-5), endDate: day(18), salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006XX0000002/view' }, { tenant: 'globex', criteria: ['sast', 'sca', 'containers', 'azure-pipelines', 'vscode'], tasks: [{ title: 'Kick-off email', due: day(-1) }] });
-make(ses[2], { customer: 'Initech', startDate: day(-30), endDate: day(-1) }, { tenant: 'initech', criteria: ['sast', 'last', 'cli', 'gitlab-ci', 'secrets'], met: ['sast', 'cli', 'last'] });
+make(ses[2], { customer: 'Initech', stage: 'completed', povResult: 'successful', summary: 'Checkmarx One scanned the 14 Initech projects from GitLab CI and the CLI. LAST found issues the legacy tool missed, and the security team signed off on the results.', startDate: day(-30), endDate: day(-1) }, { tenant: 'initech', criteria: ['sast', 'last', 'cli', 'gitlab-ci', 'secrets'], met: ['sast', 'cli', 'last'] });
 make(ses[3], { customer: 'Umbrella Health', startDate: day(-3), endDate: day(25) }, { tenant: 'umbrella', criteria: ['sast', 'sca', 'aisc', 'fusion', 'api', 'servicenow'] });
 make(ses[3], { customer: 'Hooli', stage: 'technical', discovery: { goals: 'Shift-left for 400 developers.', ci: ['github-actions'] } }, { criteria: ['sast', 'sca', 'github-actions', 'dev-assist'], sessions: [{ date: day(-2), type: 'technical', title: 'Architecture deep dive' }] });
 make(ses[0], { customer: 'Stark Logistics', stage: 'discovery' }, { tasks: [{ title: 'Discovery call', due: day(2) }] });
-make(ses[2], { customer: 'Wayne Retail', stage: 'won' }, { criteria: ['sast', 'sca'], met: ['sast', 'sca'] });
+make(ses[2], { customer: 'Wayne Retail', stage: 'won', povResult: 'successful' }, { criteria: ['sast', 'sca'], met: ['sast', 'sca'] });
 make(ses[1], { customer: 'Cyberdyne', stage: 'lost' }, {});
 
 const port = Number(process.env.PORT) || 4310;
@@ -78,5 +78,5 @@ app.server.listen(port, process.env.HOST || '127.0.0.1', () => {
   console.log(`CommandCenter demo on http://127.0.0.1:${port}  (mock Checkmarx One at ${mock.origin})`);
   console.log(`Sign in as vp@demo.local, leader@demo.local, tl1@demo.local, se1@demo.local … or admin@demo.local — password: ${pw}`);
   app.monitor.start();
-  app.monitor.refreshAll();
+  for (const o of opps.raw().filter((x) => x.tenant)) app.monitor.refresh(o.id, { force: true });
 });

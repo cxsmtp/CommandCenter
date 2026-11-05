@@ -1,0 +1,259 @@
+/* ————————————————————————————————————————————————————————————————————————————————
+   The house looks. Four original looks after the craft of the great houses, never their marks:
+     Maison     — the leather-goods atelier: espresso leather, cognac, brass, ivory paper, saddle stitching
+     Calibre    — haute horlogerie: midnight dial, guilloché, white gold, cream enamel
+     Joaillier  — high jewellery: deep crimson, yellow gold, ivory, double gold filets
+     Hypercar   — the French hypercar: racing blue on carbon, brushed aluminium, a wide machined face
+   app.js sets data-lux on <html> for these, so the shared craft rules below apply to all four.
+   ———————————————————————————————————————————————————————————————————————————————— */
+@import url('/fonts/fonts.css');
+
+/* ——— Tokens ——— */
+:root[data-look="maison"] {
+  --bg: #f2ebdf; --panel: #fbf7f0; --panel-2: #f3eadc; --ink: #2a1c13; --muted: #7d6754; --line: #dccab2;
+  --accent: #6b4423; --accent-ink: #fbf5ea; --metal: #b08d57; --metal-soft: #d8c19a;
+  --nav-bg: #2a1c13; --nav-ink: #f1e6d2; --nav-muted: #a99178; --nav-active: rgba(176, 141, 87, 0.14);
+  --ok: #4f6b3a; --warn: #a8742a; --bad: #8c2a1e; --fresh: #f6ead2; --fusion: #a8742a; --last: #8c2a4a;
+  --sev-critical: #5e1a1a; --sev-high: #9c4a2c; --sev-medium: #c9a062; --sev-low: #8f9a8a;
+  --font: 'Jost', 'Futura', 'Avenir Next', system-ui, sans-serif; --font-head: 'Cormorant Garamond', 'Didot', Georgia, serif; --font-num: var(--font-head);
+}
+:root[data-look="maison"][data-theme="dark"] {
+  --bg: #150e09; --panel: #1e150e; --panel-2: #271b12; --ink: #f1e6d2; --muted: #a99178; --line: #3b2a1d;
+  --accent: #c89a5e; --accent-ink: #1a110a; --metal: #c8a56a; --metal-soft: #6b5434;
+  --nav-bg: #0e0906; --fresh: #2c2013; --bad: #d0634f; --ok: #8fae6f; --warn: #d6a35a;
+  --sev-critical: #b3434a; --sev-high: #d0784a; --sev-medium: #d9b46e; --sev-low: #9aa794;
+}
+:root[data-look="calibre"] {
+  --bg: #f3f1ec; --panel: #fdfcf9; --panel-2: #f4f2ec; --ink: #13203a; --muted: #67708a; --line: #d8dbe2;
+  --accent: #1c3360; --accent-ink: #f7f5ef; --metal: #a98f5f; --metal-soft: #d9ccb0;
+  --nav-bg: #0f1a31; --nav-ink: #e9ecf3; --nav-muted: #8d97ad; --nav-active: rgba(233, 236, 243, 0.08);
+  --ok: #3f6b55; --warn: #9a7a35; --bad: #8d2a35; --fresh: #f1ecdd; --fusion: #9a7a35; --last: #7a3a6a;
+  --sev-critical: #4a1830; --sev-high: #8d3a3a; --sev-medium: #b89a5a; --sev-low: #7c8aa6;
+  --font: 'Jost', 'Avenir Next', system-ui, sans-serif; --font-head: 'Cormorant Garamond', 'Bodoni 72', Georgia, serif; --font-num: var(--font-head);
+}
+:root[data-look="calibre"][data-theme="dark"] {
+  --bg: #080f1f; --panel: #0e1730; --panel-2: #142040; --ink: #e9ecf3; --muted: #8d97ad; --line: #21304f;
+  --accent: #c9b07a; --accent-ink: #0b1224; --metal: #c9b07a; --metal-soft: #4a4532; --nav-bg: #050a16; --fresh: #1c2236;
+  --bad: #d36a72; --ok: #7fb59a; --warn: #d4b36a; --sev-critical: #b0456a; --sev-high: #cf6a5a; --sev-medium: #d4b878; --sev-low: #8fa2c6;
+}
+:root[data-look="joaillier"] {
+  --bg: #f6efe9; --panel: #fffaf5; --panel-2: #f7eee6; --ink: #2b0c12; --muted: #80595e; --line: #e5d0c8;
+  --accent: #861b2c; --accent-ink: #fff6ee; --metal: #b8923e; --metal-soft: #e3cd98;
+  --nav-bg: #5a0f1c; --nav-ink: #f8e9dc; --nav-muted: #d1a99a; --nav-active: rgba(227, 205, 152, 0.14);
+  --ok: #4a6b45; --warn: #a67a24; --bad: #861b2c; --fresh: #f8ead6; --fusion: #a67a24; --last: #6a2a6a;
+  --sev-critical: #4f0a16; --sev-high: #a3283a; --sev-medium: #c9a04a; --sev-low: #a3929a;
+  --font: 'Jost', 'Avenir Next', system-ui, sans-serif; --font-head: 'Cormorant Garamond', 'Didot', Georgia, serif; --font-num: var(--font-head);
+}
+:root[data-look="joaillier"][data-theme="dark"] {
+  --bg: #13060a; --panel: #1d0a10; --panel-2: #270f16; --ink: #f6e7de; --muted: #c09a91; --line: #3d1820;
+  --accent: #d6aa52; --accent-ink: #1a0a0d; --metal: #d6aa52; --metal-soft: #5a4220; --nav-bg: #2e0610; --fresh: #2c1a10;
+  --bad: #e06d7c; --ok: #8fbf88; --warn: #e0b660; --sev-critical: #c0405a; --sev-high: #e0705a; --sev-medium: #e0be70; --sev-low: #b8a3aa;
+}
+:root[data-look="hypercar"] {
+  --bg: #eceff3; --panel: #ffffff; --panel-2: #f2f4f7; --ink: #0a0f1d; --muted: #5a6376; --line: #d2d8e1;
+  --accent: #0b3a8c; --accent-ink: #ffffff; --metal: #8b95a7; --metal-soft: #c6ccd6;
+  --nav-bg: #070a12; --nav-ink: #e9edf5; --nav-muted: #8892a6; --nav-active: rgba(61, 123, 255, 0.14);
+  --ok: #1f7a4d; --warn: #b07a12; --bad: #c0262f; --fresh: #e6eefc; --fusion: #b07a12; --last: #a3266a;
+  --sev-critical: #6d0f22; --sev-high: #c0262f; --sev-medium: #d9a21b; --sev-low: #6f86b0;
+  --font: 'Jost', 'Avenir Next', system-ui, sans-serif; --font-head: 'Syncopate', 'Eurostile', 'Avenir Next', sans-serif; --font-num: 'Syncopate', var(--font);
+}
+:root[data-look="hypercar"][data-theme="dark"] {
+  --bg: #04060b; --panel: #0b0f19; --panel-2: #111827; --ink: #e9edf5; --muted: #8892a6; --line: #1b2435;
+  --accent: #3d7bff; --accent-ink: #030611; --metal: #a9b3c6; --metal-soft: #2a3346; --nav-bg: #020308; --fresh: #0e1a33;
+  --bad: #ff4d5a; --ok: #3ccf8e; --warn: #f2b632;
+}
+
+/* ——— The craft shared by every house look ——— */
+:root[data-lux] { --radius: 0px; --shadow: none; --font-num: var(--font-head); }
+[data-lux] body { font-family: var(--font); font-weight: 400; letter-spacing: 0.01em; -webkit-font-smoothing: antialiased; }
+[data-lux] h1, [data-lux] h2 { font-family: var(--font-head); font-weight: 500; letter-spacing: 0.01em; }
+[data-lux] h1 { font-size: 34px; line-height: 1.1; }
+[data-lux] h2 { font-size: 22px; }
+[data-lux] h3 { font-family: var(--font); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted); }
+[data-lux] ::selection { background: var(--metal-soft); color: var(--ink); }
+
+/* The menu: a dark leather/dial/case panel, the wordmark in tracked capitals, no icons */
+[data-lux] .nav { padding: 28px 18px; border-right: 0; box-shadow: inset -1px 0 0 color-mix(in srgb, var(--metal) 45%, transparent); }
+[data-lux] .nav .ico, [data-lux] .brand-dot { display: none; }
+[data-lux] .brand { flex-direction: column; align-items: flex-start; gap: 8px; padding: 0 10px 26px; font-family: var(--font-head); font-size: 19px; font-weight: 500; letter-spacing: 0.32em; text-transform: uppercase; line-height: 1.25; }
+[data-lux] .brand::after { content: ''; width: 36px; height: 1px; background: var(--metal); }
+[data-lux] .nav-group { font-size: 10px; letter-spacing: 0.24em; padding: 22px 10px 8px; color: var(--metal); opacity: 0.85; }
+[data-lux] .nav a { font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; padding: 10px 10px; border-radius: 0; color: var(--nav-muted); }
+[data-lux] .nav a:hover { background: transparent; color: var(--nav-ink); }
+[data-lux] .nav a[aria-current="page"] { background: var(--nav-active); color: var(--nav-ink); font-weight: 500; box-shadow: inset 1px 0 0 var(--metal); }
+[data-lux] .nav .badge-n { background: transparent; color: var(--metal); border: 1px solid var(--metal); font-size: 10px; letter-spacing: 0.05em; }
+[data-lux] .nav-foot { border-top: 1px solid color-mix(in srgb, var(--metal) 35%, transparent); padding-top: 16px; letter-spacing: 0.04em; }
+[data-lux] .nav-foot b { font-family: var(--font-head); font-size: 16px; font-weight: 500; letter-spacing: 0.02em; }
+
+[data-lux] .topbar { background: color-mix(in srgb, var(--bg) 92%, transparent); border-bottom: 1px solid var(--line); padding: 14px 36px; }
+[data-lux] .topbar .crumbs, [data-lux] .topbar .crumbs h2 { font-family: var(--font); font-size: 11px !important; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 500; color: var(--muted); }
+[data-lux] .topbar .crumbs b { color: var(--ink); font-weight: 500; }
+[data-lux] .refresh-note { font-size: 11px; letter-spacing: 0.08em; }
+[data-lux] main { padding: 32px 36px 80px; }
+
+/* Controls: square, tracked capitals, hairlines */
+[data-lux] .btn { border-radius: 0; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.16em; padding: 9px 16px; border-color: var(--line); background: transparent; }
+[data-lux] .btn:hover { border-color: var(--metal); color: var(--ink); }
+[data-lux] .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+[data-lux] .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); color: var(--accent-ink); }
+[data-lux] .btn.sm { padding: 5px 10px; font-size: 10px; }
+[data-lux] input, [data-lux] select, [data-lux] textarea { border-radius: 0; background: var(--panel); border-color: var(--line); font-family: var(--font); }
+[data-lux] input:focus, [data-lux] select:focus, [data-lux] textarea:focus { outline: none; border-color: var(--metal); box-shadow: 0 0 0 1px var(--metal); }
+[data-lux] .field { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; }
+[data-lux] .field > input, [data-lux] .field > select, [data-lux] .field > textarea { text-transform: none; letter-spacing: 0.01em; }
+[data-lux] .seg { border-radius: 0; border-color: var(--line); }
+[data-lux] .seg button { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; padding: 7px 14px; background: transparent; }
+[data-lux] .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+[data-lux] .filter { border-radius: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; }
+[data-lux] .filter[aria-pressed="true"] { background: transparent; color: var(--ink); border-color: var(--metal); box-shadow: inset 0 -2px 0 var(--metal); }
+[data-lux] .badge { border-radius: 0; background: transparent; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; padding: 2px 8px; }
+[data-lux] .chip { border-radius: 50%; width: 8px; height: 8px; }
+
+/* The pipeline: an index of stages, not a row of buttons */
+[data-lux] .pipeline { gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 0; }
+[data-lux] .pipeline button { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; padding: 16px 18px 14px; }
+[data-lux] .pipeline button:last-child { border-right: 0; }
+[data-lux] .pipeline button[aria-pressed="true"] { box-shadow: inset 0 -2px 0 var(--metal); background: color-mix(in srgb, var(--metal) 7%, transparent); }
+[data-lux] .pipeline b { font-family: var(--font-num); font-weight: 500; font-size: 30px; line-height: 1; margin-bottom: 6px; }
+[data-lux] .pipeline span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; }
+
+/* The figures: one engraved band */
+[data-lux] .kpis { gap: 0; background: var(--panel); border: 1px solid var(--line); border-top: 0; margin-bottom: 36px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+[data-lux] .kpi { border: 0; border-right: 1px solid var(--line); border-radius: 0; padding: 18px 20px 16px; background: transparent; }
+[data-lux] .kpi:last-child { border-right: 0; }
+[data-lux] .kpi .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em; }
+[data-lux] .kpi .value { font-family: var(--font-num); font-weight: 500; font-size: 32px; line-height: 1.15; margin-top: 4px; }
+[data-lux] .kpi .sub { letter-spacing: 0.04em; }
+
+/* Panels and cards: paper, a hairline, a fine metal rule */
+[data-lux] .panel { border-radius: 0; }
+[data-lux] .panel > .head { padding: 16px 20px; }
+[data-lux] .panel > .body { padding: 20px; }
+[data-lux] .cards { gap: 20px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+[data-lux] .card { position: relative; border: 1px solid var(--line); border-top: 2px solid var(--tc, var(--metal)); border-radius: 0; padding: 22px 22px 18px; gap: 14px; transition: border-color 0.25s, transform 0.25s; }
+[data-lux] .card:hover { border-color: var(--metal); border-top-color: var(--tc, var(--metal)); transform: translateY(-1px); }
+[data-lux] .card-title { font-family: var(--font-head); font-size: 25px; font-weight: 500; line-height: 1.1; letter-spacing: 0.01em; }
+[data-lux] .card-sub { font-size: 11px; letter-spacing: 0.06em; margin-top: 4px; }
+[data-lux] .stat .v { font-family: var(--font-num); font-weight: 500; font-size: 26px; }
+[data-lux] .stat .l, [data-lux] .prog-line { font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; }
+[data-lux] .prog-line b { font-family: var(--font-num); font-size: 16px; letter-spacing: 0.02em; color: var(--ink); font-weight: 500; }
+[data-lux] .progress { height: 3px; border: 0; border-radius: 0; background: var(--line); }
+[data-lux] .progress span { background: var(--metal); }
+[data-lux] .sevbar { height: 3px; border-radius: 0; }
+[data-lux] .health, [data-lux] .alerts { font-size: 12px; letter-spacing: 0.02em; }
+[data-lux] .dot { width: 6px; height: 6px; }
+[data-lux] .card-foot { border-top: 1px solid var(--line); padding-top: 12px; font-size: 11px; letter-spacing: 0.04em; }
+
+/* Buckets: chapter headings */
+[data-lux] .bucket { gap: 18px; margin-bottom: 18px; }
+[data-lux] .bucket-head { border-bottom: 0; gap: 14px; padding: 0; }
+[data-lux] .bucket-head h2 { font-size: 26px; white-space: nowrap; }
+[data-lux] .bucket-head::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--metal), transparent); order: 9; }
+[data-lux] .bucket-head .small { order: 10; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; }
+[data-lux] .bucket-head .fold { font-size: 10px; color: var(--metal); }
+[data-lux] .bucket-pov .bucket-head { border: 0; }
+
+/* Tables: a ledger */
+[data-lux] th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 500; padding: 12px 12px; border-bottom: 1px solid var(--metal-soft); }
+[data-lux] td { padding: 12px 12px; }
+[data-lux] td b { font-weight: 500; }
+[data-lux] table[data-table="dash"] td:first-child b { font-family: var(--font-head); font-size: 18px; font-weight: 500; }
+[data-lux] tr.click:hover td { background: color-mix(in srgb, var(--metal) 6%, transparent); }
+[data-lux] .status { font-weight: 500; text-transform: uppercase; font-size: 10px; letter-spacing: 0.12em; }
+
+/* Feed */
+[data-lux] .feed li { padding: 12px 18px; }
+[data-lux] .feed .t b { font-weight: 500; }
+[data-lux] .feed .icon { font-size: 11px; }
+
+/* Opportunity page */
+[data-lux] .opp-head h1 { font-size: 40px; }
+[data-lux] .meta { font-size: 12px; letter-spacing: 0.04em; }
+[data-lux] .stagebar { border-radius: 0; border-color: var(--line); }
+[data-lux] .stagebar button { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; padding: 11px 6px; background: transparent; }
+[data-lux] .stagebar button.done { background: color-mix(in srgb, var(--metal) 10%, transparent); }
+[data-lux] .stagebar button.current { background: var(--ink); color: var(--bg); }
+[data-lux] .tabs { gap: 6px; }
+[data-lux] .tabs button { font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; padding: 12px 14px; }
+[data-lux] .tabs button[aria-selected="true"] { border-bottom-color: var(--metal); font-weight: 500; }
+[data-lux] .item { border-radius: 0; }
+[data-lux] .caps fieldset { border-radius: 0; }
+[data-lux] .avatar { background: transparent; color: var(--metal); border: 1px solid var(--metal); font-family: var(--font-head); font-size: 13px; font-weight: 500; }
+[data-lux] .hero-empty { border-radius: 0; border: 1px solid var(--line); padding: 72px 32px; }
+[data-lux] .hero-empty h1 { font-size: 44px; }
+[data-lux] .look { border-radius: 0; }
+[data-lux] .dialog { border-radius: 0; border-color: var(--metal-soft); }
+[data-lux] .dialog h2 { font-size: 28px; }
+[data-lux] .toast { border-radius: 0; letter-spacing: 0.04em; }
+
+/* Sign-in: the house's front door */
+[data-lux] .login { background: var(--nav-bg); }
+[data-lux] .login .panel { border-radius: 0; padding: 48px 40px; background: var(--panel); border: 1px solid var(--metal); box-shadow: inset 0 0 0 6px var(--panel), inset 0 0 0 7px color-mix(in srgb, var(--metal) 50%, transparent); }
+[data-lux] .login .brand { padding: 0; color: var(--ink); }
+[data-lux] .login h1 { font-size: 26px !important; letter-spacing: 0.3em; text-transform: uppercase; }
+
+/* ——— Each house's own detail ——— */
+/* Maison: saddle stitching just inside every card and panel, a leather grain on the menu */
+[data-look="maison"] .card::after, [data-look="maison"] .kpis::after { content: ''; position: absolute; inset: 5px; border: 1px dashed color-mix(in srgb, var(--metal) 38%, transparent); pointer-events: none; }
+[data-look="maison"] .kpis { position: relative; }
+[data-look="maison"] .nav, [data-look="maison"] .login {
+  background-color: var(--nav-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.55 0 0 0 0 0.4 0 0 0 0 0.25 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+[data-look="maison"] .nav::after { content: ''; position: absolute; top: 0; bottom: 0; right: 6px; border-right: 1px dashed color-mix(in srgb, var(--metal) 55%, transparent); pointer-events: none; }
+
+/* Calibre: guilloché on the menu and the door, hobnail on the figures band */
+[data-look="calibre"] .nav, [data-look="calibre"] .login {
+  background-color: var(--nav-bg);
+  background-image: repeating-radial-gradient(circle at 0% 100%, transparent 0 3px, rgba(255, 255, 255, 0.035) 3px 4px), repeating-radial-gradient(circle at 100% 0%, transparent 0 5px, rgba(255, 255, 255, 0.025) 5px 6px);
+}
+[data-look="calibre"] .kpis { background-image: repeating-linear-gradient(45deg, transparent 0 7px, color-mix(in srgb, var(--metal) 9%, transparent) 7px 8px), repeating-linear-gradient(-45deg, transparent 0 7px, color-mix(in srgb, var(--metal) 9%, transparent) 7px 8px); background-color: var(--panel); }
+[data-look="calibre"] .card { border-top-width: 1px; box-shadow: inset 0 2px 0 var(--panel), inset 0 3px 0 var(--tc, var(--metal)); }
+[data-look="calibre"] .kpi .value, [data-look="calibre"] .stat .v { font-variant-numeric: lining-nums tabular-nums; }
+
+/* Joaillier: double gold filets, a crimson case */
+[data-look="joaillier"] .card, [data-look="joaillier"] .panel, [data-look="joaillier"] .kpis { box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 5px color-mix(in srgb, var(--metal) 45%, transparent); }
+[data-look="joaillier"] .card { border-top: 1px solid var(--line); }
+[data-look="joaillier"] .card::before { content: ''; position: absolute; top: -1px; left: 50%; width: 9px; height: 9px; background: var(--tc, var(--metal)); transform: translate(-50%, -50%) rotate(45deg); }
+[data-look="joaillier"] .nav { box-shadow: inset -1px 0 0 var(--metal), inset -6px 0 0 var(--nav-bg), inset -7px 0 0 color-mix(in srgb, var(--metal) 55%, transparent); }
+[data-look="joaillier"] .login { background: radial-gradient(ellipse at center, #7a1626 0%, var(--nav-bg) 70%); }
+
+/* Hypercar: carbon weave, a two-tone split, machined capitals */
+[data-look="hypercar"] .nav, [data-look="hypercar"] .login {
+  background-color: var(--nav-bg);
+  background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.035) 75%), linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.035) 75%);
+  background-size: 8px 8px; background-position: 0 0, 4px 4px;
+}
+[data-look="hypercar"] h1, [data-look="hypercar"] h2, [data-look="hypercar"] .brand, [data-look="hypercar"] .card-title { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 400; }
+[data-look="hypercar"] h1 { font-size: 26px; } [data-look="hypercar"] .opp-head h1 { font-size: 28px; } [data-look="hypercar"] .hero-empty h1 { font-size: 30px; }
+[data-look="hypercar"] h2, [data-look="hypercar"] .bucket-head h2 { font-size: 16px; }
+[data-look="hypercar"] .brand { font-size: 14px; letter-spacing: 0.22em; }
+[data-look="hypercar"] .card-title { font-size: 17px; }
+[data-look="hypercar"] .kpi .value { font-size: 22px; letter-spacing: 0.02em; }
+[data-look="hypercar"] .stat .v { font-size: 19px; }
+[data-look="hypercar"] .pipeline b { font-size: 22px; }
+[data-look="hypercar"] .card { border-top: 0; }
+[data-look="hypercar"] .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent) 0 62%, var(--ink) 62% 100%); }
+[data-look="hypercar"] .card .progress span, [data-look="hypercar"] .progress span { background: var(--accent); }
+[data-look="hypercar"] .kpis { background-image: linear-gradient(180deg, color-mix(in srgb, var(--metal) 10%, transparent), transparent 60%); }
+
+@media (max-width: 820px) {
+  [data-lux] main { padding: 20px 16px 60px; }
+  [data-lux] .topbar { padding: 10px 16px; }
+  [data-lux] h1 { font-size: 28px; }
+  [data-lux] .opp-head h1 { font-size: 30px; }
+  [data-lux] .kpi { border-bottom: 1px solid var(--line); }
+}
+
+/* Figures in lining numerals (Cormorant's old-style "1" reads as "I"), kept on one line */
+[data-lux] .kpi .value, [data-lux] .stat .v, [data-lux] .pipeline b, [data-lux] .prog-line b, [data-lux] td.n, [data-lux] .card-title { font-variant-numeric: lining-nums tabular-nums; }
+[data-lux] .kpi .value { white-space: nowrap; font-size: clamp(22px, 2.1vw, 32px); }
+/* The wordmark wraps inside the menu and the door */
+[data-lux] .brand { letter-spacing: 0.24em; overflow-wrap: anywhere; font-size: 18px; }
+[data-lux] .login h1 { letter-spacing: 0.22em; overflow-wrap: anywhere; font-size: 24px !important; }
+/* Brass, not the tenant colour, crowns a card (the tenant keeps its small chip) */
+[data-look="maison"] .card, [data-look="joaillier"] .card, [data-look="calibre"] .card { border-top-color: var(--metal); --tc: var(--metal); }
+[data-look="maison"] .card:hover { border-top-color: var(--metal); }
+.proof summary { cursor: pointer; color: var(--muted); }
+.proof > div { margin-top: 4px; }
+.success-banner { margin-bottom: 16px; border-color: var(--metal) !important; }

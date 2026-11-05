@@ -14,7 +14,8 @@ import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, prog
 import { Monitor } from './monitor.js';
 import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
-import { eventsOf, scanLog, SCAN_WINDOW_DAYS } from './collector.js';
+import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
+import { finalDeck } from './deck.js';
 import { CxClient } from './cxone/client.js';
 import { deriveConnection, publicConnection, scrubText } from './cxone/endpoints.js';
 import { tenantColours } from '../public/tenant-colour.js';
@@ -27,7 +28,7 @@ const MAX_BODY = 512 * 1024;
 const DAY = 86_400_000;
 const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']);
 const POLLED_STAGES = new Set(['pov']);
-const DEFAULT_SETTINGS = { orgName: 'CommandCenter', refreshMinutes: 10, defaultTheme: 'command', defaultMode: 'auto', weeklyDrafts: true };
+const DEFAULT_SETTINGS = { orgName: 'Command Center', refreshMinutes: 10, defaultTheme: 'maison', defaultMode: 'auto', weeklyDrafts: true };
 
 export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true' } = {}) {
   const db = new Db(dataDir);
@@ -76,7 +77,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const out = {};
     for (const c of opp.criteria ?? []) {
       const cap = c.capabilityId ? catalog.get(c.capabilityId) : null;
-      const rule = cap ? { detect: { ...cap.detect, keywords: [...(cap.detect.keywords ?? []), ...(c.keywords ?? [])] } } : { detect: { keywords: c.keywords ?? [] } };
+      const own = { engines: c.engines ?? [], origins: c.origins ?? [], keywords: c.keywords ?? [] };
+      const rule = { detect: cap ? { ...cap.detect, engines: [...(cap.detect.engines ?? []), ...own.engines], origins: [...(cap.detect.origins ?? []), ...own.origins], keywords: [...(cap.detect.keywords ?? []), ...own.keywords] } : own };
       out[c.id] = evaluate(rule, facts, words);
     }
     return out;
@@ -122,6 +124,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       name: opp.name,
       customer: opp.customer,
       stage: opp.stage,
+      povResult: opp.povResult ?? '',
       colour,
       owner: owner ? { id: owner.id, name: owner.name, role: owner.role } : { id: opp.ownerId, name: 'Former member' },
       managers: users.chain(opp.ownerId).map((m) => ({ id: m.id, name: m.name })),
@@ -168,6 +171,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       last7d: sum((s) => s.last7d),
       critical: sum((s) => s.findings?.critical),
       high: sum((s) => s.findings?.high),
+      usersActive: live.some((r) => r.live.summary.users?.total != null) ? sum((s) => s.users?.active ?? 0) : null,
+      usersTotal: live.some((r) => r.live.summary.users?.total != null) ? sum((s) => s.users?.total ?? 0) : null,
       creditsAvailable: live.some((r) => r.live.summary.credits?.available != null) ? sum((s) => s.credits?.available) : null,
       creditsUsed30d: live.some((r) => r.live.summary.credits?.used30d != null) ? sum((s) => s.credits?.used30d) : null,
       criteriaMet: rows.reduce((n, r) => n + r.progress.met, 0),
@@ -201,7 +206,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const projects = (snap?.projects?.list ?? []).map((p) => ({ ...p, findings: byProject[p.id] ?? null, lastScan: lastScan.get(p.id) ?? null, credits: credits.get(p.id) ?? null, muted: (opp.mute?.projects ?? []).includes(p.id) }));
     const ids = new Set([opp.ownerId, ...(opp.history ?? []).map((h) => h.by), ...(opp.notes ?? []).map((n) => n.by), ...(opp.criteria ?? []).map((c) => c.confirmedBy)].filter(Boolean));
     return {
-      opportunity: publicOpp(opp),
+      opportunity: publicOpp(placed(opp)),
       row: row(opp, now),
       canEdit: opps.canEdit(viewer, opp, fullSettings()),
       people: Object.fromEntries([...ids].map((id) => [id, users.get(id)?.name ?? 'Former member'])),
@@ -217,6 +222,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
             ai: snap.ai,
             errors: snap.errors,
             events: eventsOf(snap, { povId: opp.id }),
+            people: peopleActivity(snap, now),
             history: monitor.history(opp.id),
           }
         : null,
@@ -265,10 +271,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const need = (user, permission) => {
     if (!users.can(user, permission, fullSettings())) throw fail(403, `Your role may not do that (${PERMISSIONS[permission]}).`);
   };
+  // A criterion sits in its capability's current group (catalogue groups can move).
+  const placed = (opp) => ({ ...opp, criteria: (opp.criteria ?? []).map((c) => ({ ...c, category: (c.capabilityId && catalog.get(c.capabilityId)?.category) || c.category })) });
   const viewOpp = (user, id) => {
     const opp = opps.get(id);
     if (!opp || !opps.canView(user, opp)) throw fail(404, 'No such opportunity.');
-    return opp;
+    return placed(opp);
   };
 
   async function api(req, res, url) {
@@ -296,7 +304,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie('', 0) });
     }
     if (route === 'GET /meta') {
-      return send(res, 200, { stages: STAGES, criterionStatus: CRITERION_STATUS, sessionTypes: SESSION_TYPES, categories: CATEGORIES, roles: Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.label])), permissions: PERMISSIONS, templates: TEMPLATES, themes: THEMES, scanWindowDays: SCAN_WINDOW_DAYS });
+      return send(res, 200, { stages: STAGES, criterionStatus: CRITERION_STATUS, sessionTypes: SESSION_TYPES, categories: catalog.categories(), roles: Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.label])), permissions: PERMISSIONS, templates: TEMPLATES, themes: THEMES, scanWindowDays: SCAN_WINDOW_DAYS });
     }
     if (route === 'PATCH /me') return send(res, 200, { user: users.update(user, user.id, await readBody(req)) });
     if (route === 'POST /me/password') {
@@ -380,7 +388,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
 
     // Capability catalogue
-    if (route === 'GET /catalog') return send(res, 200, { catalog: catalog.list(), categories: CATEGORIES });
+    if (route === 'GET /catalog') return send(res, 200, { catalog: catalog.list(), categories: catalog.categories() });
     if (route === 'POST /catalog') {
       need(user, 'catalog.manage');
       return send(res, 200, { capability: catalog.save(await readBody(req)) });
@@ -437,7 +445,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!sub && m === 'GET') return send(res, 200, detail(user, viewOpp(user, id)));
       if (!sub && m === 'PATCH') {
         const opp = opps.update(user, id, await readBody(req), s);
-        if (opp.tenant && POLLED_STAGES.has(opp.stage)) monitor.refresh(id).catch(() => {});
+        // A running POV is read now; one that just completed gets a final read for its report and deck.
+        if (opp.tenant && (POLLED_STAGES.has(opp.stage) || opp.stage === 'completed')) monitor.refresh(id, { force: true }).catch(() => {});
         return done(opp);
       }
       if (!sub && m === 'DELETE') {
@@ -483,9 +492,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         opps.removeItem(user, id, sub, parts[3], s);
         return done();
       }
+      if (sub === 'deck' && m === 'GET') {
+        const opp = viewOpp(user, id);
+        return file(res, `${opp.customer} - POV results.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', await deckOf(opp));
+      }
       if (sub === 'report' && m === 'GET') {
         const opp = viewOpp(user, id);
-        const html = successReport(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(id) : null, evidence: evidenceOf(opp), org: settings().orgName });
+        const html = successReport(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(id) : null, evidence: evidenceOf(opp), org: settings().orgName, categories: catalog.categories() });
         if (url.searchParams.get('download')) return file(res, `${opp.customer} POV success criteria.html`, 'text/html; charset=utf-8', html);
         return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:" });
       }
@@ -503,12 +516,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const b = await readBody(req);
         const msg = cleanMessage(b);
         let messageId;
+        const attachments = b.attachDeck ? [{ filename: `${opp.customer} - POV results.pptx`, content: await deckOf(opp) }] : [];
         try {
-          messageId = await mailer.send(msg, { replyTo: user.email });
+          messageId = await mailer.send(msg, { replyTo: user.email, attachments });
         } catch (error) {
           throw fail(error.status ?? 502, `The email was not sent: ${scrubText(error.message)}`);
         }
-        mailer.record({ oppId: id, by: user.id, status: 'sent', template: text(b.template, 20), ...msg, messageId });
+        mailer.record({ oppId: id, by: user.id, status: 'sent', template: text(b.template, 20), ...msg, messageId, attachments: attachments.map((a) => a.filename) });
         opps.mutate({ ...user, role: 'admin' }, id, s, (o) => (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Emailed "${msg.subject}" to ${msg.to.join(', ')}` }));
         return done();
       }
@@ -516,8 +530,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const opp = viewOpp(user, id);
         const b = await readBody(req);
         const msg = cleanMessage(b);
-        mailer.record({ oppId: id, by: user.id, status: 'downloaded', template: text(b.template, 20), ...msg });
-        return file(res, `${opp.customer} - ${msg.subject}.eml`.slice(0, 120), 'message/rfc822', await toEml(msg, user.email));
+        const attachments = b.attachDeck ? [{ filename: `${opp.customer} - POV results.pptx`, content: await deckOf(opp) }] : [];
+        mailer.record({ oppId: id, by: user.id, status: 'downloaded', template: text(b.template, 20), ...msg, attachments: attachments.map((a) => a.filename) });
+        return file(res, `${opp.customer} - ${msg.subject}.eml`.slice(0, 120), 'message/rfc822', await toEml(msg, user.email, attachments));
       }
       if (sub === 'logs' && parts[3] && parts[4] && m === 'GET') {
         const opp = viewOpp(user, id);
@@ -532,6 +547,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
     }
     return send(res, 404, { error: 'Not found.' });
+  }
+
+  function deckOf(opp) {
+    const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
+    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName });
   }
 
   /** One text file: the tenant's read, every failed scan of the last 7 days and each failed engine's log. */

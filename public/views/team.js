@@ -17,7 +17,7 @@ export async function renderTeam(main, { crumbs }) {
       ${can('users.manage') && n.id !== state.session.user.id ? `<button class="btn sm" data-edit-user="${esc(n.id)}">Edit</button>` : ''}
     </div>${n.reports?.length ? `<ul class="tree">${n.reports.map(node).join('')}</ul>` : ''}</li>`;
   };
-  main.innerHTML = `<div class="toolbar"><span class="muted">Everyone sees their own work and everything below them. Click “View work” to open the command center for one person and their team.</span><span class="spacer"></span>${can('users.manage') ? '<button class="btn primary" data-act="add-user">＋ Add person</button>' : ''}</div>
+  main.innerHTML = `<div class="toolbar"><span class="muted">Everyone sees their own work and everything below them. Click “View work” to open the command center for one person and their team.</span><span class="spacer"></span>${can('users.manage') ? '<button class="btn primary" data-act="add-user">Add person</button>' : ''}</div>
     <section class="panel"><div class="body"><ul class="tree">${state.tree.map(node).join('')}</ul></div></section>`;
   main.querySelector('[data-act="add-user"]')?.addEventListener('click', () => editUser(null));
   for (const b of main.querySelectorAll('[data-edit-user]')) b.addEventListener('click', () => editUser(state.users.find((u) => u.id === b.dataset.editUser)));

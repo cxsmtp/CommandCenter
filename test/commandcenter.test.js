@@ -206,3 +206,42 @@ test('a draft never invents a recipient', () => {
 test('a tenant that cannot be reached fails the read with its reason', async () => {
   await assert.rejects(collect(deriveConnection(apiKeyFor(mock.origin, 'revoked'))), /rejected the API key/);
 });
+
+test('people in the tenant: IAM users and sign-ins joined with who scanned', async () => {
+  const { peopleActivity } = await import('../src/collector.js');
+  const now = Date.now();
+  const iso = (h) => new Date(now - h * 3600e3).toISOString();
+  const p = peopleActivity({
+    people: { users: [{ id: '1', username: 'ana@c.com', email: 'ana@c.com', name: 'Ana', logins7d: 3, lastLoginAt: iso(5) }, { id: '2', username: 'bo@c.com', email: 'bo@c.com', name: 'Bo', logins7d: 0, lastLoginAt: null }, { id: '3', username: 'cy@c.com', email: 'cy@c.com', name: 'Cy', logins7d: 1, lastLoginAt: iso(100) }], eventsKnown: true },
+    scans: [{ initiator: 'ana@c.com', createdAt: iso(1) }, { initiator: 'jenkins-ci', createdAt: iso(2) }],
+    active: [],
+  }, now);
+  assert.equal(p.total, 3);
+  assert.deepEqual(p.users.map((u) => [u.username, u.status]), [['ana@c.com', 'active'], ['jenkins-ci', 'active'], ['cy@c.com', 'quiet'], ['bo@c.com', 'never']]);
+  assert.equal(p.users.find((u) => u.username === 'jenkins-ci').inIam, false);
+  const denied = peopleActivity({ people: { users: [], denied: true }, scans: [{ initiator: 'x@c.com', createdAt: iso(1) }] }, now);
+  assert.equal(denied.iamRead, false);
+  assert.equal(denied.users.length, 1);
+});
+
+test('the tenant’s people are read from IAM; a POV marked successful gets its deck', async () => {
+  const d = (await call('se1', `/api/opportunities/${ids.alpha}`)).body;
+  assert.equal(d.tenant.people.iamRead, true);
+  assert.ok(d.tenant.people.users.some((u) => u.inIam && u.logins7d > 0));
+  const r = await call('se1', `/api/opportunities/${ids.alpha}`, { method: 'PATCH', body: { stage: 'completed', povResult: 'successful' } });
+  assert.equal(r.body.opportunity.povResult, 'successful');
+  const deck = await fetch(`${base}/api/opportunities/${ids.alpha}/deck`, { headers: { Cookie: jar.get('tl') } });
+  assert.equal(deck.status, 200);
+  const buf = Buffer.from(await deck.arrayBuffer());
+  assert.equal(buf.subarray(0, 2).toString(), 'PK', 'a .pptx (zip)');
+  const draftBody = (await call('se1', `/api/opportunities/${ids.alpha}/email/draft`, { method: 'POST', body: { template: 'completion' } })).body;
+  const eml = await call('se1', `/api/opportunities/${ids.alpha}/email/eml`, { method: 'POST', body: { ...draftBody, attachDeck: true }, raw: true });
+  assert.match(eml.body, /POV results\.pptx/);
+});
+
+test('a custom criterion can name its own engine', async () => {
+  const r = await call('se1', `/api/opportunities/${ids.alpha}/criteria`, { method: 'POST', body: { title: 'AI Red Teaming', engines: 'sca', keywords: 'red team' } });
+  const c = r.body.opportunity.criteria.find((x) => x.title === 'AI Red Teaming');
+  assert.deepEqual(c.engines, ['sca']);
+  assert.equal(r.body.evidence[c.id].level, 'detected');
+});

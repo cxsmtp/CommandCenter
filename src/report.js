@@ -7,11 +7,11 @@ import { CATEGORIES } from './catalog.js';
 import { CRITERION_STATUS, SESSION_TYPES, STAGES, progressOf } from './opportunities.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const catLabel = Object.fromEntries(CATEGORIES);
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const COLOR = { met: '#2f8a4c', not_met: '#c2362f', in_progress: '#b7791f', not_started: '#8a8f96', na: '#8a8f96' };
 
-export function successReport(opp, { owner, live, evidence = {}, org = 'CommandCenter' }) {
+export function successReport(opp, { owner, live, evidence = {}, org = 'Command Center', categories = CATEGORIES }) {
+  const catLabel = Object.fromEntries([...categories, ['custom', 'Other']]);
   const p = progressOf(opp);
   const groups = new Map();
   for (const c of opp.criteria ?? []) {

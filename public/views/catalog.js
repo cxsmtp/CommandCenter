@@ -15,13 +15,13 @@ export async function renderCatalog(main, { crumbs }) {
   crumbs('<h2 style="font-size:16px">Capabilities & Checkmarx One mapping</h2>');
   const { catalog, categories } = await getCatalog(true);
   const editable = can('catalog.manage');
-  main.innerHTML = `<div class="toolbar"><span class="muted">The success criteria an SE can pick, the name each has in Checkmarx One, and what in the tenant proves it was tested. Edit a mapping when Checkmarx One names something differently.</span><span class="spacer"></span>${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">＋ Capability</button>' : ''}</div>
+  main.innerHTML = `<div class="toolbar"><span class="muted">The success criteria an SE can pick, the name each has in Checkmarx One, and what in the tenant proves it was tested. Edit a mapping when Checkmarx One names something differently.</span><span class="spacer"></span>${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">Capability</button>' : ''}</div>
   ${categories
     .map(([key, label]) => {
       const list = catalog.filter((c) => c.category === key);
       if (!list.length) return '';
       return `<section class="panel" style="margin-bottom:14px"><div class="head"><h3>${esc(label)}</h3><span class="small muted">${list.length}</span></div><div class="table-wrap"><table><thead><tr><th>Capability</th><th>In Checkmarx One</th><th>Recognised by</th>${editable ? '<th></th>' : ''}</tr></thead><tbody>${list
-        .map((c) => `<tr><td><b>${esc(c.name)}</b>${c.description ? `<div class="small muted">${esc(c.description)}</div>` : ''}</td><td>${esc(c.cxName)}</td><td class="small">${RULES.filter(([k]) => c.detect?.[k]?.length).map(([k, l]) => `<div><span class="muted">${esc(l)}:</span> ${esc(c.detect[k].join(', '))}</div>`).join('') || '<span class="muted">Confirmed by hand</span>'}</td>${editable ? `<td><button class="btn sm" data-edit="${esc(c.id)}">Edit</button></td>` : ''}</tr>`)
+        .map((c) => `<tr><td><b>${esc(c.name)}</b> ${c.isNew ? '<span class="badge accent">New</span>' : ''}${c.proof ? `<div class="small muted"><b>Show:</b> ${esc(c.proof)}</div>` : ''}</td><td>${esc(c.cxName)}${c.tech ? `<div class="small muted" style="margin-top:4px"><b>How it is checked:</b> ${esc(c.tech)}</div>` : ''}</td><td class="small">${RULES.filter(([k]) => c.detect?.[k]?.length).map(([k, l]) => `<div><span class="muted">${esc(l)}:</span> ${esc(c.detect[k].join(', '))}</div>`).join('') || '<span class="muted">Confirmed by hand</span>'}</td>${editable ? `<td><button class="btn sm" data-edit="${esc(c.id)}">Edit</button></td>` : ''}</tr>`)
         .join('')}</tbody></table></div></section>`;
     })
     .join('')}`;
@@ -38,7 +38,10 @@ function edit(c, categories) {
     `<form id="capForm"><h2>${c ? 'Edit capability' : 'New capability'}</h2>
       <div class="row"><label class="field">Name<input name="name" value="${esc(c?.name ?? '')}" required></label><label class="field">Category<select name="category">${categories.map(([k, l]) => `<option value="${k}" ${c?.category === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>
       <label class="field">Name in Checkmarx One<input name="cxName" value="${esc(c?.cxName ?? '')}"></label>
-      <label class="field">Description<textarea name="description" rows="2">${esc(c?.description ?? '')}</textarea></label>
+      <label class="field">Or a new group<input name="newGroup" placeholder="e.g. Runtime Security"></label>
+      <label class="field">What the SE shows the customer to mark it met<textarea name="proof" rows="2">${esc(c?.proof ?? '')}</textarea></label>
+      <label class="field">How CommandCenter checks it (technical detail)<textarea name="tech" rows="2">${esc(c?.tech ?? '')}</textarea></label>
+      <label class="check"><input type="checkbox" name="isNew" ${c?.isNew ? 'checked' : ''}> Mark as new</label>
       <h3>Recognised by (comma separated)</h3>
       ${RULES.map(([k, l, ph]) => `<label class="field">${esc(l)}<input name="${k}" value="${esc((c?.detect?.[k] ?? []).join(', '))}" placeholder="${esc(ph)}"></label>`).join('')}
       <p class="form-error" id="capErr" role="alert"></p>
@@ -59,7 +62,7 @@ function edit(c, categories) {
           const b = formData(e.target);
           const detect = Object.fromEntries(RULES.map(([k]) => [k, b[k]]));
           try {
-            await api('/catalog', { method: 'POST', body: { id: c?.id, name: b.name, category: b.category, cxName: b.cxName, description: b.description, detect } });
+            await api('/catalog', { method: 'POST', body: { id: c?.id, name: b.name, category: b.category, newGroup: b.newGroup, cxName: b.cxName, proof: b.proof, tech: b.tech, isNew: b.isNew, detect } });
             closeDialog('ok');
             document.dispatchEvent(new CustomEvent('cc:rerender'));
           } catch (error) {

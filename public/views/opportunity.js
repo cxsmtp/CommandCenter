@@ -30,7 +30,7 @@ export async function renderOpportunity(main, id, tab, { crumbs }) {
   main.innerHTML = `
     <div class="opp-head">
       <div>
-        <h1>${esc(o.customer)} ${stageBadge(o.stage)} ${daysBadge(r)} ${r.muted ? '<span class="badge">🔕 muted</span>' : ''}</h1>
+        <h1>${esc(o.customer)} ${stageBadge(o.stage)} ${daysBadge(r)} ${r.muted ? '<span class="badge">Muted</span>' : ''}</h1>
         <div class="meta">
           ${o.name !== o.customer ? `<span>${esc(o.name)}</span>` : ''}
           <span>SE <b>${esc(r.owner.name)}</b>${r.managers.length ? ` → ${r.managers.map((m) => esc(m.name)).join(' → ')}` : ''}</span>
@@ -52,6 +52,11 @@ export async function renderOpportunity(main, id, tab, { crumbs }) {
     b.addEventListener('click', async () => {
       if (b.dataset.stage === o.stage) return;
       let outcomeReason;
+      if (b.dataset.stage === 'completed') {
+        const result = await askResult();
+        if (!result) return;
+        return save({ stage: 'completed', povResult: result }, result === 'successful' ? 'POV marked successful' : 'POV completed');
+      }
       if (['won', 'lost'].includes(b.dataset.stage)) {
         outcomeReason = prompt(`Why was it ${b.dataset.stage}? (optional)`);
         if (outcomeReason === null) return;
@@ -89,8 +94,11 @@ function overview(d) {
   const s = r.live?.summary;
   const openTasks = (o.tasks ?? []).filter((t) => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
   const notes = [...(o.notes ?? [])].sort((a, b) => (b.pinned - a.pinned) || b.at.localeCompare(a.at)).slice(0, 4);
-  return `<div class="layout"><div class="stack">
-    ${r.alerts.length ? `<section class="panel"><div class="head"><h3>Needs attention</h3>${r.muted ? '<span class="badge">🔕 muted</span>' : ''}</div><div class="body">${alertList(r.alerts, r.muted)}</div></section>` : ''}
+  const success = o.povResult === 'successful';
+  return `${success ? `<section class="panel success-banner"><div class="body row center"><div style="flex:1;min-width:260px"><div class="small muted" style="text-transform:uppercase;letter-spacing:.18em">The POV was successful</div><h2 style="margin-top:4px">Share the final presentation</h2><div class="small muted">${r.progress.met} of ${r.progress.total} criteria met. The deck is made from the criteria, the sessions and what Checkmarx One showed.</div></div><button class="btn" data-act="deck">Download presentation</button>${current.canEdit ? '<button class="btn primary" data-act="share-deck">Email it to the stakeholders</button>' : ''}</div></section>` : ''}
+  ${o.stage === 'completed' && !o.povResult && current.canEdit ? '<section class="panel"><div class="body row center"><span style="flex:1">The POV is complete. Was it successful?</span><button class="btn primary" data-result="successful">Successful</button><button class="btn" data-result="unsuccessful">Not successful</button></div></section>' : ''}
+  <div class="layout"><div class="stack">
+    ${r.alerts.length ? `<section class="panel"><div class="head"><h3>Needs attention</h3>${r.muted ? '<span class="badge">Muted</span>' : ''}</div><div class="body">${alertList(r.alerts, r.muted)}</div></section>` : ''}
     <section class="panel"><div class="head"><h3>Success criteria</h3><a href="#/opp/${esc(o.id)}/criteria" class="small">Open</a></div><div class="body">
       ${r.progress.total ? progressBar(r.progress) : '<span class="muted">None yet. Add what the customer wants to see.</span>'}
       ${r.progress.total ? `<div class="row small" style="margin-top:10px">${Object.entries(state.meta.criterionStatus).map(([k, label]) => `<span class="badge"><span class="status ${k}">${(o.criteria ?? []).filter((c) => c.status === k).length}</span> ${esc(label)}</span>`).join('')}</div>` : ''}
@@ -106,7 +114,7 @@ function overview(d) {
     </div></section>
   </div><div class="stack">
     <section class="panel"><div class="head"><h3>Next tasks</h3><a href="#/opp/${esc(o.id)}/notes" class="small">All</a></div><div class="body list">${openTasks.slice(0, 6).map((t) => `<div class="row center"><span class="${t.due && t.due < new Date().toISOString().slice(0, 10) ? 'bad-t' : ''}">${esc(t.title)}</span><span class="spacer"></span><span class="small muted">${t.due ? day(t.due) : ''}</span></div>`).join('') || '<span class="muted">Nothing open.</span>'}</div></section>
-    <section class="panel"><div class="head"><h3>Latest notes</h3><a href="#/opp/${esc(o.id)}/notes" class="small">All</a></div><div class="body list">${notes.map((n) => `<div class="item"><div class="small muted">${n.pinned ? '📌 ' : ''}${esc(person(n.by))} · ${ago(n.at)}</div><div class="notes-box">${esc(n.text.length > 400 ? `${n.text.slice(0, 400)}…` : n.text)}</div></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></section>
+    <section class="panel"><div class="head"><h3>Latest notes</h3><a href="#/opp/${esc(o.id)}/notes" class="small">All</a></div><div class="body list">${notes.map((n) => `<div class="item"><div class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · ${ago(n.at)}</div><div class="notes-box">${esc(n.text.length > 400 ? `${n.text.slice(0, 400)}…` : n.text)}</div></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></section>
     <section class="panel"><div class="head"><h3>Stakeholders</h3><a href="#/opp/${esc(o.id)}/email" class="small">Manage</a></div><div class="body list">${(o.stakeholders ?? []).map((p) => `<div><b>${esc(p.name)}</b> <span class="small muted">${esc(p.title)} · ${p.side === 'internal' ? 'internal' : 'customer'}</span>${p.email ? `<div class="small"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}</div>`).join('') || '<span class="muted">None yet.</span>'}</div></section>
   </div></div>`;
 }
@@ -140,7 +148,7 @@ function tenant(d) {
     { label: 'Low', n: true, key: (p) => p.findings?.low ?? -1, html: (p) => fmt(p.findings?.low) },
     { label: 'Credits 30d', n: true, key: (p) => p.credits?.credits ?? -1, html: (p) => (p.credits ? `${fmt(Math.round(p.credits.credits * 10) / 10)}${p.credits.triage || p.credits.remediation ? `<div class="small muted">${p.credits.triage} triage · ${p.credits.remediation} fix</div>` : ''}` : '—') },
     { label: 'Created', key: (p) => Date.parse(p.createdAt) || 0, html: (p) => `<span class="small muted">${ago(p.createdAt)}</span>` },
-    { label: 'Alerts', html: (p) => (current.canEdit ? `<button class="btn sm" data-mute-project="${esc(p.id)}">${p.muted ? '🔕 Unmute' : 'Mute'}</button>` : p.muted ? '🔕' : '') },
+    { label: 'Alerts', html: (p) => (current.canEdit ? `<button class="btn sm" data-mute-project="${esc(p.id)}">${p.muted ? 'Unmute' : 'Mute'}</button>` : p.muted ? 'Muted' : '') },
   ];
   const c = t?.credits;
   const ai = t?.ai;
@@ -151,7 +159,7 @@ function tenant(d) {
       <span class="spacer"></span>
       <button class="btn" data-act="refresh">Refresh now</button>
       ${can('tenant.logs') ? '<button class="btn" data-act="bundle" title="Every failed scan of the last 7 days, with its engine logs, in one file">Troubleshooting bundle</button>' : ''}
-      ${current.canEdit ? `<select id="mute" aria-label="Mute alerts"><option value="">${muteUntil ? (muteUntil === 'forever' ? '🔕 Muted until unmuted' : `🔕 Muted until ${when(muteUntil)}`) : '🔔 Alerts on'}</option><option value="off">Unmute</option><option value="1">Mute 1 hour</option><option value="8">Mute 8 hours</option><option value="24">Mute 24 hours</option><option value="168">Mute 7 days</option><option value="forever">Mute until unmuted</option></select>` : ''}
+      ${current.canEdit ? `<select id="mute" aria-label="Mute alerts"><option value="">${muteUntil ? (muteUntil === 'forever' ? 'Muted until unmuted' : `Muted until ${when(muteUntil)}`) : 'Alerts on'}</option><option value="off">Unmute</option><option value="1">Mute 1 hour</option><option value="8">Mute 8 hours</option><option value="24">Mute 24 hours</option><option value="168">Mute 7 days</option><option value="forever">Mute until unmuted</option></select>` : ''}
       ${current.canEdit ? '<button class="btn ghost" data-act="connect">Replace key</button><button class="btn ghost danger" data-act="disconnect">Disconnect</button>' : ''}
     </div>
     ${r.live.error && r.live.health === 'failed' ? `<div class="panel body bad-t" style="margin-bottom:14px">Last read failed ${ago(r.live.error.at)}: ${esc(r.live.error.message)}</div>` : ''}
@@ -180,6 +188,7 @@ function tenant(d) {
       </div></section>
       <section class="panel"><div class="head"><h3>Activity</h3></div>${feed(t?.events ?? [], [d.row], { showOpp: false })}</section>
     </div>
+    ${peopleSection(t?.people)}
     <div class="stack">
       ${t?.active?.length ? `<section class="panel"><div class="head"><h3>Running and queued</h3></div>${table('t-active', scanCols.slice(0, 8), t.active)}</section>` : ''}
       <section class="panel"><div class="head"><h3>Scans · last 7 days</h3><span class="small muted">${(s?.people ?? []).map((p) => `${esc(p.name)} (${p.scans})`).join(', ')}</span></div>${table('t-scans', scanCols, t?.scans ?? [])}</section>
@@ -192,6 +201,33 @@ function tenant(d) {
         { label: 'Other', n: true, key: (x) => x.other, html: (x) => fmt(x.other) },
       ], c.byProject)}</section>` : ''}
     </div>`;
+}
+
+// ——— People in the tenant (IAM) ———
+const PEOPLE_STATUS = { active: ['Active', 'ok'], quiet: ['This week', 'warn'], inactive: ['Inactive', 'bad'], never: ['Never signed in', 'bad'], unknown: ['Not known', ''] };
+function peopleSection(p) {
+  if (!p) return '';
+  const cols = [
+    { label: 'Person', key: (u) => u.name || u.email || u.username, html: (u) => `<b>${esc(u.name || u.email || u.username)}</b>${u.name && (u.email || u.username) ? `<div class="small muted">${esc(u.email || u.username)}</div>` : ''}${u.inIam ? '' : '<div class="small muted">not in IAM (service or CI account)</div>'}` },
+    { label: 'Status', key: (u) => ['active', 'quiet', 'inactive', 'unknown', 'never'].indexOf(u.status), html: (u) => `<span class="badge ${PEOPLE_STATUS[u.status][1]}">${PEOPLE_STATUS[u.status][0]}</span>${u.enabled === false ? ' <span class="badge">disabled</span>' : ''}` },
+    { label: 'Sign-ins 7d', n: true, key: (u) => u.logins7d ?? -1, html: (u) => (u.logins7d === null ? '—' : fmt(u.logins7d)) },
+    { label: 'Scans 7d', n: true, key: (u) => u.scans7d, html: (u) => fmt(u.scans7d) },
+    { label: 'Last active', key: (u) => Date.parse(u.lastActiveAt) || 0, html: (u) => (u.lastActiveAt ? `<span title="${esc(when(u.lastActiveAt))}">${ago(u.lastActiveAt)}</span>` : '—') },
+    { label: 'Account since', key: (u) => Date.parse(u.createdAt) || 0, html: (u) => (u.createdAt ? day(u.createdAt) : '—') },
+  ];
+  const note = !p.iamRead ? 'This key cannot read the tenant’s IAM directory (it needs the IAM “view-users” role), so only the people who started scans are listed.' : !p.eventsKnown ? 'Sign-ins are not known: the tenant’s IAM does not keep login events, or the key may not read them (“view-events”). Activity comes from scans.' : 'From the tenant’s IAM (users and sign-ins) and the scans each person started.';
+  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>People in the tenant</h3><div class="row center small">${p.total !== null ? `<span class="badge">${p.total} users</span>` : ''}<span class="badge ok">${p.active} active</span><span class="badge warn">${p.quiet} this week</span><span class="badge bad">${p.inactive} inactive</span></div></div>
+    <div class="body small muted" style="padding-bottom:0">${esc(note)}</div>${table('t-people', cols, p.users, { empty: 'Nobody yet.' })}</section>`;
+}
+
+async function askResult() {
+  let result = '';
+  await openDialog(`<div class="dbody"><h2>The POV is complete</h2><p class="muted" style="margin:0">Was it successful? A successful POV gets its final presentation, ready to share with the stakeholders.</p><div class="dialog-actions"><button class="btn ghost" data-r="">Cancel</button><button class="btn" data-r="unsuccessful">Not successful</button><button class="btn primary" data-r="successful">Successful</button></div></div>`, {
+    onOpen(d) {
+      for (const b of d.querySelectorAll('[data-r]')) b.addEventListener('click', () => ((result = b.dataset.r), closeDialog()));
+    },
+  });
+  return result;
 }
 
 // ——— Success criteria ———
@@ -211,13 +247,18 @@ function criteria(d) {
   };
   return `<div class="toolbar">
       <div style="min-width:280px;flex:1">${progressBar(d.row.progress)}</div>
-      ${current.canEdit ? '<button class="btn primary" data-act="add-caps">＋ Add from capabilities</button><button class="btn" data-act="add-custom">＋ Custom criterion</button>' : ''}
+      ${current.canEdit ? '<button class="btn primary" data-act="add-caps">Add from capabilities</button><button class="btn" data-act="add-custom">Custom criterion</button>' : ''}
     </div>
     ${groups.size ? [...groups].map(([label, list]) => `<section class="panel" style="margin-bottom:14px"><div class="head"><h3>${esc(label)}</h3><span class="small muted">${list.filter((c) => c.status === 'met').length}/${list.filter((c) => c.status !== 'na').length} met</span></div><div class="body list">${list.map((c) => `
       <div class="item crit">
         <div>
           <div><b>${esc(c.title)}</b> ${c.priority === 'nice' ? '<span class="badge">nice to have</span>' : '<span class="badge accent">must</span>'} ${c.due ? `<span class="badge">${day(c.due)}</span>` : ''}</div>
-          ${c.capabilityId ? `<div class="small muted">Checkmarx One: ${esc(catalog.catalog.find((x) => x.id === c.capabilityId)?.cxName ?? '')}</div>` : ''}
+          ${(() => {
+            const cap = c.capabilityId ? catalog.catalog.find((x) => x.id === c.capabilityId) : null;
+            const own = [...(c.engines ?? []).map((e) => `engine "${e}"`), ...(c.origins ?? []).map((o) => `origin "${o}"`)];
+            return `${cap ? `<div class="small muted">Checkmarx One: ${esc(cap.cxName)} ${cap.isNew ? '<span class="badge accent">New</span>' : ''}</div>` : ''}
+              ${cap?.proof || cap?.tech || own.length ? `<details class="small proof"><summary>How it is proven</summary>${cap?.proof ? `<div><b>Show the customer:</b> ${esc(cap.proof)}</div>` : ''}${cap?.tech ? `<div><b>How CommandCenter checks:</b> ${esc(cap.tech)}</div>` : ''}${own.length ? `<div><b>Also counted for this criterion:</b> ${esc(own.join(', '))}</div>` : ''}</details>` : ''}`;
+          })()}
           ${evLine(c)}
           ${c.notes ? `<div class="small notes-box" style="margin-top:4px">${esc(c.notes)}</div>` : ''}
           ${c.evidenceLink ? `<div class="small"><a href="${esc(c.evidenceLink)}" target="_blank" rel="noopener noreferrer">Evidence ↗</a></div>` : ''}
@@ -270,7 +311,7 @@ function discoveryText(o) {
 // ——— Sessions ———
 function sessions(d) {
   const list = [...(d.opportunity.sessions ?? [])].sort((a, b) => b.date.localeCompare(a.date));
-  return `<div class="toolbar"><span class="muted small">Discovery calls, technical sessions, workshops, checkpoints and the readout.</span><span class="spacer"></span>${current.canEdit ? '<button class="btn primary" data-act="add-session">＋ Session</button>' : ''}</div>
+  return `<div class="toolbar"><span class="muted small">Discovery calls, technical sessions, workshops, checkpoints and the readout.</span><span class="spacer"></span>${current.canEdit ? '<button class="btn primary" data-act="add-session">Session</button>' : ''}</div>
     <div class="list">${list.map((x) => `<div class="item"><div class="top"><div><b>${esc(x.title)}</b> <span class="badge">${esc(state.meta.sessionTypes[x.type] ?? x.type)}</span></div><span class="small muted">${day(x.date)}</span></div>
       ${x.attendees ? `<div class="small muted">${esc(x.attendees)}</div>` : ''}
       ${x.notes ? `<div class="notes-box" style="margin-top:6px">${esc(x.notes)}</div>` : ''}
@@ -286,7 +327,7 @@ function notes(d) {
   const today = new Date().toISOString().slice(0, 10);
   return `<div class="layout"><div class="stack">
     ${current.canEdit ? `<form id="noteForm" class="panel body stack" style="gap:8px"><textarea name="text" rows="3" placeholder="A note: what happened, what was decided, what to remember." required></textarea><div class="row"><label class="check"><input type="checkbox" name="pinned"> Pin</label><span class="spacer"></span><button class="btn primary">Add note</button></div></form>` : ''}
-    <div class="list">${list.map((n) => `<div class="item"><div class="top"><span class="small muted">${n.pinned ? '📌 ' : ''}${esc(person(n.by))} · <span title="${esc(when(n.at))}">${ago(n.at)}</span></span><span class="row"><button class="btn sm" data-copy-note="${esc(n.id)}">Copy</button>${current.canEdit ? `<button class="btn sm" data-pin-note="${esc(n.id)}">${n.pinned ? 'Unpin' : 'Pin'}</button><button class="btn sm ghost danger" data-del-note="${esc(n.id)}">Remove</button>` : ''}</span></div><div class="notes-box">${esc(n.text)}</div></div>`).join('') || '<div class="empty panel">No notes yet.</div>'}</div>
+    <div class="list">${list.map((n) => `<div class="item"><div class="top"><span class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · <span title="${esc(when(n.at))}">${ago(n.at)}</span></span><span class="row"><button class="btn sm" data-copy-note="${esc(n.id)}">Copy</button>${current.canEdit ? `<button class="btn sm" data-pin-note="${esc(n.id)}">${n.pinned ? 'Unpin' : 'Pin'}</button><button class="btn sm ghost danger" data-del-note="${esc(n.id)}">Remove</button>` : ''}</span></div><div class="notes-box">${esc(n.text)}</div></div>`).join('') || '<div class="empty panel">No notes yet.</div>'}</div>
   </div>
   <section class="panel"><div class="head"><h3>Tasks</h3></div><div class="body stack" style="gap:8px">
     ${current.canEdit ? `<form id="taskForm" class="row"><input name="title" placeholder="New task" required style="flex:1;min-width:140px"><input type="date" name="due" aria-label="Due"><button class="btn">Add</button></form>` : ''}
@@ -304,7 +345,7 @@ function email(d) {
     { label: 'Gets emails', key: (p) => p.notify, html: (p) => (p.notify ? '✓' : '—') },
     { label: '', html: (p) => (current.canEdit ? `<button class="btn sm" data-edit-person="${esc(p.id)}">Edit</button> <button class="btn sm ghost danger" data-del-person="${esc(p.id)}">Remove</button>` : '') },
   ];
-  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders</h3>${current.canEdit ? '<button class="btn sm" data-act="add-person">＋ Stakeholder</button>' : ''}</div>${table('people', cols, o.stakeholders ?? [], { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
+  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders</h3>${current.canEdit ? '<button class="btn sm" data-act="add-person">Stakeholder</button>' : ''}</div>${table('people', cols, o.stakeholders ?? [], { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
   <div class="layout"><section class="panel"><div class="head"><h3>Write an email</h3><div class="row center">${Object.entries(state.meta.templates).map(([k, l]) => `<button class="btn sm" data-template="${k}">${esc(l)}</button>`).join('')}</div></div>
     <form id="mailForm" class="body stack" style="gap:8px">
       <input type="hidden" name="template">
@@ -312,6 +353,7 @@ function email(d) {
       <label class="field">Cc<input name="cc"></label>
       <label class="field">Subject<input name="subject"></label>
       <label class="field">Message<textarea name="body" rows="18" class="copy-area"></textarea></label>
+      <label class="check"><input type="checkbox" name="attachDeck" id="attachDeck"> Attach the final presentation (.pptx)</label>
       <div class="row">
         ${can('mail.send') && current.canEdit ? `<button class="btn primary" data-mail="send" ${d.mailConfigured ? '' : 'disabled title="No email server is set up (Settings → Email)"'}>Send</button>` : ''}
         <button class="btn" type="button" data-mail="eml" title="Opens in Outlook or your mail app, ready to send">Download .eml</button>
@@ -328,7 +370,7 @@ function report(d) {
   const o = d.opportunity;
   return `<section class="panel"><div class="body stack">
     <p style="margin:0">The success-criteria report: the answer first, every criterion with its status and evidence, the sessions held and what the tenant showed. It prints to PDF from the browser.</p>
-    <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
+    <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button><button class="btn" data-act="deck">Final presentation (.pptx)</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
     <p class="small muted" style="margin:0">To keep it with the customer's documents, save it as PDF and put it in the SharePoint site${o.sharepointUrl ? '' : ' (add its link under Edit details)'}. Publishing to SharePoint by itself needs a Microsoft Graph app registration; the report layout will follow the formats you supply.</p>
   </div></section>`;
 }
@@ -347,6 +389,9 @@ const on = (root, sel, fn) => $$(sel, root).forEach((el) => el.addEventListener(
 const WIRES = {
   overview(main) {
     on(main, '[data-act="save-summary"]', () => save({ summary: $('#summary').value }));
+    on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
+    on(main, '[data-act="share-deck"]', () => (location.hash = `#/opp/${oid()}/email?completion`));
+    on(main, '[data-result]', (b) => save({ povResult: b.dataset.result }, b.dataset.result === 'successful' ? 'POV marked successful' : 'Saved'));
     on(main, '[data-act="connect"]', connectTenant);
   },
   tenant(main, d) {
@@ -450,6 +495,7 @@ const WIRES = {
       form.cc.value = (m.cc ?? []).join(', ');
       form.subject.value = m.subject ?? '';
       form.body.value = m.body ?? '';
+      form.attachDeck.checked = m.template === 'completion';
     };
     const load = async (template) => {
       const m = await attempt(() => api(`/opportunities/${oid()}/email/draft`, { method: 'POST', body: { template } }));
@@ -458,6 +504,7 @@ const WIRES = {
     on(main, '[data-template]', (b) => load(b.dataset.template));
     on(main, '[data-outbox]', (li) => fill(d.outbox.find((m) => m.id === li.dataset.outbox)));
     if (location.hash.endsWith('?discovery')) load('discovery');
+    if (location.hash.endsWith('?completion')) load('completion');
     const msg = () => formData(form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -481,6 +528,7 @@ const WIRES = {
   },
   report(main) {
     on(main, '[data-act="dl-report"]', () => attempt(() => download(`/opportunities/${oid()}/report?download=1`)));
+    on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
   },
 };
 
@@ -547,8 +595,24 @@ async function addCapabilities() {
     'capsForm',
     'Add success criteria',
     `<p class="muted" style="margin:0">Tick the capabilities the customer wants proven. Each becomes a criterion; CommandCenter looks for its evidence in the tenant and in your notes.</p>
-     <label class="field" style="max-width:220px">Priority<select name="priority"><option value="must">Must have</option><option value="nice">Nice to have</option></select></label>${capabilityPicker(cat, { disabled: have })}`,
-    (b) => api(`/opportunities/${oid()}/criteria/bulk`, { method: 'POST', body: { capabilityIds: (b.capabilities ?? []).filter((x) => !have.includes(x)), priority: b.priority } }),
+     <label class="field" style="max-width:220px">Priority<select name="priority"><option value="must">Must have</option><option value="nice">Nice to have</option></select></label>${capabilityPicker(cat, { disabled: have })}
+     <fieldset class="item"><legend class="small muted">Not in the list? Add an engine or capability</legend>
+       <div class="row"><label class="field">Name<input name="newName" placeholder="e.g. AI Red Teaming"></label><label class="field">Group<select name="newCategory">${cat.categories.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></label></div>
+       <div class="row"><label class="field">Engine name in Checkmarx One scans<input name="newEngines" placeholder="e.g. llm-scanner"></label><label class="field">Keywords<input name="newKeywords" placeholder="e.g. red team, jailbreak"></label></div>
+       <p class="small muted" style="margin:0">${can('catalog.manage') ? 'It is added to the capability catalogue for everyone, and as a criterion here.' : 'It is added as a criterion here, with these rules; ask a manager to add it to the catalogue for everyone.'}</p>
+     </fieldset>`,
+    async (b) => {
+      if (b.newName?.trim()) {
+        if (can('catalog.manage')) {
+          const r = await api('/catalog', { method: 'POST', body: { name: b.newName, category: b.newCategory, cxName: b.newName, detect: { engines: b.newEngines, keywords: b.newKeywords } } });
+          b.capabilities = [...(b.capabilities ?? []), r.capability.id];
+          await getCatalog(true);
+        } else {
+          await api(`/opportunities/${oid()}/criteria`, { method: 'POST', body: { title: b.newName, category: b.newCategory, engines: b.newEngines, keywords: b.newKeywords, priority: b.priority } });
+        }
+      }
+      return api(`/opportunities/${oid()}/criteria/bulk`, { method: 'POST', body: { capabilityIds: (b.capabilities ?? []).filter((x) => !have.includes(x)), priority: b.priority } });
+    },
     { wide: true },
   );
 }
@@ -561,6 +625,7 @@ function editCriterion(c) {
      <div class="row"><label class="field">Priority<select name="priority"><option value="must">Must have</option><option value="nice" ${c?.priority === 'nice' ? 'selected' : ''}>Nice to have</option></select></label>
      <label class="field">Status<select name="status">${Object.entries(state.meta.criterionStatus).map(([k, l]) => `<option value="${k}" ${c?.status === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
      <label class="field">Due<input type="date" name="due" value="${esc(c?.due ?? '')}"></label></div>
+     <div class="row"><label class="field">Engine names that prove it (comma separated)<input name="engines" value="${esc((c?.engines ?? []).join(', '))}" placeholder="e.g. llm-scanner, aibom"></label><label class="field">Scan origins that prove it<input name="origins" value="${esc((c?.origins ?? []).join(', '))}" placeholder="e.g. jenkins, cursor"></label></div>
      <label class="field">Keywords that count as evidence (comma separated)<input name="keywords" value="${esc((c?.keywords ?? []).join(', '))}" placeholder="jira, ticket"></label>
      <label class="field">Notes<textarea name="notes" rows="4">${esc(c?.notes ?? '')}</textarea></label>
      <label class="field">Evidence link (screenshot, document)<input name="evidenceLink" type="url" value="${esc(c?.evidenceLink ?? '')}"></label>`,

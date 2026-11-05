@@ -36,7 +36,12 @@ export function seedTenant(name, { projects = 8, scans = 20, seed = 1 } = {}) {
   const sev = Object.fromEntries(list.map((p) => [p.id, { CRITICAL: Math.floor(rnd() * 4), HIGH: Math.floor(rnd() * 15), MEDIUM: Math.floor(rnd() * 40), LOW: Math.floor(rnd() * 30) }]));
   const items = list.slice(0, 4).map((p) => ({ projectId: p.id, name: p.name, creditsUsed: Math.round(rnd() * 400) / 10, actionsPerformed: { actions: [{ actionType: 'AI_TRIAGE', transactionCount: Math.floor(rnd() * 30) }, { actionType: 'AI_REMEDIATION', transactionCount: Math.floor(rnd() * 8) }] } }));
   const used = Math.round(items.reduce((n, i) => n + i.creditsUsed, 0));
-  return { projects: list, scans: scanList, sev, active: [], credits: { info: { total: 1000, used, available: 1000 - used, enforcement: { state: 'enabled' } }, items } };
+  const users = PEOPLE.filter((p) => p.includes('@')).map((email, i) => ({ id: `${name}-u${i}`, username: email, email, firstName: email.split(/[.@]/)[0].replace(/^./, (c) => c.toUpperCase()), lastName: '', enabled: true, createdTimestamp: now - 20 * 86400e3 }));
+  users.push({ id: `${name}-u9`, username: 'security.architect@customer.com', email: 'security.architect@customer.com', firstName: 'Security', lastName: 'Architect', enabled: true, createdTimestamp: now - 15 * 86400e3 });
+  users.push({ id: `${name}-u10`, username: 'ciso@customer.com', email: 'ciso@customer.com', firstName: 'Chief', lastName: 'Security Officer', enabled: true, createdTimestamp: now - 15 * 86400e3 });
+  const events = users.slice(0, 3).flatMap((u, i) => Array.from({ length: 6 - i * 2 }, (_, k) => ({ type: 'LOGIN', userId: u.id, time: now - (k * 20 + i * 30) * 3600e3 })));
+  events.push({ type: 'LOGIN', userId: `${name}-u9`, time: now - 5 * 86400e3 });
+  return { projects: list, scans: scanList, sev, active: [], users, events, credits: { info: { total: 1000, used, available: 1000 - used, enforcement: { state: 'enabled' } }, items } };
 }
 
 export function startMock({ tenants = {}, port = 0, rejectTenants = [] } = {}) {
@@ -90,6 +95,12 @@ export function startMock({ tenants = {}, port = 0, rejectTenants = [] } = {}) {
         return { scanId, sastCounters: { severityCounters: Object.entries(sev).map(([severity, counter]) => ({ severity, counter })) } };
       });
       return send(200, { scansSummaries, totalCount: scansSummaries.length });
+    }
+    const realm = url.pathname.match(/^\/auth\/admin\/realms\/([^/]+)\/(users|events)$/);
+    if (realm) {
+      if (t.noIam) return send(403, { error: 'forbidden' });
+      if (realm[2] === 'users') return send(200, Number(url.searchParams.get('first') ?? 0) > 0 ? [] : t.users ?? []);
+      return send(200, t.events ?? []);
     }
     if (url.pathname === '/api/credits/info') return t.credits ? send(200, t.credits.info) : send(404, { message: 'not found' });
     if (url.pathname === '/api/credits/consumption') return t.credits ? send(200, { items: t.credits.items, totalPages: 1 }) : send(404, { message: 'not found' });

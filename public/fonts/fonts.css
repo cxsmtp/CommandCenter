@@ -1,0 +1,10 @@
+/* Cormorant Garamond, Jost and Syncopate: SIL Open Font License 1.1 (see OFL.txt). Latin subset. */
+@font-face { font-family: 'Cormorant Garamond'; font-style: italic; font-weight: 400; font-display: swap; src: url('/fonts/CormorantGaramond-400i.woff2') format('woff2'); }
+@font-face { font-family: 'Cormorant Garamond'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/CormorantGaramond-400.woff2') format('woff2'); }
+@font-face { font-family: 'Cormorant Garamond'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/CormorantGaramond-500.woff2') format('woff2'); }
+@font-face { font-family: 'Cormorant Garamond'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/CormorantGaramond-600.woff2') format('woff2'); }
+@font-face { font-family: 'Jost'; font-style: normal; font-weight: 300; font-display: swap; src: url('/fonts/Jost-300.woff2') format('woff2'); }
+@font-face { font-family: 'Jost'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/Jost-400.woff2') format('woff2'); }
+@font-face { font-family: 'Jost'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/Jost-500.woff2') format('woff2'); }
+@font-face { font-family: 'Syncopate'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/Syncopate-400.woff2') format('woff2'); }
+@font-face { font-family: 'Syncopate'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/Syncopate-700.woff2') format('woff2'); }

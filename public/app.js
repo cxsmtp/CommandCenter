@@ -9,12 +9,14 @@ import { openNewOpportunity } from './views/new-opportunity.js';
 const root = $('#root');
 
 // ——— Looks and modes ———
+const LUXE = new Set(['maison', 'calibre', 'joaillier', 'hypercar']);
 const media = matchMedia('(prefers-color-scheme: dark)');
 export function applyLook(prefs = {}) {
   const s = state.session?.settings ?? {};
-  const theme = prefs.theme || s.defaultTheme || 'command';
+  const theme = prefs.theme || s.defaultTheme || 'maison';
   const mode = prefs.mode || s.defaultMode || 'auto';
   document.documentElement.dataset.look = theme;
+  document.documentElement.toggleAttribute('data-lux', LUXE.has(theme));
   document.documentElement.dataset.theme = mode === 'dark' || (mode === 'auto' && media.matches) ? 'dark' : 'light';
   local.set('cc.look', { theme, mode });
 }

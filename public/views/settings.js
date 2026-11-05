@@ -2,6 +2,10 @@
 import { $, $$, esc, api, state, can, attempt, toast, formData } from '../core.js';
 
 const LOOKS = {
+  maison: ['Maison — the leather atelier', ['#f2ebdf', '#2a1c13', '#b08d57']],
+  calibre: ['Calibre — fine watchmaking', ['#f3f1ec', '#0f1a31', '#a98f5f']],
+  joaillier: ['Joaillier — high jewellery', ['#f6efe9', '#5a0f1c', '#b8923e']],
+  hypercar: ['Hypercar — racing blue on carbon', ['#eceff3', '#070a12', '#0b3a8c']],
   command: ['Command', ['#f4f2ec', '#1b1f24', '#0e8a8a']],
   cabin: ['Cabin', ['#f3efe8', '#1c1712', '#a8742a']],
   circuit: ['Circuit', ['#eef0f2', '#121417', '#d7262e']],

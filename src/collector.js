@@ -242,6 +242,99 @@ async function tenantAi(client) {
 }
 
 /**
+ * The tenant's people, from its IAM (the Keycloak admin API behind Checkmarx One, as CxMissionZero's
+ * src/cxone/directory.js reads it): every user, and, where the realm keeps login events and the key may read
+ * them, each user's sign-ins over the last 7 days. Joined with who started scans, this says who is active in the
+ * POV. Null when the key has no IAM read access (an ordinary outcome: the page then says so).
+ */
+async function iamPeople(client, connection, now) {
+  if (!connection?.iamUrl || !connection?.tenant) return null;
+  const base = `${connection.iamUrl}/auth/admin/realms/${encodeURIComponent(connection.tenant)}`;
+  const users = [];
+  for (let first = 0; first < 2000; first += 200) {
+    const page = await quietly(() => client.request(`${base}/users`, { query: { first, max: 200, briefRepresentation: false }, retries: 1 }));
+    if (!page) return first === 0 ? { users: [], denied: true, eventsKnown: false } : { users, denied: false, eventsKnown: false };
+    const batch = Array.isArray(page) ? page : [];
+    for (const u of batch) {
+      users.push({
+        id: text(u.id, 80),
+        username: text(u.username, 200).toLowerCase(),
+        email: text(u.email, 254).toLowerCase(),
+        name: [text(u.firstName, 80), text(u.lastName, 80)].filter(Boolean).join(' '),
+        enabled: u.enabled !== false,
+        createdAt: Number.isFinite(Number(u.createdTimestamp)) ? new Date(Number(u.createdTimestamp)).toISOString() : null,
+      });
+    }
+    if (batch.length < 200) break;
+  }
+  // Sign-ins: only when the realm stores login events and the key may view them.
+  const from = new Date(now - SCAN_WINDOW_DAYS * DAY).toISOString().slice(0, 10);
+  const events = await quietly(() => client.request(`${base}/events`, { query: { type: 'LOGIN', dateFrom: from, max: 2000 }, retries: 1 }));
+  const logins = new Map();
+  if (Array.isArray(events)) {
+    for (const e of events) {
+      const id = text(e?.userId, 80);
+      if (!id) continue;
+      const at = Number(e.time);
+      const cur = logins.get(id) ?? { count: 0, last: 0 };
+      cur.count += 1;
+      if (Number.isFinite(at) && at > cur.last) cur.last = at;
+      logins.set(id, cur);
+    }
+  }
+  for (const u of users) {
+    const l = logins.get(u.id);
+    u.logins7d = Array.isArray(events) ? l?.count ?? 0 : null;
+    u.lastLoginAt = l?.last ? new Date(l.last).toISOString() : null;
+  }
+  return { users, denied: false, eventsKnown: Array.isArray(events) };
+}
+
+/**
+ * Each person's activity in the POV: their IAM account (when readable) joined with the scans they started.
+ * Someone who only appears as a scan initiator (a service account, a CI user) is listed too.
+ * status: active (signed in or scanned in the last 2 days) · quiet (in the last 7) · inactive · never (no sign-in, no scan)
+ */
+export function peopleActivity(snapshot, now = Date.now()) {
+  const iam = snapshot?.people;
+  const byKey = new Map();
+  const keyOf = (v) => String(v ?? '').trim().toLowerCase();
+  for (const u of iam?.users ?? []) {
+    const row = { ...u, scans7d: 0, lastScanAt: null, inIam: true };
+    for (const k of [u.username, u.email]) if (k) byKey.set(keyOf(k), row);
+  }
+  const rows = new Set(byKey.values());
+  for (const s of [...(snapshot?.scans ?? []), ...(snapshot?.active ?? [])]) {
+    const k = keyOf(s.initiator);
+    if (!k) continue;
+    let row = byKey.get(k);
+    if (!row) {
+      row = { id: '', username: k, email: k.includes('@') ? k : '', name: '', enabled: true, createdAt: null, logins7d: null, lastLoginAt: null, scans7d: 0, lastScanAt: null, inIam: false };
+      byKey.set(k, row);
+      rows.add(row);
+    }
+    row.scans7d += 1;
+    if (!row.lastScanAt || Date.parse(s.createdAt) > Date.parse(row.lastScanAt)) row.lastScanAt = s.createdAt;
+  }
+  const list = [...rows].map((r) => {
+    const last = Math.max(Date.parse(r.lastLoginAt ?? '') || 0, Date.parse(r.lastScanAt ?? '') || 0);
+    const status = !last ? (r.logins7d === null && !r.scans7d ? 'unknown' : 'never') : now - last <= 2 * DAY ? 'active' : now - last <= 7 * DAY ? 'quiet' : 'inactive';
+    return { ...r, lastActiveAt: last ? new Date(last).toISOString() : null, status };
+  });
+  const rank = { active: 0, quiet: 1, inactive: 2, unknown: 3, never: 4 };
+  list.sort((a, b) => rank[a.status] - rank[b.status] || (b.scans7d + (b.logins7d ?? 0)) - (a.scans7d + (a.logins7d ?? 0)));
+  return {
+    iamRead: Boolean(iam && !iam.denied),
+    eventsKnown: Boolean(iam?.eventsKnown),
+    users: list,
+    total: iam && !iam.denied ? iam.users.length : null,
+    active: list.filter((r) => r.status === 'active').length,
+    quiet: list.filter((r) => r.status === 'quiet').length,
+    inactive: list.filter((r) => ['inactive', 'never'].includes(r.status)).length,
+  };
+}
+
+/**
  * A scan's log for one engine (GET /api/logs/{scanId}/{engine}): Checkmarx One answers with the text, or with a
  * redirect to a signed address, which fetch follows (the access token is not sent on to another host by fetch).
  */
@@ -276,13 +369,13 @@ export async function collect(connection, { client = new CxClient(connection), n
     part('running', () => activeScans(client), []),
   ]);
   const names = new Map(projects.list.map((p) => [p.id, p.name]));
-  const [creditInfo, ai] = await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null)]);
+  const [creditInfo, ai, people] = await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null)]);
   const findings = projects.list.length ? await part('findings', () => latestFindings(client, projects.list.map((p) => p.id)), null) : { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, byProject: {} };
   // Nothing at all could be read (a rejected key, an unreachable tenant): the read failed.
   if (['projects', 'scans', 'running'].every((name) => errors.some((e) => e.part === name))) {
     throw Object.assign(new Error(errors[0].message), { status: errors[0].status, errors });
   }
-  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans, active, findings, credits: creditInfo, ai, errors };
+  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans, active, findings, credits: creditInfo, ai, people, errors };
 }
 
 /**
@@ -320,6 +413,10 @@ export function summarize(snapshot, previous = null, now = Date.now()) {
     engines: [...new Set(scans.filter((x) => /completed|partial/i.test(x.status)).flatMap((x) => x.engines))],
     credits: snapshot.credits ? { available: snapshot.credits.available, total: snapshot.credits.total, used: snapshot.credits.used, used30d: snapshot.credits.used30d, actions: snapshot.credits.actions, state: snapshot.credits.state } : null,
     ai: snapshot.ai ?? null,
+    users: (() => {
+      const p = peopleActivity(snapshot, now);
+      return { iamRead: p.iamRead, eventsKnown: p.eventsKnown, total: p.total, active: p.active, quiet: p.quiet, inactive: p.inactive, top: p.users.slice(0, 3).map((u) => ({ name: u.name || u.email || u.username, status: u.status })) };
+    })(),
     people: [...initiators.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, scans]) => ({ name, scans })),
     partialRead: (snapshot.errors ?? []).length > 0,
     errors: snapshot.errors ?? [],
