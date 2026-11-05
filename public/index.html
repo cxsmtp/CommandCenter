@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CommandCenter</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230e8a8a'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-dot" aria-hidden="true"></span>CommandCenter</div>
+    <nav class="tabs" id="tabs" aria-label="POVs"></nav>
+    <div class="topbar-actions">
+      <span class="refresh-note" id="refreshNote" aria-live="polite"></span>
+      <button class="btn ghost" id="refreshAll" title="Read every POV now">Refresh</button>
+      <button class="btn primary" id="addPov">+ Add POV</button>
+    </div>
+  </header>
+
+  <main id="main"></main>
+
+  <dialog id="addDialog" class="dialog">
+    <form method="dialog" id="addForm">
+      <h2>Add POVs</h2>
+      <p class="muted">Paste one Checkmarx One API key per line. The tenant, region and hosts come from each key; it is checked with Checkmarx One and then stored encrypted on this server only.</p>
+      <label class="field">API keys
+        <textarea id="keys" rows="5" placeholder="eyJhbGciOi…" spellcheck="false" autocomplete="off" required></textarea>
+      </label>
+      <details class="advanced">
+        <summary>Advanced (single-tenant / on-prem)</summary>
+        <div class="row">
+          <label class="field">IAM URL<input id="ovIam" placeholder="https://iam.example.com"></label>
+          <label class="field">API URL<input id="ovBase" placeholder="https://ast.example.com"></label>
+          <label class="field">Tenant<input id="ovTenant"></label>
+        </div>
+      </details>
+      <button class="btn" type="button" id="inspectKeys">Check keys</button>
+      <div id="inspectResult" class="inspect"></div>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" id="saveKeys" type="button" disabled>Add to CommandCenter</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="editDialog" class="dialog">
+    <form method="dialog" id="editForm">
+      <h2>Edit POV</h2>
+      <div class="row">
+        <label class="field">Name<input name="name" maxlength="80"></label>
+        <label class="field">Customer<input name="customer" maxlength="120"></label>
+      </div>
+      <div class="row">
+        <label class="field">Stage
+          <select name="stage">
+            <option value="active">Active</option><option value="paused">Paused</option><option value="won">Won</option><option value="lost">Lost</option><option value="closed">Closed</option>
+          </select>
+        </label>
+        <label class="field">Start<input type="date" name="startDate"></label>
+        <label class="field">End<input type="date" name="endDate"></label>
+      </div>
+      <label class="field">Account team / owner<input name="owner" maxlength="120"></label>
+      <label class="field">Notes<textarea name="notes" rows="4" maxlength="2000"></textarea></label>
+      <label class="field">Replace API key (same tenant)<textarea name="apiKey" rows="2" spellcheck="false" autocomplete="off" placeholder="Leave empty to keep the current key"></textarea></label>
+      <p class="form-error" id="editError" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn danger" type="button" id="removePov">Remove POV</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" type="button" id="saveEdit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="loginDialog" class="dialog">
+    <form id="loginForm">
+      <h2>CommandCenter</h2>
+      <label class="field">Passcode<input type="password" id="passcode" autocomplete="current-password" required></label>
+      <p class="form-error" id="loginError" role="alert"></p>
+      <div class="dialog-actions"><button class="btn primary">Sign in</button></div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
