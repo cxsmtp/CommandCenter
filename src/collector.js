@@ -48,6 +48,45 @@ export function failureReason(scan) {
     .slice(0, 400);
 }
 
+/** Fusion or LAST, from the scan's own AI settings (src/fusion-usage.js in CxMissionZero). */
+export function scanTypeOf(scan) {
+  const engines = Array.isArray(scan?.engines) ? scan.engines.map((e) => String(e).toLowerCase()) : [];
+  if (!engines.includes('ai')) return 'none';
+  const configs = Array.isArray(scan?.metadata?.configs) ? scan.metadata.configs : [];
+  const ai = configs.find((c) => String(c?.type ?? '').toLowerCase() === 'ai')?.value;
+  const on = ai?.fusionEnabled;
+  return on === false || on === 'false' ? 'last' : 'fusion';
+}
+
+const ORIGIN_LABELS = [
+  [/jenkins/i, 'Jenkins'],
+  [/git\s*hub[\s_-]*action|gh[\s_-]*action/i, 'GitHub Actions'],
+  [/azure|\bado\b|vsts|\btfs\b/i, 'Azure DevOps'],
+  [/git\s*lab/i, 'GitLab CI'],
+  [/bit\s*bucket/i, 'Bitbucket Pipelines'],
+  [/team\s*city/i, 'TeamCity'],
+  [/bamboo/i, 'Bamboo'],
+  [/circle\s*ci/i, 'CircleCI'],
+  [/travis/i, 'Travis CI'],
+  [/code\s*build/i, 'AWS CodeBuild'],
+  [/vs\s*code/i, 'VS Code'],
+  [/visual\s*studio/i, 'Visual Studio'],
+  [/jetbrains|intellij/i, 'JetBrains'],
+  [/eclipse/i, 'Eclipse'],
+  [/web\s*hook|\bscm\b|pull[\s_-]*request/i, 'Code repository (webhook)'],
+  [/git\s*hub/i, 'GitHub'],
+  [/web\s*app|web\s*portal|\bportal\b|\bui\b|manual|^web$/i, 'Web portal'],
+  [/postman|\bapi\b|\brest\b/i, 'API'],
+  [/\bcli\b|ast[\s_-]*cli|cx[\s_-]*cli/i, 'CLI'],
+];
+/** Where a scan came from, as a readable label (taken from CxMissionZero's src/projections.js). */
+export function scanOrigin(scan) {
+  const labelOf = (v) => ORIGIN_LABELS.find(([re]) => re.test(v))?.[1] ?? '';
+  const said = text(scan?.sourceOrigin, 60);
+  if (said) return labelOf(said) || said;
+  return labelOf(text(scan?.userAgent, 200)) || labelOf(text(scan?.sourceType, 60)) || '';
+}
+
 export function slimScan(s) {
   return {
     id: text(s.id, 80),
@@ -58,8 +97,12 @@ export function slimScan(s) {
     createdAt: s.createdAt ? new Date(timeOf(s.createdAt)).toISOString() : null,
     updatedAt: s.updatedAt ? new Date(timeOf(s.updatedAt)).toISOString() : null,
     initiator: text(s.initiator, 200),
-    origin: text(s.sourceOrigin || s.sourceType, 80),
+    origin: scanOrigin(s),
+    originRaw: text(s.sourceOrigin, 80),
+    userAgent: text(s.userAgent, 200),
+    sourceType: text(s.sourceType, 40),
     engines: engineNames(s.engines),
+    scanType: scanTypeOf(s),
     reason: /fail/i.test(String(s.status)) ? failureReason(s) : '',
   };
 }
@@ -96,7 +139,7 @@ async function listProjects(client) {
   let total = null;
   const first = await client.request('/api/projects', { query: { limit: 100, offset: 0 } });
   total = Number(first?.filteredTotalCount ?? first?.totalCount);
-  const take = (p) => projects.push({ id: text(p.id, 80), name: text(p.name ?? p.id, 300), createdAt: p.createdAt ?? null });
+  const take = (p) => projects.push({ id: text(p.id, 80), name: text(p.name ?? p.id, 300), createdAt: p.createdAt ?? null, repoUrl: text(p.repoUrl, 500), mainBranch: text(p.mainBranch, 200), groups: Array.isArray(p.groups) ? p.groups.slice(0, 10) : [] });
   (Array.isArray(first?.projects) ? first.projects : []).forEach(take);
   if (Number.isFinite(total) && total > projects.length) {
     for (let offset = 100; offset < Math.min(total, MAX_PROJECTS); offset += 100) {
@@ -130,6 +173,85 @@ async function latestFindings(client, projectIds) {
   return { ...totals, total: SEVERITIES.reduce((n, s) => n + totals[s], 0), byProject };
 }
 
+const quietly = async (fn) => {
+  try {
+    return await fn();
+  } catch (error) {
+    if ([400, 401, 403, 404, 405].includes(error.status)) return null;
+    throw error;
+  }
+};
+const n0 = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) || Number(v) < 0 ? null : Number(v));
+
+/**
+ * The tenant's credits (GET /api/credits/info) and what used them over the last 30 days
+ * (GET /api/credits/consumption by project). Null parts when the tenant does not answer (no AI licence, an older
+ * tenant, a key without the permission).
+ */
+async function credits(client, projectNames) {
+  const info = await quietly(() => client.request('/api/credits/info', { retries: 1 }));
+  const rows = [];
+  for (let page = 1; page <= 20; page += 1) {
+    const body = await quietly(() => client.request('/api/credits/consumption', { query: { viewBy: 'project', period: 'last_30_days', page, size: 100, sort_by: 'creditsUsed', sort_order: 'desc' }, retries: 1 }));
+    if (!body) break;
+    const items = Array.isArray(body?.items) ? body.items : Array.isArray(body) ? body : [];
+    rows.push(...items);
+    const pages = Number(body?.totalPages);
+    if (!items.length || (Number.isFinite(pages) ? page >= pages : items.length < 100)) break;
+  }
+  const actions = { triage: 0, remediation: 0, other: 0 };
+  const byProject = [];
+  for (const item of rows) {
+    const used = n0(item?.creditsUsed ?? item?.credits) ?? 0;
+    const own = { triage: 0, remediation: 0, other: 0 };
+    for (const a of Array.isArray(item?.actionsPerformed?.actions) ? item.actionsPerformed.actions : []) {
+      const type = String(a?.actionType ?? '').toLowerCase().replace(/[\s-]+/g, '_');
+      const count = n0(a?.transactionCount) ?? 0;
+      const key = /triage/.test(type) ? 'triage' : /remediation/.test(type) ? 'remediation' : 'other';
+      own[key] += count;
+      actions[key] += count;
+    }
+    const id = text(item?.projectId ?? item?.id, 80);
+    byProject.push({ projectId: id, name: text(item?.name ?? item?.projectName, 300) || projectNames.get(id) || id, credits: used, ...own });
+  }
+  if (!info && !rows.length) return null;
+  return {
+    available: n0(info?.available),
+    total: n0(info?.total),
+    used: n0(info?.used),
+    state: text(info?.enforcement?.state, 30),
+    used30d: byProject.reduce((n, r) => n + r.credits, 0),
+    actions,
+    byProject: byProject.sort((a, b) => b.credits - a.credits).slice(0, 100),
+    consumptionKnown: rows.length > 0 || Boolean(info),
+  };
+}
+
+/** The tenant's AI settings (GET /api/configuration/tenant): Fusion on, LLM-based scanning on, the model. */
+async function tenantAi(client) {
+  const body = await quietly(() => client.request('/api/configuration/tenant', { retries: 1 }));
+  if (!body) return null;
+  const entries = Array.isArray(body) ? body : Array.isArray(body?.configEntries) ? body.configEntries : [];
+  const entry = (k) => entries.find((e) => e?.key === k);
+  const flag = (v) => (v === true || v === 'true' ? true : v === false || v === 'false' ? false : null);
+  return {
+    fusionEnabled: flag(entry('scan.config.ai.fusionEnabled')?.value),
+    llmBased: flag(entry('scan.config.sast.extendedAnalysis')?.value),
+    model: text(entry('scan.config.ai.llmModel')?.value, 60),
+  };
+}
+
+/**
+ * A scan's log for one engine (GET /api/logs/{scanId}/{engine}): Checkmarx One answers with the text, or with a
+ * redirect to a signed address, which fetch follows (the access token is not sent on to another host by fetch).
+ */
+export async function scanLog(connection, scanId, engine, { client = new CxClient(connection) } = {}) {
+  const safeId = encodeURIComponent(text(scanId, 80));
+  const safeEngine = encodeURIComponent(text(engine, 40).toLowerCase());
+  const body = await client.request(`/api/logs/${safeId}/${safeEngine}`, { accept: 'text/plain, application/json, */*', retries: 1 });
+  return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+}
+
 /**
  * One full read of a POV's tenant. Each part fails on its own: a tenant without, say, the scan-summary service still
  * shows its scans. `errors` lists what could not be read.
@@ -153,12 +275,14 @@ export async function collect(connection, { client = new CxClient(connection), n
     part('scans', () => scansSince(client, since), []),
     part('running', () => activeScans(client), []),
   ]);
+  const names = new Map(projects.list.map((p) => [p.id, p.name]));
+  const [creditInfo, ai] = await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null)]);
   const findings = projects.list.length ? await part('findings', () => latestFindings(client, projects.list.map((p) => p.id)), null) : { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, byProject: {} };
   // Nothing at all could be read (a rejected key, an unreachable tenant): the read failed.
   if (['projects', 'scans', 'running'].every((name) => errors.some((e) => e.part === name))) {
     throw Object.assign(new Error(errors[0].message), { status: errors[0].status, errors });
   }
-  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans, active, findings, errors };
+  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans, active, findings, credits: creditInfo, ai, errors };
 }
 
 /**
@@ -190,6 +314,12 @@ export function summarize(snapshot, previous = null, now = Date.now()) {
     lastActivityAt: lastActivity ? new Date(lastActivity).toISOString() : null,
     findings: f ? { critical: f.critical, high: f.high, medium: f.medium, low: f.low, info: f.info, total: f.total } : null,
     delta,
+    fusion7d: scans.filter((x) => x.scanType === 'fusion').length,
+    last7d: scans.filter((x) => x.scanType === 'last').length,
+    origins: [...scans.reduce((m, x) => (x.origin ? m.set(x.origin, (m.get(x.origin) ?? 0) + 1) : m), new Map())].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+    engines: [...new Set(scans.filter((x) => /completed|partial/i.test(x.status)).flatMap((x) => x.engines))],
+    credits: snapshot.credits ? { available: snapshot.credits.available, total: snapshot.credits.total, used: snapshot.credits.used, used30d: snapshot.credits.used30d, actions: snapshot.credits.actions, state: snapshot.credits.state } : null,
+    ai: snapshot.ai ?? null,
     people: [...initiators.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, scans]) => ({ name, scans })),
     partialRead: (snapshot.errors ?? []).length > 0,
     errors: snapshot.errors ?? [],
@@ -217,7 +347,7 @@ export function eventsOf(snapshot, { povId = '', since = 0 } = {}) {
     const running = /queued|running/i.test(s.status);
     const at = running ? s.createdAt : s.updatedAt ?? s.createdAt;
     const kind = running ? (/queued/i.test(s.status) ? 'queued' : 'running') : /^completed$/i.test(s.status) ? 'completed' : /fail/i.test(s.status) ? 'failed' : /cancel/i.test(s.status) ? 'canceled' : /partial/i.test(s.status) ? 'partial' : 'other';
-    events.push({ id: `scan:${s.id}:${kind}`, povId, kind, at, scanId: s.id, projectId: s.projectId, project: s.projectName, branch: s.branch, initiator: s.initiator, origin: s.origin, engines: s.engines, reason: s.reason });
+    events.push({ id: `scan:${s.id}:${kind}`, povId, kind, at, scanId: s.id, projectId: s.projectId, project: s.projectName, branch: s.branch, initiator: s.initiator, origin: s.origin, engines: s.engines, scanType: s.scanType, reason: s.reason });
   }
   for (const p of snapshot?.projects?.list ?? []) {
     if (Date.parse(snapshot.at) - timeOf(p.createdAt) <= SCAN_WINDOW_DAYS * DAY) events.push({ id: `project:${p.id}`, povId, kind: 'project', at: p.createdAt, projectId: p.id, project: p.name });

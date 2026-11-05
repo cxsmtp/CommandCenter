@@ -5,11 +5,16 @@
   "description": "One place for a Solution Engineer to watch every Checkmarx One POV tenant: scans, failures, new projects and findings, refreshed every 10 minutes.",
   "type": "module",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "demo": "node scripts/demo.mjs",
     "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "nodemailer": "^6.10.1"
   }
 }
