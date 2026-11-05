@@ -278,6 +278,7 @@ function cleanPrefs(p) {
   if (THEMES.includes(p.theme)) out.theme = p.theme;
   if (['auto', 'light', 'dark'].includes(p.mode)) out.mode = p.mode;
   if (['cards', 'table'].includes(p.view)) out.view = p.view;
+  if (p.view === 'auto') out.view = undefined;
   if (['side', 'top'].includes(p.nav)) out.nav = p.nav;
   return out;
 }

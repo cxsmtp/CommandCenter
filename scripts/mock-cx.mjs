@@ -34,7 +34,9 @@ export function seedTenant(name, { projects = 8, scans = 20, seed = 1 } = {}) {
     };
   });
   const sev = Object.fromEntries(list.map((p) => [p.id, { CRITICAL: Math.floor(rnd() * 4), HIGH: Math.floor(rnd() * 15), MEDIUM: Math.floor(rnd() * 40), LOW: Math.floor(rnd() * 30) }]));
-  return { projects: list, scans: scanList, sev, active: [] };
+  const items = list.slice(0, 4).map((p) => ({ projectId: p.id, name: p.name, creditsUsed: Math.round(rnd() * 400) / 10, actionsPerformed: { actions: [{ actionType: 'AI_TRIAGE', transactionCount: Math.floor(rnd() * 30) }, { actionType: 'AI_REMEDIATION', transactionCount: Math.floor(rnd() * 8) }] } }));
+  const used = Math.round(items.reduce((n, i) => n + i.creditsUsed, 0));
+  return { projects: list, scans: scanList, sev, active: [], credits: { info: { total: 1000, used, available: 1000 - used, enforcement: { state: 'enabled' } }, items } };
 }
 
 export function startMock({ tenants = {}, port = 0, rejectTenants = [] } = {}) {
@@ -88,6 +90,14 @@ export function startMock({ tenants = {}, port = 0, rejectTenants = [] } = {}) {
         return { scanId, sastCounters: { severityCounters: Object.entries(sev).map(([severity, counter]) => ({ severity, counter })) } };
       });
       return send(200, { scansSummaries, totalCount: scansSummaries.length });
+    }
+    if (url.pathname === '/api/credits/info') return t.credits ? send(200, t.credits.info) : send(404, { message: 'not found' });
+    if (url.pathname === '/api/credits/consumption') return t.credits ? send(200, { items: t.credits.items, totalPages: 1 }) : send(404, { message: 'not found' });
+    if (url.pathname === '/api/configuration/tenant') return send(200, [{ key: 'scan.config.ai.fusionEnabled', value: String(t.fusion !== false) }, { key: 'scan.config.sast.extendedAnalysis', value: 'true' }, { key: 'scan.config.ai.llmModel', value: t.model ?? '' }]);
+    const log = url.pathname.match(/^\/api\/logs\/([^/]+)\/([^/]+)$/);
+    if (log) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      return res.end(`[${new Date().toISOString()}] ${log[2]} engine log for scan ${log[1]}\nINFO  Source downloaded\nERROR No supported source files found\n`);
     }
     return send(404, { message: 'not found' });
   });

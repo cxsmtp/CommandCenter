@@ -49,9 +49,9 @@ export const DEFAULT_CATALOG = [
   c('ai-remediation', 'ai', 'AI remediation (fix pull requests)', 'Checkmarx One AI — Remediation', { actions: ['remediation'], keywords: ['ai remediation', 'auto remediation', 'ai fix'] }),
   c('dev-assist', 'ai', 'Developer Assist (AI in the IDE)', 'Checkmarx One Assist / Developer Assist', { keywords: ['developer assist', 'one assist', 'ai assist', 'mcp'] }),
   // SCM
-  c('github', 'scm', 'GitHub integration (repo import, PR decoration)', 'GitHub (Code Repository integration)', { origins: ['github'], repoHosts: ['github.com', 'github'], keywords: ['github'] }),
-  c('gitlab', 'scm', 'GitLab integration', 'GitLab (Code Repository integration)', { origins: ['gitlab'], repoHosts: ['gitlab'], keywords: ['gitlab'] }),
-  c('bitbucket', 'scm', 'Bitbucket integration', 'Bitbucket (Code Repository integration)', { origins: ['bitbucket'], repoHosts: ['bitbucket'], keywords: ['bitbucket'] }),
+  c('github', 'scm', 'GitHub integration (repo import, PR decoration)', 'GitHub (Code Repository integration)', { repoHosts: ['github.com', 'github.'], keywords: ['github'] }),
+  c('gitlab', 'scm', 'GitLab integration', 'GitLab (Code Repository integration)', { repoHosts: ['gitlab'], keywords: ['gitlab'] }),
+  c('bitbucket', 'scm', 'Bitbucket integration', 'Bitbucket (Code Repository integration)', { repoHosts: ['bitbucket'], keywords: ['bitbucket'] }),
   c('azure-repos', 'scm', 'Azure Repos integration', 'Azure DevOps (Code Repository integration)', { repoHosts: ['dev.azure.com', 'visualstudio.com'], keywords: ['azure repos'] }),
   c('webhook', 'scm', 'Scan on push / pull request (webhook)', 'Code Repository webhook scans', { origins: ['webhook', 'scm', 'pull request', 'pr-'], keywords: ['webhook', 'pull request', 'pr decoration', 'scan on push'] }),
   // CI

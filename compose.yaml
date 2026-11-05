@@ -1,0 +1,28 @@
+# docker compose up -d     (or: podman compose up -d)
+# Then: docker compose logs commandcenter   — the first Admin's password is printed once.
+services:
+  commandcenter:
+    build: .
+    image: commandcenter:latest
+    restart: unless-stopped
+    ports:
+      - "4310:4310"
+    volumes:
+      - commandcenter-data:/data
+    environment:
+      # A long random value: seals the Checkmarx One API keys and the SMTP password at rest.
+      # Without it a key file is made in /data (keep /data's backups private either way).
+      CC_SECRET: ${CC_SECRET:-}
+      # Set when CommandCenter is served over HTTPS (behind a reverse proxy).
+      CC_SECURE_COOKIES: ${CC_SECURE_COOKIES:-false}
+      CC_ADMIN_EMAIL: ${CC_ADMIN_EMAIL:-admin@commandcenter.local}
+      REFRESH_MINUTES: ${REFRESH_MINUTES:-10}
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  commandcenter-data:
