@@ -2,9 +2,9 @@
 (function () {
   try {
     var p = JSON.parse(localStorage.getItem('cc.look') || '{}');
-    var mode = p.mode || 'auto';
+    var mode = p.mode || 'dark';
     var dark = mode === 'dark' || (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-    var look = p.theme || 'maison';
+    var look = p.theme || 'orbit';
     document.documentElement.dataset.look = look;
     if (['maison', 'calibre', 'joaillier', 'hypercar'].indexOf(look) >= 0) document.documentElement.dataset.lux = '';
     else delete document.documentElement.dataset.lux;

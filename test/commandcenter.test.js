@@ -257,3 +257,18 @@ test('the results page: the platform slide with only the selected engines, and e
   assert.match(r.body, /Scans that proved it/);
   assert.match(r.body, /@page \{ size: 13.333in 7.297in/);
 });
+
+test('forecasts: criteria pace against the end date, credits runway', async () => {
+  const { criteriaForecast, creditsForecast } = await import('../src/forecast.js');
+  const now = Date.parse('2026-11-10T12:00:00Z');
+  const crit = (status, confirmedAt) => ({ status, confirmedAt });
+  // 10 days in, 4 of 8 done: 0.4/day, 4 left → 10 more days; the end day closes in 15.5 → on track, 6 to spare.
+  const f = criteriaForecast({ startDate: '2026-10-31', endDate: '2026-11-25', criteria: [...Array(4)].map(() => crit('met', '2026-11-05T00:00:00Z')).concat([...Array(4)].map(() => crit('not_started'))) }, now);
+  assert.equal(f.state, 'on-track');
+  assert.equal(f.marginDays, 6);
+  const late = criteriaForecast({ startDate: '2026-10-31', endDate: '2026-11-13', criteria: [crit('met', '2026-11-05T00:00:00Z'), crit('in_progress'), crit('not_started'), crit('not_started')] }, now);
+  assert.equal(late.state, 'late');
+  assert.equal(criteriaForecast({ criteria: [crit('met', '2026-11-05T00:00:00Z')] }, now).state, 'done');
+  const c = creditsForecast({ credits: { available: 300, used30d: 300 } }, [], now);
+  assert.equal(c.runwayDays, 30);
+});

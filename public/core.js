@@ -157,6 +157,15 @@ export function spark(trend) {
 export function progressBar(p, { label = true } = {}) {
   return `${label ? `<div class="prog-line"><span>Success criteria ${p.met}/${p.total}${p.must ? ` · must-haves ${p.mustMet}/${p.must}` : ''}</span><b>${p.percent}%</b></div>` : ''}<div class="progress" title="${p.percent}%"><span style="width:${p.percent}%"></span></div>`;
 }
+/** A ring gauge: the share of success criteria completed. */
+export function ring(p, { size = 56, label = true } = {}) {
+  const r = 22;
+  const c = 2 * Math.PI * r;
+  const pct = p.total ? p.percent : 0;
+  return `<span class="ring" style="width:${size}px;height:${size}px" title="${p.met} of ${p.total} criteria completed successfully"><svg viewBox="0 0 56 56" aria-hidden="true"><circle class="ring-track" cx="28" cy="28" r="${r}"/><circle class="ring-fill" cx="28" cy="28" r="${r}" stroke-dasharray="${((c * pct) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 28 28)"/></svg>${label ? `<b>${p.total ? `${pct}<small>%</small>` : '—'}</b>` : ''}</span>`;
+}
+const FORECAST_CLASS = { 'on-track': 'ok', done: 'ok', 'at-risk': 'warn', 'no-pace': 'warn', late: 'bad', none: '' };
+export const forecastLine = (f) => (f ? `<div class="fc fc-${esc(f.state)} ${FORECAST_CLASS[f.state] ?? ''}"><span class="fc-dot"></span>${esc(f.label)}</div>` : '');
 export const scanTypeBadge = (t) => (t === 'fusion' ? '<span class="badge fusion">Fusion</span>' : t === 'last' ? '<span class="badge last">LAST</span>' : '');
 export const stageBadge = (stage) => `<span class="badge ${stage === 'pov' ? 'accent' : stage === 'won' ? 'ok' : stage === 'lost' ? 'bad' : ''}">${esc(state.meta?.stages?.[stage] ?? stage)}</span>`;
 export function daysBadge(r) {

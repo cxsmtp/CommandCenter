@@ -16,6 +16,7 @@ import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
+import { criteriaForecast, creditsForecast, activityForecast, portfolioForecast } from './forecast.js';
 import { resultsPage } from './results.js';
 import { platformView, AI_POWERED, STATE as PLATFORM_STATE } from './platform.js';
 import { randomBytes } from 'node:crypto';
@@ -31,7 +32,7 @@ const MAX_BODY = 512 * 1024;
 const DAY = 86_400_000;
 const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']);
 const POLLED_STAGES = new Set(['pov']);
-const DEFAULT_SETTINGS = { orgName: 'Command Center', refreshMinutes: 10, defaultTheme: 'maison', defaultMode: 'auto', weeklyDrafts: true };
+const DEFAULT_SETTINGS = { orgName: 'Command Center', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true };
 
 export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true' } = {}) {
   const db = new Db(dataDir);
@@ -144,6 +145,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       muted,
       mute: opp.mute,
       nextTask,
+      forecast: {
+        criteria: ['pov', 'completed'].includes(opp.stage) ? criteriaForecast(opp, now) : null,
+        credits: live?.summary ? creditsForecast(live.summary, monitor.history(opp.id), now) : null,
+        activity: live?.summary ? activityForecast(live.summary) : null,
+      },
       lastNoteAt: lastNote || null,
       sessions: (opp.sessions ?? []).length,
       updatedAt: opp.updatedAt,
@@ -196,7 +202,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const own = rows.filter((r) => r.owner.id === u.id);
       return { id: u.id, name: u.name, role: u.role, roleLabel: u.roleLabel, managerId: u.managerId, opportunities: own.length, povs: own.filter((r) => r.stage === 'pov').length, attention: own.filter((r) => !r.muted && r.alerts.some((a) => a.level === 'bad')).length };
     });
-    return { at: new Date(now).toISOString(), intervalMinutes: monitor.intervalMs / 60_000, totals, rows, events, activity, people };
+    return { at: new Date(now).toISOString(), intervalMinutes: monitor.intervalMs / 60_000, totals, forecast: portfolioForecast(rows, now), rows, events, activity, people };
   }
 
   function detail(viewer, opp) {

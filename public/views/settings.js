@@ -2,6 +2,7 @@
 import { $, $$, esc, api, state, can, attempt, toast, formData } from '../core.js';
 
 const LOOKS = {
+  orbit: ['Orbit — launch control', ['#03050b', '#5ce1ff', '#8b7cff']],
   maison: ['Maison — the leather atelier', ['#f2ebdf', '#2a1c13', '#b08d57']],
   calibre: ['Calibre — fine watchmaking', ['#f3f1ec', '#0f1a31', '#a98f5f']],
   joaillier: ['Joaillier — high jewellery', ['#f6efe9', '#5a0f1c', '#b8923e']],

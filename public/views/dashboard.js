@@ -1,6 +1,6 @@
 // The command center: every opportunity the viewer can see. Associates get detailed cards; managers get line items
 // they can filter by person, stage and words, grouped by person, and drill into.
-import { esc, fmt, api, state, local, ago, when, tc, HEALTH, KIND, sevBar, sevLegend, spark, progressBar, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, can } from '../core.js';
+import { esc, fmt, api, state, local, ago, when, tc, HEALTH, KIND, sevBar, sevLegend, spark, progressBar, ring, forecastLine, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, can } from '../core.js';
 
 const lastSeen = local.get('cc.lastSeen', 0);
 const markSeen = () => local.set('cc.lastSeen', Date.now());
@@ -47,15 +47,16 @@ export async function renderDashboard(main, { crumbs }) {
     </div>
     <div class="kpis">
       ${kpi('Need attention', t.needsAttention, t.needsAttention ? 'bad' : '')}
-      ${kpi('Ending in 7 days', t.endingSoon, t.endingSoon ? 'warn' : '')}
+      ${kpi('Ending ≤ 7 days', t.endingSoon, t.endingSoon ? 'warn' : '')}
       ${kpi('Scans running', fmt(t.running))}
       ${kpi('Scans 24h', fmt(t.scans24h), '', `${fmt(t.failed24h)} failed`)}
-      ${kpi('Fusion / LAST 7d', `${fmt(t.fusion7d)} / ${fmt(t.last7d)}`)}
-      ${kpi('Credits available', fmt(t.creditsAvailable), '', t.creditsUsed30d !== null ? `${fmt(Math.round(t.creditsUsed30d))} used in 30 d` : '')}
-      ${kpi('People active', t.usersTotal !== null ? `${fmt(t.usersActive)} / ${fmt(t.usersTotal)}` : '—', '', 'in POV tenants, last 2 days')}
+      ${kpi('Fusion / LAST', `${fmt(t.fusion7d)} / ${fmt(t.last7d)}`)}
+      ${kpi('Credits', fmt(t.creditsAvailable), '', t.creditsUsed30d !== null ? `${fmt(Math.round(t.creditsUsed30d))} used in 30 d` : '')}
+      ${kpi('People active', t.usersTotal !== null ? `${fmt(t.usersActive)} / ${fmt(t.usersTotal)}` : '—', '', 'last 2 days')}
       ${kpi('Critical / High', `${fmt(t.critical)} / ${fmt(t.high)}`)}
-      ${kpi('Criteria met', t.criteriaTotal ? `${Math.round((100 * t.criteriaMet) / t.criteriaTotal)}%` : '—', '', `${t.criteriaMet} of ${t.criteriaTotal}`)}
+      ${kpi('Criteria done', t.criteriaTotal ? `${Math.round((100 * t.criteriaMet) / t.criteriaTotal)}%` : '—', '', `${t.criteriaMet} of ${t.criteriaTotal}`)}
     </div>
+    ${missionStrip(o.forecast)}
     <div class="layout">
       <div class="stack">${rows.length ? (view === 'cards' ? cards(rows) : lineItems(rows, ui.group !== false)) : '<div class="empty panel">Nothing matches.</div>'}</div>
       ${sidePanel(o)}
@@ -99,6 +100,21 @@ function wire(main) {
 // Cards come in buckets by stage: what is live first, closed deals folded away.
 const BUCKETS = ['pov', 'completed', 'technical', 'discovery', 'on_hold', 'won', 'lost'];
 const BUCKET_NOTE = { pov: 'Tenant read every few minutes', completed: 'Awaiting the decision', technical: 'Sessions and integration work', discovery: 'Before the POV', on_hold: '', won: '', lost: '' };
+// The forecast strip: where the POVs are heading, across everything shown.
+function missionStrip(f) {
+  if (!f || !f.povs) return '';
+  const cell = (label, value, cls = '', sub = '', go = '') => `<div class="ms-cell ${cls}" ${go ? `data-go="${go}" tabindex="0"` : ''}><div class="ms-label">${label}</div><div class="ms-value">${value}</div>${sub ? `<div class="ms-sub">${sub}</div>` : ''}</div>`;
+  return `<section class="mission" aria-label="Forecast">
+    <div class="ms-title"><span class="ms-pulse"></span>Forecast<span class="ms-note">at the current pace</span></div>
+    ${cell('On track', fmt(f.onTrack), 'ok', `of ${f.povs} POVs`)}
+    ${cell('At risk', fmt(f.atRisk), f.atRisk ? 'warn' : '', 'pace below what is needed')}
+    ${cell('Late', fmt(f.late), f.late ? 'bad' : '', 'past or beyond the end date')}
+    ${cell('Finishing this month', fmt(f.finishingThisMonth), '', 'criteria all completed')}
+    ${cell('Shortest credits runway', f.shortestRunway ? `${fmt(f.shortestRunway.days)} d` : '—', f.shortestRunway && f.shortestRunway.days < 14 ? 'warn' : '', f.shortestRunway ? esc(f.shortestRunway.customer) : 'no burn yet', f.shortestRunway ? `#/opp/${esc(f.shortestRunway.id)}/tenant` : '')}
+    ${cell('Next POV end', f.nextEnd ? (f.nextEnd.days <= 0 ? 'today' : `T−${fmt(f.nextEnd.days)} d`) : '—', f.nextEnd && f.nextEnd.days <= 3 ? 'warn' : '', f.nextEnd ? esc(f.nextEnd.customer) : '', f.nextEnd ? `#/opp/${esc(f.nextEnd.id)}` : '')}
+  </section>`;
+}
+
 function cards(rows) {
   const folded = ui.folded ?? { won: true, lost: true };
   return BUCKETS.map((stage) => {
@@ -123,7 +139,7 @@ function card(r) {
       <div><div class="card-title">${esc(r.customer)}</div>${r.povResult === 'successful' ? '<div class="small ok-t" style="letter-spacing:.12em;text-transform:uppercase">POV successful</div>' : ''}<div class="card-sub">${esc([r.name !== r.customer ? r.name : '', r.owner.name, r.tenant ? `${r.tenant.tenant} · ${r.tenant.regionLabel}` : ''].filter(Boolean).join(' · '))}</div></div>
       <div class="badges">${daysBadge(r)}${stageBadge(r.stage)}</div>
     </div>
-    ${r.progress.total ? progressBar(r.progress) : '<div class="small muted">No success criteria yet</div>'}
+    <div class="card-mid">${ring(r.progress)}<div class="card-mid-text"><div class="small muted">${r.progress.total ? `${r.progress.met} of ${r.progress.total} criteria completed${r.progress.must ? ` · must-haves ${r.progress.mustMet}/${r.progress.must}` : ''}` : 'No success criteria yet'}</div>${forecastLine(r.forecast?.criteria)}${r.forecast?.credits ? `<div class="fc muted"><span class="fc-dot"></span>${esc(r.forecast.credits.label)}</div>` : ''}</div></div>
     ${health ? `<div class="health"><span class="dot ${health}"></span>${esc(HEALTH[health] ?? health)}${s?.lastActivityAt ? ` · last scan activity ${ago(s.lastActivityAt)}` : ''}</div>` : ''}
     ${
       s
@@ -147,6 +163,7 @@ const COLUMNS = [
   { label: 'SE', key: (r) => r.owner.name, html: (r) => `${esc(r.owner.name)}${r.managers[0] ? `<div class="small muted">→ ${esc(r.managers[0].name)}</div>` : ''}` },
   { label: 'Stage', key: (r) => Object.keys(state.meta.stages).indexOf(r.stage), html: (r) => `${stageBadge(r.stage)} ${daysBadge(r)}` },
   { label: 'Criteria', n: true, key: (r) => r.progress.percent, html: (r) => (r.progress.total ? `<b>${r.progress.percent}%</b><div class="small muted">${r.progress.met}/${r.progress.total}</div>` : '—') },
+  { label: 'Forecast', key: (r) => ({ late: 0, 'at-risk': 1, 'no-pace': 2, 'on-track': 3, done: 4 })[r.forecast?.criteria?.state] ?? 5, html: (r) => forecastLine(r.forecast?.criteria) || '<span class="muted small">—</span>' },
   { label: 'Health', key: (r) => (r.muted ? 9 : r.alerts.filter((a) => a.level === 'bad').length * -10 - r.alerts.length), html: (r) => (r.alerts.length ? `<div class="alerts">${r.alerts.slice(0, 2).map((a) => `<div class="a ${r.muted ? 'muted' : a.level === 'bad' ? 'bad-t' : 'warn-t'}"><span class="dot ${r.muted ? '' : a.level}"></span>${esc(a.what)}</div>`).join('')}${r.alerts.length > 2 ? `<div class="small muted">+${r.alerts.length - 2} more</div>` : ''}${r.muted ? '<div class="small muted">Muted</div>' : ''}</div>` : r.live ? `<span class="health"><span class="dot ${r.live.health}"></span>${esc(HEALTH[r.live.health])}</span>` : '<span class="muted small">No tenant</span>') },
   { label: 'Scans 24h', n: true, key: (r) => r.live?.summary?.scans24h ?? -1, html: (r) => (r.live?.summary ? `${fmt(r.live.summary.scans24h)}${r.live.summary.failed24h ? ` <span class="bad-t small">(${r.live.summary.failed24h} ✕)</span>` : ''}` : '—') },
   { label: 'Running', n: true, key: (r) => (r.live?.summary ? r.live.summary.running + r.live.summary.queued : -1), html: (r) => (r.live?.summary ? fmt(r.live.summary.running + r.live.summary.queued) : '—') },

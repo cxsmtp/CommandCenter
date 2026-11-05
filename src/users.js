@@ -272,7 +272,7 @@ export class Users {
   }
 }
 
-export const THEMES = ['maison', 'calibre', 'joaillier', 'hypercar', 'command', 'cabin', 'circuit', 'residence', 'chronometer', 'signal', 'studio', 'classic'];
+export const THEMES = ['orbit', 'maison', 'calibre', 'joaillier', 'hypercar', 'command', 'cabin', 'circuit', 'residence', 'chronometer', 'signal', 'studio', 'classic'];
 function cleanPrefs(p) {
   const out = {};
   if (THEMES.includes(p.theme)) out.theme = p.theme;

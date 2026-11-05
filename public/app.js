@@ -13,8 +13,8 @@ const LUXE = new Set(['maison', 'calibre', 'joaillier', 'hypercar']);
 const media = matchMedia('(prefers-color-scheme: dark)');
 export function applyLook(prefs = {}) {
   const s = state.session?.settings ?? {};
-  const theme = prefs.theme || s.defaultTheme || 'maison';
-  const mode = prefs.mode || s.defaultMode || 'auto';
+  const theme = prefs.theme || s.defaultTheme || 'orbit';
+  const mode = prefs.mode || s.defaultMode || 'dark';
   document.documentElement.dataset.look = theme;
   document.documentElement.toggleAttribute('data-lux', LUXE.has(theme));
   document.documentElement.dataset.theme = mode === 'dark' || (mode === 'auto' && media.matches) ? 'dark' : 'light';
@@ -27,9 +27,17 @@ export function route() {
   const [, view = '', id = '', tab = ''] = location.hash.split('?')[0].split('/');
   return { view: view || 'dashboard', id, tab };
 }
+const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  dashboard: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l5.5-5.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/>'),
+  team: svg('<circle cx="12" cy="5.5" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M12 7.7V12M12 12l-5 4M12 12l5 4"/>'),
+  catalog: svg('<path d="M12 3.5l8.5 4.5L12 12.5 3.5 8z"/><path d="M3.5 12L12 16.5 20.5 12M3.5 16L12 20.5 20.5 16"/>'),
+  settings: svg('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+};
 const NAV = [
-  ['Work', [['dashboard', '◉', 'Command center'], ['team', '⌬', 'Teams']]],
-  ['Set up', [['catalog', '☰', 'Capabilities'], ['settings', '⚙', 'Settings']]],
+  ['Work', [['dashboard', ICON.dashboard, 'Command center'], ['team', ICON.team, 'Teams']]],
+  ['Set up', [['catalog', ICON.catalog, 'Capabilities'], ['settings', ICON.settings, 'Settings']]],
 ];
 
 function shell() {
@@ -41,7 +49,7 @@ function shell() {
       <div class="brand"><span class="brand-dot"></span>${esc(state.session.settings.orgName || 'CommandCenter')}</div>
       ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
       <div class="nav-group">Act</div>
-      ${can('opps.create') ? '<a href="#" data-action="new-opp"><span class="ico">＋</span>New opportunity</a>' : ''}
+      ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
       <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button></div>
     </nav>
     <div>
