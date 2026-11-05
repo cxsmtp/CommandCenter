@@ -18,10 +18,10 @@ const mixHex = (a, b, t) => '#' + [0, 2, 4].map((i) => Math.round(parseInt(a.sli
 /** The title's violet-to-coral gradient, a letter at a time: crisp on screen, in print and in the PDF. */
 const gradient = (t) => [...t].map((ch, i, all) => `<span style="color:${mixHex('bf4bd6', 'f2592d', i / Math.max(1, all.length - 1))}">${esc(ch)}</span>`).join('');
 const STATE_LABEL = { done: 'Proven', progress: 'In progress', planned: 'Planned', missed: 'Not met', na: 'Not applicable' };
-const TICK = (c = '#FF2D2D') => `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><path d="M3.5 10.5l4.2 4.2L16.8 5.3" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const TICK = (c = '#3CCF8E') => `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><path d="M3.5 10.5l4.2 4.2L16.8 5.3" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const CLOCK = (c) => `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><circle cx="10" cy="10" r="7.6" fill="${c}22" stroke="${c}" stroke-width="2"/><path d="M10 5.6V10l3.2 2" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
 const CROSS = `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="#8A8197" stroke-width="2.4" stroke-linecap="round"/></svg>`;
-export const MARKS = { done: TICK(), progress: CLOCK('#3CCF8E'), planned: CLOCK('#F5C518'), missed: CROSS };
+export const MARKS = { done: TICK(), progress: CLOCK('#F5C518'), planned: CLOCK('#9E94B8'), missed: CROSS };
 const STAR = '<span class="star" title="AI-powered" aria-label="AI-powered">✦</span>';
 
 const ICONS = {
@@ -226,7 +226,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 80px; display: flex
 .tbl th { text-align: left; color: var(--dim); font-weight: 700; font-size: ${u(11)}; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid #6b34fd; padding: ${u(8)} ${u(10)}; }
 .tbl td { border-bottom: 1px solid var(--line); padding: ${u(8)} ${u(10)}; vertical-align: top; }
 .tbl.kv td:first-child { color: var(--dim); width: 32%; text-transform: uppercase; font-size: ${u(12)}; letter-spacing: 0.08em; }
-.st { white-space: nowrap; font-weight: 700; } .st.s-done { color: #fff; } .st.s-progress { color: #3ccf8e; } .st.s-planned { color: #f5c518; } .st.s-missed { color: #8a8197; }
+.st { white-space: nowrap; font-weight: 700; } .st.s-done { color: #3ccf8e; } .st.s-progress { color: #f5c518; } .st.s-planned { color: #b9b0cc; } .st.s-missed { color: #8a8197; }
 .lnk { font: inherit; color: #fff; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: #6b34fd; text-underline-offset: 3px; }
 .steps { margin: 0; padding-left: 1.2em; font-size: ${u(22)}; } .steps li { margin-bottom: ${u(14)}; } .steps li::marker { color: var(--orange); }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: #170c26; border-left: 1px solid #6b34fd; transform: translateX(100%); transition: transform 0.25s ease; z-index: 20; overflow-y: auto; padding: 28px 28px 40px; box-shadow: -20px 0 60px #000a; }

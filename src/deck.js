@@ -115,9 +115,9 @@ const FONT = 'Arial';
 const SYMBOL = 'Segoe UI Symbol';
 const DIM = 'B9B0CC';
 const MARK = {
-  done: { glyph: '✓', color: 'FF2D2D' },
-  progress: { glyph: '◷', color: '3CCF8E' },
-  planned: { glyph: '◷', color: 'F5C518' },
+  done: { glyph: '✓', color: '3CCF8E' },
+  progress: { glyph: '◷', color: 'F5C518' },
+  planned: { glyph: '◷', color: '9E94B8' },
   missed: { glyph: '✕', color: '8A8197' },
 };
 const hex = (c) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
