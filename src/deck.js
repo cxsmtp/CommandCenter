@@ -41,10 +41,10 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   platformSlide(pptx, platformView(opp, catalog));
 
   // 2 — The answer
-  const answer = page(p.percent === 100 ? 'Every success criterion was met' : `${p.met} of ${p.total} success criteria met`, `${opp.customer} · ${day(opp.startDate)} – ${day(opp.endDate)}${owner?.name ? ` · ${owner.name}` : ''}`);
+  const answer = page(p.percent === 100 ? 'Every success criterion completed successfully' : `${p.met} of ${p.total} success criteria completed successfully`, `${opp.customer} · ${day(opp.startDate)} – ${day(opp.endDate)}${owner?.name ? ` · ${owner.name}` : ''}`);
   const figures = [
-    [`${p.percent}%`, 'criteria met'],
-    [`${p.mustMet}/${p.must}`, 'must-haves met'],
+    [`${p.percent}%`, 'criteria completed'],
+    [`${p.mustMet}/${p.must}`, 'must-haves completed'],
     [s ? String(s.scans7d) : '—', 'scans in the last 7 days'],
     [s?.users?.total != null ? `${s.users.active + s.users.quiet}/${s.users.total}` : s?.people?.length ? String(s.people.length) : '—', 'people active'],
   ];
@@ -222,7 +222,7 @@ function platformSlide(pptx, view) {
   // The key, just inside the frame, and the footer band
   slide.addText(
     [
-      { text: '✓', options: { fontFace: SYMBOL, color: MARK.done.color, bold: true } }, { text: ' Proven     ', options: { color: DIM } },
+      { text: '✓', options: { fontFace: SYMBOL, color: MARK.done.color, bold: true } }, { text: ' Completed successfully     ', options: { color: DIM } },
       { text: '◷', options: { fontFace: SYMBOL, color: MARK.progress.color, bold: true } }, { text: ' In progress     ', options: { color: DIM } },
       { text: '◷', options: { fontFace: SYMBOL, color: MARK.planned.color, bold: true } }, { text: ' Planned', options: { color: DIM } },
     ],

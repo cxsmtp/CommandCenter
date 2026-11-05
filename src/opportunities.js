@@ -20,7 +20,7 @@ export const STAGES = {
   lost: 'Lost',
   on_hold: 'On hold',
 };
-export const CRITERION_STATUS = { not_started: 'Not started', in_progress: 'In progress', met: 'Met', not_met: 'Not met', na: 'Not applicable' };
+export const CRITERION_STATUS = { not_started: 'Not started', in_progress: 'In progress', met: 'Completed successfully', not_met: 'Not met', na: 'Not applicable' };
 export const SESSION_TYPES = { discovery: 'Discovery', technical: 'Technical session', workshop: 'Workshop', checkpoint: 'POV checkpoint', readout: 'Readout' };
 const HISTORY = 400;
 

@@ -44,7 +44,7 @@ export function successReport(opp, { owner, live, evidence = {}, org = 'Command 
 </header>
 <div class="bar"><span style="width:${p.percent}%"></span></div>
 <div class="answer">
-  <div><b>${p.percent}%</b>criteria met</div>
+  <div><b>${p.percent}%</b>criteria completed successfully</div>
   <div><b>${p.met} / ${p.total}</b>met</div>
   <div><b>${p.mustMet} / ${p.must}</b>must-haves met</div>
   <div><b>${p.notMet}</b>not met</div>

@@ -104,7 +104,7 @@ ${sign}`,
         subject: `${opp.customer} POV — status, week of ${fmtDate(new Date().toISOString().slice(0, 10))}`,
         body: `Hi ${first},
 
-Where the POV stands: ${p.met} of ${p.total} success criteria met (${p.percent}%)${p.must ? `, ${p.mustMet} of ${p.must} must-haves` : ''}${opp.endDate ? `, ${Math.max(0, Math.ceil((Date.parse(`${opp.endDate}T23:59:59Z`) - Date.now()) / 864e5))} days to go` : ''}.
+Where the POV stands: ${p.met} of ${p.total} success criteria completed successfully (${p.percent}%)${p.must ? `, ${p.mustMet} of ${p.must} must-haves` : ''}${opp.endDate ? `, ${Math.max(0, Math.ceil((Date.parse(`${opp.endDate}T23:59:59Z`) - Date.now()) / 864e5))} days to go` : ''}.
 ${tenantLine}
 
 ${statusLines() || 'No success criteria yet.'}

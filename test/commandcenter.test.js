@@ -128,7 +128,7 @@ test('managers edit their team’s work; associates only their own', async () =>
   assert.equal(n.body.evidence[jira.id].level, 'mentioned', 'keywords in notes are a hint');
   const met = await call('se1', `/api/opportunities/${ids.alpha}/criteria/${jira.id}`, { method: 'POST', body: { ...jira, status: 'met' } });
   assert.equal(met.body.row.progress.met, 1);
-  assert.ok(met.body.opportunity.history.some((h) => /Not started → Met/.test(h.what)));
+  assert.ok(met.body.opportunity.history.some((h) => /Not started → Completed successfully/.test(h.what)));
 });
 
 test('mute silences a POV’s alerts; projects can be muted on their own', async () => {
@@ -144,7 +144,7 @@ test('email drafts, .eml and the report', async () => {
   const d = (await call('se1', `/api/opportunities/${ids.alpha}/email/draft`, { method: 'POST', body: { template: 'weekly' } })).body;
   assert.deepEqual(d.to, ['priya@alpha.com']);
   assert.match(d.body, /Hi Priya/);
-  assert.match(d.body, /1 of 4 success criteria met/);
+  assert.match(d.body, /1 of 4 success criteria completed successfully/);
   const eml = await call('se1', `/api/opportunities/${ids.alpha}/email/eml`, { method: 'POST', body: d, raw: true });
   assert.match(eml.body, /Subject: =\?UTF-8\?Q\?Alpha_Bank_POV/);
   assert.match(eml.body, /X-Unsent: 1/);

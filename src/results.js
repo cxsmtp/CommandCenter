@@ -17,7 +17,7 @@ const stamp = (d) => (d ? new Date(d).toLocaleString('en-GB', { day: 'numeric', 
 const mixHex = (a, b, t) => '#' + [0, 2, 4].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) + (parseInt(b.slice(i, i + 2), 16) - parseInt(a.slice(i, i + 2), 16)) * t).toString(16).padStart(2, '0')).join('');
 /** The title's violet-to-coral gradient, a letter at a time: crisp on screen, in print and in the PDF. */
 const gradient = (t) => [...t].map((ch, i, all) => `<span style="color:${mixHex('bf4bd6', 'f2592d', i / Math.max(1, all.length - 1))}">${esc(ch)}</span>`).join('');
-const STATE_LABEL = { done: 'Proven', progress: 'In progress', planned: 'Planned', missed: 'Not met', na: 'Not applicable' };
+const STATE_LABEL = { done: 'Completed successfully', progress: 'In progress', planned: 'Planned', missed: 'Not met', na: 'Not applicable' };
 const TICK = (c = '#3CCF8E') => `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><path d="M3.5 10.5l4.2 4.2L16.8 5.3" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const CLOCK = (c) => `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><circle cx="10" cy="10" r="7.6" fill="${c}22" stroke="${c}" stroke-width="2"/><path d="M10 5.6V10l3.2 2" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
 const CROSS = `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="#8A8197" stroke-width="2.4" stroke-linecap="round"/></svg>`;
@@ -76,7 +76,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
       ${capture}
       ${rowCol('prevent', 531, 291, 'ELIMINATE &amp; PREVENT RISKS', 'Assist Family of Agents', '#7A45FF', 193, [377, 443, 510], ['dev-assist', 'ai-triage', 'ai-remediation'])}
       ${rowCol('govern', 945, 287, 'GOVERN &amp; UNIFY RISKS', 'Orchestration/Posture Management', '#B22BCB', 195, [372, 439, 508, 569], ['risk-orchestration', 'analytics', 'policy', 'mcp'])}
-      <div class="key" style="left:${u(80)};top:${u(603)}">${MARKS.done} Proven ${MARKS.progress} In progress ${MARKS.planned} Planned ${STAR} AI-powered <span class="hint">· select an engine for its record</span></div>
+      <div class="key" style="left:${u(80)};top:${u(603)}">${MARKS.done} Completed successfully ${MARKS.progress} In progress ${MARKS.planned} Planned ${STAR} AI-powered <span class="hint">· select an engine for its record</span></div>
       <div class="band" style="top:${u(669)};height:${u(60)}"><b>Checkmarx</b><span>${esc(d.customer)} · Proof of Value</span><em>1</em></div>
     </div>
   </section>`;
@@ -88,10 +88,10 @@ export function resultsPage(data, { nonce = '' } = {}) {
   const s = d.tenant;
   const slide2 = slide(
     `${esc(d.customer)} · ${day(d.startDate)} – ${day(d.endDate)}`,
-    p.percent === 100 ? 'Every success criterion was proven' : `${p.met} of ${p.total} success criteria proven`,
+    p.percent === 100 ? 'Every success criterion completed successfully' : `${p.met} of ${p.total} success criteria completed successfully`,
     `<div class="figs">
-      <div><b>${gradient(`${p.percent}%`)}</b><span>criteria proven</span></div>
-      <div><b>${gradient(`${p.mustMet}/${p.must}`)}</b><span>must-haves proven</span></div>
+      <div><b>${gradient(`${p.percent}%`)}</b><span>criteria completed</span></div>
+      <div><b>${gradient(`${p.mustMet}/${p.must}`)}</b><span>must-haves completed</span></div>
       <div><b>${gradient(String(s ? s.scans7d : '—'))}</b><span>scans in the last 7 days</span></div>
       <div><b>${gradient(s?.users?.total != null ? `${s.users.active + s.users.quiet}/${s.users.total}` : '—')}</b><span>people active</span></div>
     </div>
@@ -105,7 +105,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
       slide(
         `Success criteria${crit.length > 10 ? ` · ${i / 10 + 1} of ${Math.ceil(crit.length / 10)}` : ''}`,
         'Success criteria',
-        `<table class="tbl"><thead><tr><th>Group</th><th>Criterion</th><th>Status</th><th>Proven on</th><th>Evidence</th></tr></thead><tbody>${crit
+        `<table class="tbl"><thead><tr><th>Group</th><th>Criterion</th><th>Status</th><th>Completed on</th><th>Evidence</th></tr></thead><tbody>${crit
           .slice(i, i + 10)
           .map((c) => `<tr><td class="m">${esc(c.group)}</td><td><button class="lnk" data-e="${esc(c.id)}">${esc(c.title)}</button>${c.ai ? ' ' + STAR : ''}${c.priority === 'nice' ? ' <span class="m">(nice to have)</span>' : ''}</td><td class="st s-${c.state}">${MARKS[c.state] ?? ''} ${esc(STATE_LABEL[c.state])}</td><td class="m">${c.confirmedAt ? stamp(c.confirmedAt) : '—'}</td><td class="m">${esc([...(c.evidence?.level === 'detected' ? c.evidence.evidence : []), c.scans.length ? `${c.scans.length} proving scan${c.scans.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ').slice(0, 160)) || '—'}</td></tr>`)
           .join('') || '<tr><td colspan="5" class="m">No success criteria yet.</td></tr>'}</tbody></table>`,
@@ -161,7 +161,7 @@ function record(c, d) {
   <dl class="times">
     <div><dt>Agreed</dt><dd>${stamp(added)}</dd></div>
     <div><dt>Last change</dt><dd>${stamp(last)}</dd></div>
-    <div><dt>Proven</dt><dd>${c.confirmedAt ? `${stamp(c.confirmedAt)}${c.confirmedBy ? ` · ${esc(c.confirmedBy)}` : ''}` : '—'}</dd></div>
+    <div><dt>Completed successfully</dt><dd>${c.confirmedAt ? `${stamp(c.confirmedAt)}${c.confirmedBy ? ` · ${esc(c.confirmedBy)}` : ''}` : '—'}</dd></div>
     <div><dt>POV completed</dt><dd>${stamp(d.completedAt)}</dd></div>
   </dl>
   ${c.cxName ? `<h3>In Checkmarx One</h3><p>${esc(c.cxName)}</p>` : ''}
