@@ -371,6 +371,9 @@ function report(d) {
   return `<section class="panel"><div class="body stack">
     <p style="margin:0"><b>The results page</b> opens with the Checkmarx One platform slide, showing only this POV's engines with their status. Select any engine for its record: progress, the scans and evidence that prove it, notes, links and every timestamp up to the POV's completion. The other slides follow. Printing it gives a PDF of every slide, then one page per engine.</p>
     <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="dl-results">Download the page (HTML)</button><button class="btn" data-act="deck">Download the presentation (.pptx)</button></div>
+    <div class="item"><div class="top"><b>Final results</b>${d.finals.length ? `<span class="small muted">kept ${esc(when(d.finals[0].at))}${d.finals.length > 1 ? ` · ${d.finals.length} copies` : ''}</span>` : ''}</div>
+      ${d.finals.length ? `<p class="small muted" style="margin:6px 0">The results page exactly as it stood when the POV was marked successful: later activity in the tenant does not change it.</p><div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/results?final=1" target="_blank" rel="noopener">Open the final copy</a><button class="btn" data-act="dl-final">Download it</button>${current.canEdit ? '<button class="btn ghost" data-act="freeze">Keep a new final copy now</button>' : ''}</div>` : `<p class="small muted" style="margin:6px 0">Kept by itself when the POV is marked successful.${current.canEdit ? ' Or keep one now.' : ''}</p>${current.canEdit ? '<div class="row"><button class="btn" data-act="freeze">Keep the results as final now</button></div>' : ''}`}
+    </div>
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
     <p style="margin:0">The success-criteria report: the answer first, every criterion with its status and evidence, the sessions held and what the tenant showed. It prints to PDF from the browser.</p>
     <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
@@ -532,6 +535,10 @@ const WIRES = {
   report(main) {
     on(main, '[data-act="dl-report"]', () => attempt(() => download(`/opportunities/${oid()}/report?download=1`)));
     on(main, '[data-act="dl-results"]', () => attempt(() => download(`/opportunities/${oid()}/results?download=1`), 'Results page downloaded'));
+    on(main, '[data-act="dl-final"]', () => attempt(() => download(`/opportunities/${oid()}/results?download=1&final=1`), 'Final results downloaded'));
+    on(main, '[data-act="freeze"]', async () => {
+      if (await attempt(() => api(`/opportunities/${oid()}/results/freeze`, { method: 'POST' }), 'Final results kept')) rerender();
+    });
     on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
   },
 };

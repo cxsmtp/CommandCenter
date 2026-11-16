@@ -272,3 +272,20 @@ test('forecasts: criteria pace against the end date, credits runway', async () =
   const c = creditsForecast({ credits: { available: 300, used30d: 300 } }, [], now);
   assert.equal(c.runwayDays, 30);
 });
+
+test('results pages for every POV: the list, a final copy kept on success, all of them as a .zip', async () => {
+  const list = (await call('tl', '/api/results')).body.results;
+  assert.ok(list.some((r) => r.customer === 'Alpha Bank'));
+  const alpha = list.find((r) => r.customer === 'Alpha Bank');
+  assert.ok(alpha.finalAt, 'marked successful earlier: its final copy was kept');
+  const final = await call('tl', `/api/opportunities/${ids.alpha}/results?final=1`, { raw: true });
+  assert.equal(final.status, 200);
+  assert.match(final.body, /AppSec for the/);
+  const r = await fetch(`${base}/api/results/download`, { headers: { Cookie: jar.get('tl') } });
+  assert.equal(r.status, 200);
+  const buf = Buffer.from(await r.arrayBuffer());
+  assert.equal(buf.subarray(0, 4).toString('hex'), '504b0304', 'a .zip');
+  assert.ok(buf.includes(Buffer.from('index.html')));
+  assert.ok(buf.includes(Buffer.from('Alpha Bank - POV results (final).html')));
+  assert.equal((await call('se2', `/api/opportunities/${ids.alpha}/results?final=1`, { raw: true })).status, 404, 'a peer cannot read it');
+});

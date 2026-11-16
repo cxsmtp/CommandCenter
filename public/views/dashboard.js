@@ -1,6 +1,6 @@
 // The command center: every opportunity the viewer can see. Associates get detailed cards; managers get line items
 // they can filter by person, stage and words, grouped by person, and drill into.
-import { esc, fmt, api, state, local, ago, when, tc, HEALTH, KIND, sevBar, sevLegend, spark, progressBar, ring, forecastLine, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, can } from '../core.js';
+import { esc, fmt, api, state, local, openDialog, closeDialog, download, attempt, ago, when, tc, HEALTH, KIND, sevBar, sevLegend, spark, progressBar, ring, forecastLine, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, can } from '../core.js';
 
 const lastSeen = local.get('cc.lastSeen', 0);
 const markSeen = () => local.set('cc.lastSeen', Date.now());
@@ -38,6 +38,7 @@ export async function renderDashboard(main, { crumbs }) {
       <label class="check"><input type="checkbox" id="fAttention" ${ui.attention ? 'checked' : ''}> Needs attention only</label>
       <span class="spacer"></span>
       ${view === 'table' ? `<label class="check"><input type="checkbox" id="fGroup" ${ui.group !== false ? 'checked' : ''}> Group by person</label>` : ''}
+      <button class="btn" data-act="results">Results pages</button>
       <div class="seg" role="group" aria-label="View"><button data-view="cards" aria-pressed="${view === 'cards'}">Cards</button><button data-view="table" aria-pressed="${view === 'table'}">Line items</button></div>
     </div>
     <div class="pipeline" role="group" aria-label="Stage">
@@ -94,12 +95,38 @@ function wire(main) {
       save();
       rerender();
     });
+  main.querySelector('[data-act="results"]')?.addEventListener('click', () => openResults(main));
   for (const b of main.querySelectorAll('[data-side]')) b.addEventListener('click', () => ((ui.side = b.dataset.side), save(), rerender()));
 }
 
 // Cards come in buckets by stage: what is live first, closed deals folded away.
 const BUCKETS = ['pov', 'completed', 'technical', 'discovery', 'on_hold', 'won', 'lost'];
 const BUCKET_NOTE = { pov: 'Tenant read every few minutes', completed: 'Awaiting the decision', technical: 'Sessions and integration work', discovery: 'Before the POV', on_hold: '', won: '', lost: '' };
+// Results pages: every POV the viewer can see (with the person and stage filters applied), one per line.
+async function openResults() {
+  const q = new URLSearchParams();
+  if (ui.owner) q.set('owner', ui.owner);
+  if (ui.stage) q.set('stage', ui.stage);
+  const { results } = await api(`/results?${q}`);
+  const scope = [ui.owner ? state.users.find((u) => u.id === ui.owner)?.name : 'everyone you can see', ui.stage ? state.meta.stages[ui.stage] ?? 'open' : ''].filter(Boolean).join(' · ');
+  await openDialog(
+    `<div class="dbody"><h2>Results pages</h2>
+      <p class="muted" style="margin:0">One page per POV, opening with the Checkmarx One platform slide, with only its engines and their status. Select any engine for its record. A POV marked successful also has its <b>final</b> copy, kept as it stood then. Showing ${esc(scope)}.</p>
+      ${results.length ? `<div class="table-wrap"><table><thead><tr><th>Customer</th><th>SE</th><th>Stage</th><th class="n">Criteria</th><th>Final copy</th><th></th></tr></thead><tbody>${results
+        .map((r) => `<tr><td><b>${esc(r.customer)}</b>${r.tenant ? `<div class="small muted">${esc(r.tenant)}</div>` : ''}</td><td>${esc(r.owner)}</td><td>${esc(state.meta.stages[r.stage])}${r.povResult === 'successful' ? ' <span class="badge ok">successful</span>' : ''}</td><td class="n">${r.progress.met}/${r.progress.total}<div class="small muted">${r.progress.percent}%</div></td><td class="small">${r.finalAt ? `${esc(when(r.finalAt))}` : '<span class="muted">—</span>'}</td><td><div class="row" style="flex-wrap:nowrap"><a class="btn sm" href="/api/opportunities/${esc(r.id)}/results" target="_blank" rel="noopener">Open</a>${r.finalAt ? `<a class="btn sm" href="/api/opportunities/${esc(r.id)}/results?final=1" target="_blank" rel="noopener">Final</a>` : ''}<button class="btn sm" data-dl="${esc(r.id)}" data-final="${r.finalAt ? 1 : ''}">Download</button></div></td></tr>`)
+        .join('')}</tbody></table></div>` : '<p class="empty">No POV with success criteria yet.</p>'}
+      <div class="dialog-actions"><button class="btn ghost" data-close>Close</button>${results.length ? `<button class="btn primary" data-all>Download all (${results.length}) as .zip</button>` : ''}</div></div>`,
+    {
+      wide: true,
+      onOpen(d) {
+        d.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+        d.querySelector('[data-all]')?.addEventListener('click', () => attempt(() => download(`/results/download?${q}`), 'Downloaded'));
+        for (const b of d.querySelectorAll('[data-dl]')) b.addEventListener('click', () => attempt(() => download(`/opportunities/${b.dataset.dl}/results?download=1${b.dataset.final ? '&final=1' : ''}`), 'Downloaded'));
+      },
+    },
+  );
+}
+
 // The forecast strip: where the POVs are heading, across everything shown.
 function missionStrip(f) {
   if (!f || !f.povs) return '';
@@ -154,7 +181,7 @@ function card(r) {
         : ''
     }
     ${alertList(r.alerts, r.muted)}
-    <div class="card-foot"><span>${r.nextTask ? `Next: ${esc(r.nextTask.title)}${r.nextTask.due ? ` · ${esc(r.nextTask.due)}` : ''}` : `Updated ${ago(r.updatedAt)}`}</span>${spark(r.live?.trend)}</div>
+    <div class="card-foot"><span>${r.progress.total ? `<a href="/api/opportunities/${esc(r.id)}/results" target="_blank" rel="noopener" class="results-link">Results ↗</a> · ` : ''}${r.nextTask ? `Next: ${esc(r.nextTask.title)}${r.nextTask.due ? ` · ${esc(r.nextTask.due)}` : ''}` : `Updated ${ago(r.updatedAt)}`}</span>${spark(r.live?.trend)}</div>
   </article>`;
 }
 
@@ -172,7 +199,7 @@ const COLUMNS = [
   { label: 'People', n: true, key: (r) => r.live?.summary?.users?.active ?? -1, html: (r) => (r.live?.summary?.users?.total != null ? `${fmt(r.live.summary.users.active)}/${fmt(r.live.summary.users.total)}` : '—') },
   { label: 'Credits', n: true, key: (r) => r.live?.summary?.credits?.available ?? -1, html: (r) => fmt(r.live?.summary?.credits?.available) },
   { label: 'Last activity', key: (r) => Date.parse(r.live?.summary?.lastActivityAt ?? r.updatedAt) || 0, html: (r) => `<span title="${esc(when(r.live?.summary?.lastActivityAt ?? r.updatedAt))}">${ago(r.live?.summary?.lastActivityAt ?? r.updatedAt)}</span>` },
-  { label: 'Links', html: (r) => `${r.salesforceUrl ? `<a href="${esc(r.salesforceUrl)}" target="_blank" rel="noopener noreferrer" title="Salesforce">SF↗</a> ` : ''}${r.sharepointUrl ? `<a href="${esc(r.sharepointUrl)}" target="_blank" rel="noopener noreferrer" title="SharePoint">SP↗</a>` : ''}` },
+  { label: 'Links', html: (r) => `${r.progress.total ? `<a href="/api/opportunities/${esc(r.id)}/results" target="_blank" rel="noopener" title="POV results page">Results↗</a> ` : ''}${r.salesforceUrl ? `<a href="${esc(r.salesforceUrl)}" target="_blank" rel="noopener noreferrer" title="Salesforce">SF↗</a> ` : ''}${r.sharepointUrl ? `<a href="${esc(r.sharepointUrl)}" target="_blank" rel="noopener noreferrer" title="SharePoint">SP↗</a>` : ''}` },
 ];
 
 function lineItems(rows, group) {

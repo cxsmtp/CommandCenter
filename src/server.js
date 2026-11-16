@@ -18,6 +18,7 @@ import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector
 import { finalDeck } from './deck.js';
 import { Updater, RESTART_CODE } from './updates.js';
 import { Audit } from './audit.js';
+import { zip } from './zip.js';
 import { X509Certificate } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { criteriaForecast, creditsForecast, activityForecast, portfolioForecast } from './forecast.js';
@@ -253,6 +254,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
           }
         : null,
       outbox: mailer.outbox(new Set([opp.id])).slice(0, 100),
+      finals: finals(opp.id),
       mailConfigured: mailer.configured,
     };
   }
@@ -590,6 +592,20 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
     // Dashboards
     if (route === 'GET /overview') return send(res, 200, overview(user, url.searchParams));
+    if (route === 'GET /results') return send(res, 200, { results: resultsList(user, url.searchParams) });
+    if (route === 'GET /results/download') {
+      const list = resultsList(user, url.searchParams);
+      if (!list.length) throw fail(404, 'No POV with success criteria to make a results page for.');
+      const files = list.map((r) => {
+        const last = r.finalAt ? finals(r.id)[0] : null;
+        const html = last ? fs.readFileSync(path.join(resultsDir(r.id), last.file), 'utf8') : resultsPage(resultsData(opps.get(r.id)));
+        return { name: `${r.customer} - POV results${last ? ' (final)' : ''}.html`, data: html };
+      });
+      const esc2 = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+      const index = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>POV results</title><style>body{font:15px/1.5 Arial,sans-serif;background:#140920;color:#fff;margin:40px}a{color:#c9b6ff}td,th{padding:8px 14px;border-bottom:1px solid #3a2352;text-align:left}th{color:#b9b0cc;font-size:12px;text-transform:uppercase;letter-spacing:.1em}</style></head><body><h1>POV results</h1><p style="color:#b9b0cc">${list.length} POV${list.length === 1 ? '' : 's'} · made ${new Date().toUTCString()}</p><table><tr><th>Customer</th><th>SE</th><th>Stage</th><th>Criteria</th><th>Result</th></tr>${list.map((r, i) => `<tr><td><a href="${encodeURI(files[i].name)}">${esc2(r.customer)}</a></td><td>${esc2(r.owner)}</td><td>${esc2(STAGES[r.stage])}</td><td>${r.progress.met}/${r.progress.total} (${r.progress.percent}%)</td><td>${r.finalAt ? `Final, ${esc2(new Date(r.finalAt).toUTCString())}` : 'Live'}</td></tr>`).join('')}</table></body></html>`;
+      audit.record(user, 'reports', `Downloaded ${list.length} POV results page${list.length === 1 ? '' : 's'}`);
+      return file(res, `POV results ${new Date().toISOString().slice(0, 10)}.zip`, 'application/zip', zip([{ name: 'index.html', data: index }, ...files]));
+    }
     if (route === 'POST /refresh') {
       monitor.refreshAll(opps.visible(user).filter((o) => o.tenant).map((o) => o.id)).catch(() => {});
       return send(res, 202, { ok: true });
@@ -628,9 +644,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       };
       if (!sub && m === 'GET') return send(res, 200, detail(user, viewOpp(user, id)));
       if (!sub && m === 'PATCH') {
+        const wasSuccessful = opps.get(id)?.povResult === 'successful';
         const opp = opps.update(user, id, await readBody(req), s);
         // A running POV is read now; one that just completed gets a final read for its report and deck.
-        if (opp.tenant && (POLLED_STAGES.has(opp.stage) || opp.stage === 'completed')) monitor.refresh(id, { force: true }).catch(() => {});
+        const read = opp.tenant && (POLLED_STAGES.has(opp.stage) || opp.stage === 'completed') ? monitor.refresh(id, { force: true }).catch(() => {}) : Promise.resolve();
+        // Marked successful: once that final read is in, its results page is kept as it stands now.
+        if (!wasSuccessful && opp.povResult === 'successful') read.then(() => freezeResults(id, user)).catch(() => {});
         return done(opp);
       }
       if (!sub && m === 'DELETE') {
@@ -675,6 +694,21 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (KINDS.has(sub) && parts[3] && m === 'DELETE') {
         opps.removeItem(user, id, sub, parts[3], s);
         return done();
+      }
+      if (sub === 'results' && m === 'GET' && url.searchParams.get('final')) {
+        const opp = viewOpp(user, id);
+        const last = finals(id)[0];
+        if (!last) throw fail(404, 'This POV has no final results yet: it gets one when it is marked successful.');
+        const html = fs.readFileSync(path.join(resultsDir(id), last.file), 'utf8');
+        if (url.searchParams.get('download')) return file(res, `${opp.customer} - POV results (final).html`, 'text/html; charset=utf-8', html);
+        const nonce = randomBytes(12).toString('base64');
+        return send(res, 200, html.replace('<script>', `<script nonce="${nonce}">`), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; frame-ancestors 'self'` });
+      }
+      if (sub === 'results' && m === 'POST' && parts[3] === 'freeze') {
+        const opp = viewOpp(user, id);
+        if (!opps.canEdit(user, opps.get(id), s)) throw fail(403, 'You can view this POV but not keep its results.');
+        freezeResults(opp.id, user);
+        return done(opps.get(id));
       }
       if (sub === 'results' && m === 'GET') {
         const opp = viewOpp(user, id);
@@ -876,6 +910,35 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
   });
+  // ——— Results pages: one per POV; a final copy kept when it is marked successful ———
+  const resultsDir = (id) => path.join(dataDir, 'results', id.replace(/[^0-9a-f-]/gi, ''));
+  const finals = (id) => {
+    try {
+      return fs.readdirSync(resultsDir(id)).filter((f) => f.endsWith('.html')).sort().reverse().map((f) => ({ file: f, at: f.replace(/\.html$/, '').replace(/^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/, '$1:$2:$3.$4Z') }));
+    } catch {
+      return [];
+    }
+  };
+  function freezeResults(id, actor) {
+    const opp = opps.get(id);
+    if (!opp) return;
+    const dir = resultsDir(id);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(dir, `${new Date().toISOString().replace(/:/g, '-').replace('.', '-')}.html`), resultsPage(resultsData(opp)), { mode: 0o600 });
+    opps.mutate({ ...actor, role: 'admin' }, id, fullSettings(), (o) => (o.history ??= []).push({ at: new Date().toISOString(), by: actor?.id ?? '', what: 'Kept the final results page' }));
+    notify({ id });
+  }
+  function resultsList(viewer, q) {
+    const owner = q.get('owner');
+    const scope = owner ? new Set([owner, ...users.descendants(owner)]) : null;
+    const stage = q.get('stage');
+    return opps
+      .visible(viewer)
+      .filter((o) => (o.criteria ?? []).length && (!scope || scope.has(o.ownerId)) && (!stage || o.stage === stage || (stage === 'open' && !['won', 'lost'].includes(o.stage))))
+      .map((o) => ({ id: o.id, customer: o.customer, name: o.name, owner: users.get(o.ownerId)?.name ?? '', stage: o.stage, povResult: o.povResult ?? '', progress: progressOf(o), tenant: o.tenant?.tenant ?? null, finalAt: finals(o.id)[0]?.at ?? null }))
+      .sort((a, b) => a.customer.localeCompare(b.customer));
+  }
+
   // ——— Helpers for Settings ———
   const certFile = path.join(dataDir, 'certs', 'trusted.json');
   const readCerts = () => {
