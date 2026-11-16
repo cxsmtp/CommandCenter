@@ -23,7 +23,7 @@ export const PERMISSIONS = {
   'tenant.logs': 'Download scan logs and troubleshooting bundles',
   'ai.run': 'Run AI Triage and AI Remediation on a POV tenant (within its credit pool)',
   'credits.allocate': 'Set the credit pool of POVs in their team',
-  'mail.send': 'Send email from CommandCenter',
+  'mail.send': 'Send email from Meridian',
   'users.manage': 'Add and edit people below them',
   'catalog.manage': 'Edit the capability catalogue and its Checkmarx One mapping',
   'settings.manage': 'Change server settings (email server, refresh, defaults)',
@@ -77,7 +77,7 @@ export class Users {
   ensureAdmin() {
     if (this.#all().length) return null;
     const password = process.env.CC_ADMIN_PASSWORD || randomBytes(9).toString('base64url');
-    const admin = { id: randomUUID(), email: cleanEmail(process.env.CC_ADMIN_EMAIL) || 'admin@commandcenter.local', name: 'Administrator', role: 'admin', managerId: null, title: '', active: true, password: hashPassword(password), mustChangePassword: !process.env.CC_ADMIN_PASSWORD, prefs: {}, createdAt: new Date().toISOString() };
+    const admin = { id: randomUUID(), email: cleanEmail(process.env.CC_ADMIN_EMAIL) || 'admin@meridian.local', name: 'Administrator', role: 'admin', managerId: null, title: '', active: true, password: hashPassword(password), mustChangePassword: !process.env.CC_ADMIN_PASSWORD, prefs: {}, createdAt: new Date().toISOString() };
     this.#save([admin]);
     return { email: admin.email, password };
   }

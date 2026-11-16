@@ -16,7 +16,7 @@ export class Audit {
   record(actor, type, what, detail = {}) {
     const all = this.#db.read('audit', []);
     const prev = all.length ? all[all.length - 1].hash : '';
-    const entry = { at: new Date().toISOString(), by: actor?.id ?? '', byName: actor?.name ?? (actor ? '' : 'CommandCenter'), type: text(type, 30), what: text(what, 400), detail };
+    const entry = { at: new Date().toISOString(), by: actor?.id ?? '', byName: actor?.name ?? (actor ? '' : 'Meridian'), type: text(type, 30), what: text(what, 400), detail };
     entry.hash = createHash('sha256').update(prev + JSON.stringify(entry)).digest('hex');
     all.push(entry);
     this.#db.write('audit', all.slice(-KEEP));

@@ -20,7 +20,7 @@ const HEAD = 'Arial';
 const BODY = 'Arial';
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
 
-export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Command Center', catalog = null, flow = null }) {
+export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Meridian', catalog = null, flow = null }) {
   const pptx = new PptxGenJS();
   pageNo = 1;
   pptx.layout = 'LAYOUT_WIDE'; // 13.33 × 7.5 in

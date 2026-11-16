@@ -40,7 +40,7 @@ function edit(c, categories) {
       <label class="field">Name in Checkmarx One<input name="cxName" value="${esc(c?.cxName ?? '')}"></label>
       <label class="field">Or a new group<input name="newGroup" placeholder="e.g. Runtime Security"></label>
       <label class="field">What the SE shows the customer to mark it met<textarea name="proof" rows="2">${esc(c?.proof ?? '')}</textarea></label>
-      <label class="field">How CommandCenter checks it (technical detail)<textarea name="tech" rows="2">${esc(c?.tech ?? '')}</textarea></label>
+      <label class="field">How Meridian checks it (technical detail)<textarea name="tech" rows="2">${esc(c?.tech ?? '')}</textarea></label>
       <label class="check"><input type="checkbox" name="isNew" ${c?.isNew ? 'checked' : ''}> Mark as new</label>
       <h3>Recognised by (comma separated)</h3>
       ${RULES.map(([k, l, ph]) => `<label class="field">${esc(l)}<input name="${k}" value="${esc((c?.detect?.[k] ?? []).join(', '))}" placeholder="${esc(ph)}"></label>`).join('')}

@@ -82,17 +82,18 @@ const ICON = {
   insights: svg('<path d="M4 19h16"/><path d="M7 15l3.5-4 3 2.5L18 8"/><circle cx="18" cy="8" r="1.4"/>'),
 };
 const NAV = [
-  ['Work', [['dashboard', ICON.dashboard, 'Command center'], ['insights', ICON.insights, 'Insights'], ['team', ICON.team, 'Teams']]],
+  ['Work', [['dashboard', ICON.dashboard, 'Portfolio'], ['insights', ICON.insights, 'Insights'], ['team', ICON.team, 'Teams']]],
   ['Set up', [['catalog', ICON.catalog, 'Capabilities'], ['settings', ICON.settings, 'Settings']]],
 ];
 
+const MARK = '<svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12.5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/><ellipse cx="16" cy="16" rx="5.2" ry="12.5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/><path d="M16 2.2v27.6" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="9" r="2.4" fill="currentColor"/></svg>';
 function shell() {
   const u = state.session.user;
   const r = route();
   const attention = state.overview?.totals?.needsAttention ?? 0;
   root.innerHTML = `<div class="shell">
     <nav class="nav" id="nav" aria-label="Main">
-      <div class="brand"><span class="brand-dot"></span>${esc(state.session.settings.orgName || 'CommandCenter')}</div>
+      <div class="brand">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Meridian')}</span><span class="brand-tag">One line of sight</span></span></div>
       ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
@@ -229,8 +230,8 @@ setInterval(() => document.visibilityState === 'visible' && !$('#dialog').open &
 // ——— Sign-in ———
 function showLogin(message = '') {
   root.innerHTML = `<div class="login"><form class="panel" id="loginForm">
-    <div class="brand" style="padding:0"><span class="brand-dot"></span><h1 style="font-size:20px">${esc(state.session?.settings?.orgName || 'CommandCenter')}</h1></div>
-    <p class="muted" style="margin:0">Every opportunity and POV, from discovery to the win.</p>
+    <div class="brand" style="padding:0">${MARK}<h1 style="font-size:20px">${esc(state.session?.settings?.orgName || 'Meridian')}</h1></div>
+    <p class="muted" style="margin:0">Every POV, the technical value it proves and the revenue it moves — in one line of sight.</p>
     <label class="field">Email<input name="email" type="email" autocomplete="username" required autofocus></label>
     <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
     <p class="form-error" id="loginError" role="alert">${esc(message)}</p>

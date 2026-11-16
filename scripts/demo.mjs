@@ -1,5 +1,5 @@
 /**
- * `npm run demo`: CommandCenter with a made-up team (VP → leader → team leads → SEs), opportunities at every stage
+ * `npm run demo`: Meridian with a made-up team (VP → leader → team leads → SEs), opportunities at every stage
  * and four POV tenants on a local mock of Checkmarx One, so everything can be seen without a real API key.
  * Data goes to a throwaway folder. Every demo account's password: demo-password
  */
@@ -78,7 +78,7 @@ make(ses[1], { customer: 'Cyberdyne', stage: 'lost' }, {});
 
 const port = Number(process.env.PORT) || 4310;
 app.server.listen(port, process.env.HOST || '127.0.0.1', () => {
-  console.log(`CommandCenter demo on http://127.0.0.1:${port}  (mock Checkmarx One at ${mock.origin})`);
+  console.log(`Meridian demo on http://127.0.0.1:${port}  (mock Checkmarx One at ${mock.origin})`);
   console.log(`Sign in as vp@demo.local, leader@demo.local, tl1@demo.local, se1@demo.local … or admin@demo.local — password: ${pw}`);
   app.monitor.start();
   for (const o of opps.raw().filter((x) => x.tenant)) app.monitor.refresh(o.id, { force: true });
@@ -87,7 +87,7 @@ app.server.listen(port, process.env.HOST || '127.0.0.1', () => {
     const base = `http://127.0.0.1:${port}`;
     const r = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'se1@demo.local', password: pw }) });
     const cookie = r.headers.get('set-cookie').split(';')[0];
-    const h = { Cookie: cookie, 'X-Requested-With': 'CommandCenter' };
+    const h = { Cookie: cookie, 'X-Requested-With': 'Meridian' };
     const acme = opps.raw().find((o) => o.customer === 'Acme Bank');
     const c = acme.criteria.find((x) => x.capabilityId === 'aisc');
     await fetch(`${base}/api/opportunities/${acme.id}/criteria/${c.id}/demo`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ date: day(-3), environment: 'SE demo tenant (screen share)', attendees: 'Priya Rao (AppSec lead), Tom Lee', notes: 'Showed the AI inventory of a sample repository: the models, providers and MCP servers found, and the risks on each.', recordingUrl: 'https://example.sharepoint.com/sites/AcmeBankPOV/recordings/ai-inventory', markCompleted: true }) });

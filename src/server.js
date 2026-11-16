@@ -1,5 +1,5 @@
 /**
- * CommandCenter: discovery → technical sessions → POV → outcome, for every SE in a team, in one place.
+ * Meridian: discovery → technical sessions → POV → outcome, for every SE in a team, in one place.
  *
  * One dependency (nodemailer). Everything it keeps lives in the data folder (CC_DATA_DIR, /data in the container).
  */
@@ -45,7 +45,7 @@ const MAX_BODY = 512 * 1024;
 const DAY = 86_400_000;
 const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']);
 const POLLED_STAGES = new Set(['pov']);
-const DEFAULT_SETTINGS = { orgName: 'Command Center', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true };
+const DEFAULT_SETTINGS = { orgName: 'Meridian', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true };
 
 export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null, backupOptions = null, startBackground = true } = {}) {
   const db = new Db(dataDir);
@@ -68,7 +68,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   users.sessionMs = (settings().security.sessionHours || 12) * 3600e3;
   const backupStore = new Backups({ dataDir, vault: db.vault, ...(backupOptions ?? {}) });
   const restartServer = (actor, why) => {
-    if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start CommandCenter with "npm start" or the container image.');
+    if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start Meridian with "npm start" or the container image.');
     audit.record(actor, 'system', `Restarted the server (${why})`);
     setTimeout(() => process.exit(RESTART_CODE), 300);
   };
@@ -264,7 +264,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       .flatMap((o) => eventsOf(monitor.snapshot(o.id), { povId: o.id, since }).filter((e) => !(o.mute?.projects ?? []).includes(e.projectId)).slice(0, 30))
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
       .slice(0, 250);
-    // What the team did in CommandCenter (notes, stage changes, criteria met), newest first.
+    // What the team did in Meridian (notes, stage changes, criteria met), newest first.
     const activity = list
       .flatMap((o) => (o.history ?? []).slice(-40).map((h) => ({ ...h, oppId: o.id, opp: o.name, byName: users.get(h.by)?.name ?? '' })))
       .sort((a, b) => b.at.localeCompare(a.at))
@@ -386,7 +386,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
-    if (m !== 'GET' && req.headers['x-requested-with'] !== 'CommandCenter') return send(res, 403, { error: 'Missing request header.' });
+    if (m !== 'GET' && !['Meridian', 'Meridian'].includes(req.headers['x-requested-with'])) return send(res, 403, { error: 'Missing request header.' });
 
     if (route === 'POST /logout') {
       users.signOut(cookie(req, 'cc_session'));
@@ -1046,7 +1046,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (!opp.tenant) throw fail(400, 'Connect a Checkmarx One tenant first.');
     const snap = monitor.snapshot(opp.id);
     const live = monitor.live(opp.id);
-    const lines = [`CommandCenter troubleshooting bundle — ${opp.customer} — tenant ${opp.tenant.tenant} (${opp.tenant.regionLabel})`, `Made ${new Date().toISOString()}`, `API ${opp.tenant.baseUrl}`, `Last read: ${snap?.at ?? 'never'} (${snap?.ms ?? '?'} ms)${live.error ? `; last error ${live.error.at}: ${live.error.message}` : ''}`, ...(snap?.errors ?? []).map((e) => `Part not read: ${e.part}: ${e.message}`), ''];
+    const lines = [`Meridian troubleshooting bundle — ${opp.customer} — tenant ${opp.tenant.tenant} (${opp.tenant.regionLabel})`, `Made ${new Date().toISOString()}`, `API ${opp.tenant.baseUrl}`, `Last read: ${snap?.at ?? 'never'} (${snap?.ms ?? '?'} ms)${live.error ? `; last error ${live.error.at}: ${live.error.message}` : ''}`, ...(snap?.errors ?? []).map((e) => `Part not read: ${e.part}: ${e.message}`), ''];
     const failed = (snap?.scans ?? []).filter((s) => /fail|partial/i.test(s.status)).slice(0, 10);
     lines.push(`${failed.length} failed or partial scan(s) in the last ${SCAN_WINDOW_DAYS} days${failed.length === 10 ? ' (newest 10)' : ''}`, '');
     const connection = opps.connection(opp.id);
@@ -1252,7 +1252,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   };
   /** Every connection the server makes or takes, for the network team. */
   const allowlist = () => {
-    const out = [{ direction: 'in', host: 'this server', port: Number(process.env.PORT) || 4310, why: 'People opening CommandCenter (HTTPS when behind your reverse proxy)' }];
+    const out = [{ direction: 'in', host: 'this server', port: Number(process.env.PORT) || 4310, why: 'People opening Meridian (HTTPS when behind your reverse proxy)' }];
     const seen = new Set();
     for (const o of opps.raw().filter((x) => x.tenant && !['won', 'lost'].includes(x.stage))) {
       for (const [label, addr] of [['IAM (sign-in, users)', o.tenant.iamUrl], ['API (projects, scans, results, credits, logs)', o.tenant.baseUrl]]) {
@@ -1319,7 +1319,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`\n  First start. Sign in as ${app.firstAdmin.email} with password: ${app.firstAdmin.password}\n  (you will be asked to change it)\n`);
   }
   app.server.listen(port, host, () => {
-    console.log(`CommandCenter ${VERSION} on http://${host}:${port} — reading POV tenants every ${app.monitor.intervalMs / 60_000} min`);
+    console.log(`Meridian ${VERSION} on http://${host}:${port} — reading POV tenants every ${app.monitor.intervalMs / 60_000} min`);
     app.monitor.start();
   });
   const stop = () => app.server.close(() => process.exit(0));

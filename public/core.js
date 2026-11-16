@@ -28,7 +28,7 @@ export const local = {
 
 export class ApiError extends Error {}
 export async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`/api${path}`, { method, headers: { 'X-Requested-With': 'CommandCenter', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const res = await fetch(`/api${path}`, { method, headers: { 'X-Requested-With': 'Meridian', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && path !== '/login') {
     document.dispatchEvent(new CustomEvent('cc:signed-out'));
@@ -40,7 +40,7 @@ export async function api(path, { method = 'GET', body } = {}) {
 
 /** POST that returns a file: saved through a temporary link. */
 export async function download(path, body, fallbackName = 'download') {
-  const res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'X-Requested-With': 'CommandCenter', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'X-Requested-With': 'Meridian', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) throw new ApiError((await res.json().catch(() => ({}))).error || `${res.status} ${res.statusText}`);
   const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
   const url = URL.createObjectURL(await res.blob());

@@ -1,6 +1,6 @@
 /**
  * Load test at the target scale: N POV tenants (300 by default) on the mock Checkmarx One, 40 SEs in a team tree,
- * every tenant read once (as after a start, or one full interval), then P people (40) loading the command center at
+ * every tenant read once (as after a start, or one full interval), then P people (40) loading the portfolio at
  * the same time, for R rounds. Prints how long the reads took, the server's memory, and the overview's response
  * times (median and 95th percentile).
  *

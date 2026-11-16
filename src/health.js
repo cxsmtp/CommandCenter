@@ -123,7 +123,7 @@ export function healthChecks({ db, backups, monitor, audit, updater, watchdog, v
 
   // Tenant reading
   const load = monitor.load();
-  add('reading', 'Reading tenants', load.failing > Math.max(2, load.tenants * 0.2) ? 'warn' : 'ok', `${load.tenants} tenants every ${load.intervalMinutes} min · ${load.reading} reading, ${load.queued} queued · ${load.failing} failing.`, load.failing ? 'The failing ones are listed on the command center with the reason.' : '');
+  add('reading', 'Reading tenants', load.failing > Math.max(2, load.tenants * 0.2) ? 'warn' : 'ok', `${load.tenants} tenants every ${load.intervalMinutes} min · ${load.reading} reading, ${load.queued} queued · ${load.failing} failing.`, load.failing ? 'The failing ones are listed on the portfolio with the reason.' : '');
 
   // Watchdog
   const mem = Math.round(process.memoryUsage().rss / 1048576);

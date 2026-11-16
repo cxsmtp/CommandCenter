@@ -16,16 +16,16 @@ const files = new Map();
 /** A release bundle of this checkout, saying it is `version`, its server optionally broken. */
 function makeBundle(version, { broken = false } = {}) {
   const stage = fs.mkdtempSync(path.join(tmp, 'stage-'));
-  const top = path.join(stage, 'commandcenter');
+  const top = path.join(stage, 'meridian');
   fs.mkdirSync(top);
   for (const item of ['package.json', 'src', 'public', 'node_modules']) fs.cpSync(path.join(ROOT, item), path.join(top, item), { recursive: true });
   const pkg = JSON.parse(fs.readFileSync(path.join(top, 'package.json'), 'utf8'));
   pkg.version = version;
   fs.writeFileSync(path.join(top, 'package.json'), JSON.stringify(pkg));
   if (broken) fs.writeFileSync(path.join(top, 'src', 'server.js'), 'process.exit(3);\n');
-  const name = `commandcenter-${version}.tar.gz`;
+  const name = `meridian-${version}.tar.gz`;
   const file = path.join(tmp, name);
-  execFileSync('tar', ['-czf', file, '-C', stage, 'commandcenter']);
+  execFileSync('tar', ['-czf', file, '-C', stage, 'meridian']);
   const buf = fs.readFileSync(file);
   return { name, buf, sums: `${createHash('sha256').update(buf).digest('hex')}  ${name}\n` };
 }

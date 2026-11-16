@@ -1,5 +1,5 @@
 /**
- * Mass AI actions on a POV tenant, from CommandCenter: Checkmarx One AI Triage (1 credit a finding) and AI
+ * Mass AI actions on a POV tenant, from Meridian: Checkmarx One AI Triage (1 credit a finding) and AI
  * Remediation (3 credits a confirmed finding), the same calls CxMissionZero makes (src/routes/credits.js there):
  *
  *   POST /api/ai-triage/triage          { scanID, buckets: [{ scannerType, resultIDs }] }
@@ -62,7 +62,7 @@ export class AiActions {
     this.#cache.delete(oppId);
   }
 
-  /** Credits charged from CommandCenter for this POV. */
+  /** Credits charged from Meridian for this POV. */
   spent(oppId) {
     return this.ledger(oppId).filter((e) => e.outcome === 'charged').reduce((t, e) => t + (e.credits ?? 0), 0);
   }

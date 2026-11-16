@@ -14,7 +14,7 @@ const clamp = (v) => Math.max(0, Math.min(100, Math.round(v)));
 
 /**
  * @param {object} opp     the opportunity
- * @param {object} row     its row in the command center (live summary, forecast, alerts, value…)
+ * @param {object} row     its row in the portfolio (live summary, forecast, alerts, value…)
  * @param {object} ctx     { facts: tenantFacts(snapshot) or null, people: peopleActivity(snapshot) or null, now }
  */
 export function predict(opp, row, { now = Date.now() } = {}) {

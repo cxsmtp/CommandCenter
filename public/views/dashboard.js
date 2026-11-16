@@ -1,4 +1,4 @@
-// The command center: every opportunity the viewer can see. Associates get detailed cards; managers get line items
+// The portfolio: every opportunity the viewer can see. Associates get detailed cards; managers get line items
 // they can filter by person, stage and words, grouped by person, and drill into.
 import { esc, fmt, api, state, local, openDialog, closeDialog, download, attempt, ago, when, tc, HEALTH, KIND, sevBar, sevLegend, spark, progressBar, ring, forecastLine, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, can } from '../core.js';
 
@@ -13,7 +13,7 @@ const defaultView = () => state.session.user.prefs?.view || (state.session.user.
 
 export async function renderDashboard(main, { crumbs, open = '' }) {
   ui.open = open;
-  crumbs('<h2 style="font-size:16px">Command center</h2>');
+  crumbs('<h2 style="font-size:16px">Portfolio</h2>');
   const owner = ui.owner && state.users.some((u) => u.id === ui.owner) ? ui.owner : '';
   state.overview = await api(`/overview${owner ? `?owner=${encodeURIComponent(owner)}` : ''}`);
   const o = state.overview;
@@ -21,7 +21,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
   const t = o.totals;
 
   if (!o.rows.length && !owner) {
-    main.innerHTML = `<div class="hero-empty"><h1>Every opportunity, in one place</h1><p>Start with the discovery: log the opportunity, what the customer asked for and the success criteria they want to see. When the POV starts, paste the tenant's Checkmarx One API key: CommandCenter reads it every ${o.intervalMinutes} minutes and shows its scans, failures, Fusion and LAST scans, credits and the integrations already tested.</p>${can('opps.create') ? '<button class="btn primary" data-action="new-opp">New opportunity</button>' : ''}</div>`;
+    main.innerHTML = `<div class="hero-empty"><h1>Every opportunity, in one place</h1><p>Start with the discovery: log the opportunity, what the customer asked for and the success criteria they want to see. When the POV starts, paste the tenant's Checkmarx One API key: Meridian reads it every ${o.intervalMinutes} minutes and shows its scans, failures, Fusion and LAST scans, credits and the integrations already tested.</p>${can('opps.create') ? '<button class="btn primary" data-action="new-opp">New opportunity</button>' : ''}</div>`;
     return;
   }
 
@@ -131,7 +131,7 @@ function figureGroups(t, f) {
     ${grp('gaps', 'Needs you', [fig(t.needsAttention, 'need attention', t.needsAttention ? 'bad-t' : 'ok-t'), fig(t.endingSoon, 'end within 7 days', t.endingSoon ? 'warn-t' : '')])}
     ${grp('outlook', 'Outlook', [fig(f?.onTrack ?? 0, 'on track', 'ok-t'), fig(f?.atRisk ?? 0, 'at risk', (f?.atRisk ?? 0) ? 'warn-t' : ''), fig(f?.late ?? 0, 'late', (f?.late ?? 0) ? 'bad-t' : '')])}
     ${grp('tenants', 'Tenants today', [fig(fmt(t.scans24h), `scans${t.failed24h ? `, <span class="bad-t">${fmt(t.failed24h)} failed</span>` : ''}`), fig(fmt(t.running), 'running now'), fig(t.usersTotal !== null ? `${fmt(t.usersActive)}<small>/${fmt(t.usersTotal)}</small>` : '—', 'people active')])}
-    ${grp('ai', 'AI scanning · 7 days', [fig(fmt(t.fusion7d), 'Fusion scans'), fig(fmt(t.last7d), 'LAST scans')])}
+    ${grp('ai', 'Fusion · 7 days', [fig(fmt(t.fusion7d), 'Fusion scans'), fig(fmt(t.last7d), 'LAST scans')])}
     ${grp('value', 'Credits & value', [fig(fmt(t.creditsAvailable), 'credits left'), fig(fmt(v.hours ?? 0), 'hours saved by AI', 'ok-t'), fig(cur(v.value), 'value delivered', 'ok-t')])}
     ${grp('pipeline', 'Success criteria', [fig(t.criteriaTotal ? `${Math.round((100 * t.criteriaMet) / t.criteriaTotal)}%` : '—', `${t.criteriaMet} of ${t.criteriaTotal} done`)])}
   </section>`;
@@ -243,7 +243,7 @@ function lineItems(rows, by) {
 function sidePanel(o) {
   const side = ui.side || 'tenant';
   return `<section class="panel">
-    <div class="head"><div class="seg" role="tablist"><button data-side="tenant" aria-pressed="${side === 'tenant'}">Tenant activity</button><button data-side="team" aria-pressed="${side === 'team'}">Team activity</button></div><span class="small muted">${side === 'tenant' ? 'last 7 days' : 'in CommandCenter'}</span></div>
+    <div class="head"><div class="seg" role="tablist"><button data-side="tenant" aria-pressed="${side === 'tenant'}">Tenant activity</button><button data-side="team" aria-pressed="${side === 'team'}">Team activity</button></div><span class="small muted">${side === 'tenant' ? 'last 7 days' : 'in Meridian'}</span></div>
     ${side === 'tenant' ? feed(o.events, o.rows) : teamFeed(o.activity)}
   </section>`;
 }

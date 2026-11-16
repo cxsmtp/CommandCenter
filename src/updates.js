@@ -1,5 +1,5 @@
 /**
- * Updates: CommandCenter replaces its own code with a published release, without anyone signing in to the server.
+ * Updates: Meridian replaces its own code with a published release, without anyone signing in to the server.
  *
  *   check     the repository's releases (GitHub, CC_UPDATE_REPO), newest first, every 6 hours and on request
  *   install   download the release's app bundle, check it against the release's SHA256SUMS (and, when
@@ -149,7 +149,7 @@ export class Updater {
   }
 
   async #get(url, { json = false, accept } = {}) {
-    const r = await this.#fetch(this.#checkUrl(url), { headers: { 'User-Agent': 'CommandCenter-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') }, redirect: 'follow', signal: AbortSignal.timeout(120_000) });
+    const r = await this.#fetch(this.#checkUrl(url), { headers: { 'User-Agent': 'Meridian-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') }, redirect: 'follow', signal: AbortSignal.timeout(120_000) });
     // A redirect may only land on the release service too.
     if (r.url) this.#checkUrl(r.url);
     if (!r.ok) throw fail(502, `The release service answered ${r.status} for ${new URL(url).pathname}.`);
@@ -165,7 +165,7 @@ export class Updater {
         .map((r) => {
           const version = String(r.tag_name ?? '').replace(/^v/, '');
           const asset = (re) => (r.assets ?? []).find((a) => re.test(a.name))?.browser_download_url ?? null;
-          return { version, name: String(r.name ?? r.tag_name ?? '').slice(0, 120), notes: String(r.body ?? '').slice(0, 4000), publishedAt: r.published_at ?? null, url: r.html_url ?? null, bundle: asset(/^commandcenter-.*\.tar\.gz$/), sums: asset(/^SHA256SUMS$/), sig: asset(/^SHA256SUMS\.sig$/) };
+          return { version, name: String(r.name ?? r.tag_name ?? '').slice(0, 120), notes: String(r.body ?? '').slice(0, 4000), publishedAt: r.published_at ?? null, url: r.html_url ?? null, bundle: asset(/^(meridian|commandcenter)-.*\.tar\.gz$/), sums: asset(/^SHA256SUMS$/), sig: asset(/^SHA256SUMS\.sig$/) };
         })
         .filter((r) => VERSION_RE.test(r.version) && r.bundle && r.sums)
         .sort((a, b) => compareVersions(b.version, a.version));
@@ -179,7 +179,7 @@ export class Updater {
 
   /** Install a version (the newest when none is named) and restart into it. */
   install(version, { by = '' } = {}) {
-    if (!this.launched) throw fail(409, 'Updates need the launcher: start CommandCenter with "npm start" or the container image.');
+    if (!this.launched) throw fail(409, 'Updates need the launcher: start Meridian with "npm start" or the container image.');
     if (this.#busy) throw fail(409, 'An update is already running.');
     this.#busy = this.#install(version, by).finally(() => {
       this.#busy = null;
@@ -249,7 +249,7 @@ export class Updater {
 
   /** Go back to the version before (or to the one built into the image). */
   rollback({ by = '' } = {}) {
-    if (!this.launched) throw fail(409, 'Rollback needs the launcher: start CommandCenter with "npm start" or the container image.');
+    if (!this.launched) throw fail(409, 'Rollback needs the launcher: start Meridian with "npm start" or the container image.');
     const s = this.state;
     if (!s.active) throw fail(409, 'This is the version built into the image: there is nothing to go back to.');
     const target = s.previous && fs.existsSync(path.join(this.#dataDir, 'app', 'versions', s.previous, 'src', 'server.js')) ? s.previous : null;

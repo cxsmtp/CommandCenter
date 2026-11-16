@@ -1,11 +1,11 @@
-# CommandCenter — one image for Docker and Podman (amd64 and arm64). Everything it keeps lives in the /data volume.
+# Meridian — one image for Docker and Podman (amd64 and arm64). Everything it keeps lives in the /data volume.
 #
-#   docker build -t commandcenter .
-#   docker run -d --name commandcenter -p 4310:4310 -v commandcenter-data:/data commandcenter
-#   docker logs commandcenter        # the first Admin's password is printed once here
+#   docker build -t meridian .
+#   docker run -d --name meridian -p 4310:4310 -v meridian-data:/data meridian
+#   docker logs meridian        # the first Admin's password is printed once here
 #
 # Behind a company proxy that inspects TLS? Pass its CA certificate at build time:
-#   docker build --secret id=ca,src=company-ca.pem -t commandcenter .
+#   docker build --secret id=ca,src=company-ca.pem -t meridian .
 
 # ---- Dependencies: npm here, only node_modules moves on ----
 FROM docker.io/library/alpine:3.22 AS deps

@@ -1,5 +1,5 @@
 {
-  "name": "commandcenter",
+  "name": "meridian",
   "version": "1.0.0",
   "private": true,
   "description": "One place for a Solution Engineer to watch every Checkmarx One POV tenant: scans, failures, new projects and findings, refreshed every 10 minutes.",

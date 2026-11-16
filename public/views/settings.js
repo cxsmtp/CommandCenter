@@ -44,7 +44,7 @@ function profile(body, data, applyLook) {
     <section class="panel"><div class="head"><h3>Your look</h3></div><div class="body stack">
       <div class="looks">${Object.entries(LOOKS).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div>
       <div class="row center"><span class="small muted">Mode</span><div class="seg">${['auto', 'light', 'dark'].map((m) => `<button data-mode="${m}" aria-pressed="${mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
-      <span class="small muted">Command center opens as</span><div class="seg">${[['', 'By role'], ['cards', 'Cards'], ['table', 'Line items']].map(([v, l]) => `<button data-pview="${v}" aria-pressed="${(p.view ?? '') === v}">${l}</button>`).join('')}</div></div>
+      <span class="small muted">Portfolio opens as</span><div class="seg">${[['', 'By role'], ['cards', 'Cards'], ['table', 'Line items']].map(([v, l]) => `<button data-pview="${v}" aria-pressed="${(p.view ?? '') === v}">${l}</button>`).join('')}</div></div>
     </div></section>
     <section class="panel"><div class="head"><h3>Profile</h3></div><form id="profForm" class="body stack" style="gap:10px">
       <label class="field">Name<input name="name" value="${esc(u.name)}"></label>
@@ -99,10 +99,10 @@ function organisation(body, data) {
 function email(body, data) {
   const s = data.smtp;
   body.innerHTML = `<form id="smtpForm" class="panel body stack" style="max-width:720px">
-    <p class="muted" style="margin:0">CommandCenter sends the SE's emails through this account, with the SE as Reply-To. Without it, SEs download .eml files or copy the text into their own mail.</p>
+    <p class="muted" style="margin:0">Meridian sends the SE's emails through this account, with the SE as Reply-To. Without it, SEs download .eml files or copy the text into their own mail.</p>
     <div class="row"><label class="field">SMTP host<input name="host" value="${esc(s.host)}" placeholder="smtp.office365.com"></label><label class="field" style="max-width:120px">Port<input type="number" name="port" value="${esc(s.port)}"></label><label class="check"><input type="checkbox" name="secure" ${s.secure ? 'checked' : ''}> TLS from the start (port 465)</label></div>
     <div class="row"><label class="field">User<input name="user" value="${esc(s.user)}" autocomplete="off"></label><label class="field">Password${s.hasPassword ? ' (kept; type to replace)' : ''}<input type="password" name="pass" autocomplete="new-password"></label></div>
-    <label class="field">From<input name="from" value="${esc(s.from)}" placeholder="POV Command Center &lt;pov@company.com&gt;"></label>
+    <label class="field">From<input name="from" value="${esc(s.from)}" placeholder="Meridian &lt;pov@company.com&gt;"></label>
     <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="smtpTest">Send me a test</button></div>
   </form>`;
   $('#smtpForm').addEventListener('submit', async (e) => {

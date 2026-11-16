@@ -1,6 +1,6 @@
 /**
  * The POV results page: one self-contained HTML file (its data, styles and script inside, nothing loaded from
- * anywhere), to open in CommandCenter, share with the customer or keep in SharePoint.
+ * anywhere), to open in Meridian, share with the customer or keep in SharePoint.
  *
  *   Slide 1  the Checkmarx One platform slide, as designed, with only this POV's engines and their status;
  *            any engine opens its record: progress, artifacts (the scans that proved it, evidence, notes, links)

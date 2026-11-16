@@ -30,7 +30,7 @@ export async function renderOpportunity(main, id, tab, { crumbs, drawer = null }
   const o = d.opportunity;
   const r = d.row;
   const active = TABS.some(([k]) => k === tab) ? tab : 'overview';
-  crumbs(`<a href="#/dashboard">Command center</a> <span class="muted">/</span> <span class="chip" style="background:${tc(r.colour)}"></span> <b>${esc(o.customer)}</b>`);
+  crumbs(`<a href="#/dashboard">Portfolio</a> <span class="muted">/</span> <span class="chip" style="background:${tc(r.colour)}"></span> <b>${esc(o.customer)}</b>`);
   const stages = Object.entries(state.meta.stages).filter(([k]) => k !== 'on_hold');
   const at = stages.findIndex(([k]) => k === o.stage);
   main.innerHTML = `
@@ -263,7 +263,7 @@ function criteria(d) {
             const cap = c.capabilityId ? catalog.catalog.find((x) => x.id === c.capabilityId) : null;
             const own = [...(c.engines ?? []).map((e) => `engine "${e}"`), ...(c.origins ?? []).map((o) => `origin "${o}"`)];
             return `${cap ? `<div class="small muted">Checkmarx One: ${esc(cap.cxName)} ${cap.isNew ? '<span class="badge accent">New</span>' : ''}</div>` : ''}
-              ${cap?.proof || cap?.tech || own.length ? `<details class="small proof"><summary>How it is proven</summary>${cap?.proof ? `<div><b>Show the customer:</b> ${esc(cap.proof)}</div>` : ''}${cap?.tech ? `<div><b>How CommandCenter checks:</b> ${esc(cap.tech)}</div>` : ''}${own.length ? `<div><b>Also counted for this criterion:</b> ${esc(own.join(', '))}</div>` : ''}</details>` : ''}`;
+              ${cap?.proof || cap?.tech || own.length ? `<details class="small proof"><summary>How it is proven</summary>${cap?.proof ? `<div><b>Show the customer:</b> ${esc(cap.proof)}</div>` : ''}${cap?.tech ? `<div><b>How Meridian checks:</b> ${esc(cap.tech)}</div>` : ''}${own.length ? `<div><b>Also counted for this criterion:</b> ${esc(own.join(', '))}</div>` : ''}</details>` : ''}`;
           })()}
           ${evLine(c)}
           ${demoLine(c)}
@@ -275,7 +275,7 @@ function criteria(d) {
           <select data-status="${esc(c.id)}" ${ro()} aria-label="Status">${Object.entries(state.meta.criterionStatus).map(([k, l]) => `<option value="${k}" ${c.status === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
           ${current.canEdit ? `<div class="row"><button class="btn sm" data-edit-crit="${esc(c.id)}">Edit</button><button class="btn sm ghost danger" data-del-crit="${esc(c.id)}">Remove</button></div>` : ''}
         </div>
-      </div>`).join('')}</div></section>`).join('') : '<div class="empty panel">No success criteria yet. Add the capabilities the customer wants to see; CommandCenter then looks for the evidence in the tenant and in your notes.</div>'}`;
+      </div>`).join('')}</div></section>`).join('') : '<div class="empty panel">No success criteria yet. Add the capabilities the customer wants to see; Meridian then looks for the evidence in the tenant and in your notes.</div>'}`;
 }
 
 // ——— Discovery ———
@@ -608,7 +608,7 @@ function connectTenant() {
   return dialogForm(
     'tenantForm',
     o.tenant ? 'Replace the API key' : 'Connect the POV tenant',
-    `<p class="muted" style="margin:0">Paste the Checkmarx One API key of the POV tenant. The tenant, region and hosts come from the key; it is checked with Checkmarx One and stored encrypted on this server. Read-only use: CommandCenter never changes anything in the tenant.</p>
+    `<p class="muted" style="margin:0">Paste the Checkmarx One API key of the POV tenant. The tenant, region and hosts come from the key; it is checked with Checkmarx One and stored encrypted on this server. Read-only use: Meridian never changes anything in the tenant.</p>
      <textarea name="apiKey" class="mono" rows="4" required spellcheck="false" autocomplete="off" placeholder="eyJhbGciOi…"></textarea>
      ${o.tenant ? '<label class="check"><input type="checkbox" name="replaceTenant"> Connect a different tenant</label>' : ''}
      <details><summary class="small muted" style="cursor:pointer">Single-tenant or on-prem addresses</summary><div class="row" style="margin-top:8px"><label class="field">IAM URL<input name="iamUrl"></label><label class="field">API URL<input name="baseUrl"></label><label class="field">Tenant<input name="tenant"></label></div></details>`,
@@ -622,7 +622,7 @@ async function addCapabilities() {
   return dialogForm(
     'capsForm',
     'Add success criteria',
-    `<p class="muted" style="margin:0">Tick the capabilities the customer wants proven. Each becomes a criterion; CommandCenter looks for its evidence in the tenant and in your notes.</p>
+    `<p class="muted" style="margin:0">Tick the capabilities the customer wants proven. Each becomes a criterion; Meridian looks for its evidence in the tenant and in your notes.</p>
      <label class="field" style="max-width:220px">Priority<select name="priority"><option value="must">Must have</option><option value="nice">Nice to have</option></select></label>${capabilityPicker(cat, { disabled: have })}
      <fieldset class="item"><legend class="small muted">Not in the list? Add an engine or capability</legend>
        <div class="row"><label class="field">Name<input name="newName" placeholder="e.g. AI Red Teaming"></label><label class="field">Group<select name="newCategory">${cat.categories.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></label></div>
@@ -688,7 +688,7 @@ function recordDemo(c) {
             await api(`/opportunities/${oid()}/criteria/${c.id}/demo`, { method: 'POST', body: { date: f.date.value, environment: f.environment.value, attendees: f.attendees.value, notes: f.notes.value, recordingUrl: f.recordingUrl.value, markCompleted: f.markCompleted.checked } });
             if (file) {
               btn.textContent = 'Uploading the video…';
-              const r = await fetch(`/api/opportunities/${oid()}/criteria/${c.id}/demo-video?name=${encodeURIComponent(file.name)}`, { method: 'PUT', headers: { 'X-Requested-With': 'CommandCenter', 'Content-Type': file.type || 'video/mp4' }, body: file });
+              const r = await fetch(`/api/opportunities/${oid()}/criteria/${c.id}/demo-video?name=${encodeURIComponent(file.name)}`, { method: 'PUT', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': file.type || 'video/mp4' }, body: file });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Upload failed (${r.status})`);
             }
             closeDialog('ok');

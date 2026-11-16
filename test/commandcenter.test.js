@@ -12,7 +12,7 @@ import { draft } from '../src/mail.js';
 
 let mock, app, base, dataDir;
 const jar = new Map();
-const H = { 'X-Requested-With': 'CommandCenter', 'Content-Type': 'application/json' };
+const H = { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/json' };
 async function call(who, p, { method = 'GET', body, raw = false } = {}) {
   const r = await fetch(`${base}${p}`, { method, headers: { ...H, Cookie: jar.get(who) ?? '' }, body: body ? JSON.stringify(body) : undefined });
   const set = r.headers.get('set-cookie');
@@ -56,8 +56,8 @@ test('the tenant, region and hosts come from the API key alone', () => {
 
 test('sign-in, and nothing without it', async () => {
   assert.equal((await call('anon', '/api/overview')).status, 401);
-  assert.equal((await call('admin', '/api/login', { method: 'POST', body: { email: 'admin@commandcenter.local', password: 'wrong-password' } })).status, 401);
-  const ok = await call('admin', '/api/login', { method: 'POST', body: { email: 'admin@commandcenter.local', password: 'admin-password-123' } });
+  assert.equal((await call('admin', '/api/login', { method: 'POST', body: { email: 'admin@meridian.local', password: 'wrong-password' } })).status, 401);
+  const ok = await call('admin', '/api/login', { method: 'POST', body: { email: 'admin@meridian.local', password: 'admin-password-123' } });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.user.password, undefined);
 });
@@ -317,9 +317,9 @@ test('a criterion demonstrated by the SE, with a short video that plays in the r
   assert.equal(after.proofType, 'demo');
   assert.equal(r.body.row.progress.demonstrated >= 1, true);
   const video = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'scripts', 'demo-assets', 'ai-inventory-demo.mp4'));
-  const up = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=demo.mp4`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'CommandCenter', 'Content-Type': 'video/mp4' }, body: video });
+  const up = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=demo.mp4`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'Meridian', 'Content-Type': 'video/mp4' }, body: video });
   assert.equal(up.status, 200);
-  const bad = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=x.exe`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'CommandCenter', 'Content-Type': 'application/octet-stream' }, body: 'MZ' });
+  const bad = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=x.exe`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'Meridian', 'Content-Type': 'application/octet-stream' }, body: 'MZ' });
   assert.equal(bad.status, 415, 'only videos');
   const part = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video`, { headers: { Cookie: jar.get('tl'), Range: 'bytes=0-99' } });
   assert.equal(part.status, 206);

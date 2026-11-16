@@ -13,7 +13,7 @@
  *                 are taken out) and the credits per Fusion scan
  *
  * Every figure carries the rates it used, so a reader can check it. Conservative by design: only actions
- * Checkmarx One counted (its consumption report, last 30 days) and actions run from CommandCenter.
+ * Checkmarx One counted (its consumption report, last 30 days) and actions run from Meridian.
  */
 export const CREDIT_COST = { triage: 1, remediation: 3 };
 export const VALUE_DEFAULTS = { triageMinutes: 20, fixMinutes: 120, hourlyRate: 75, creditPrice: 0, currency: 'USD' };
@@ -50,12 +50,12 @@ export function cleanRates(b = {}) {
  * @param {object} o.credits   the tenant's credits as read (collector: available, used, total, used30d, actions)
  * @param {object} o.summary   the tenant's summary (fusion7d, last7d, ...)
  * @param {object} o.backlog   { toVerify, confirmed } on the latest scans (SAST and SCA)
- * @param {Array}  o.ledger    actions run from CommandCenter: [{ action, findings, credits, outcome }]
+ * @param {Array}  o.ledger    actions run from Meridian: [{ action, findings, credits, outcome }]
  * @param {object} o.rates     ratesFor(...)
  */
 export function valueOf({ credits = null, summary = null, backlog = null, ledger = [], rates = VALUE_DEFAULTS } = {}) {
   const a = credits?.actions ?? { triage: 0, remediation: 0, other: 0 };
-  // CommandCenter's own runs are part of what Checkmarx One counts; shown apart, never added twice.
+  // Meridian's own runs are part of what Checkmarx One counts; shown apart, never added twice.
   const cc = ledger.filter((e) => e.outcome === 'charged').reduce((t, e) => ({ triage: t.triage + (e.action === 'triage' ? n(e.findings) : 0), remediation: t.remediation + (e.action === 'remediation' ? n(e.findings) : 0), credits: t.credits + n(e.credits) }), { triage: 0, remediation: 0, credits: 0 });
   const triaged = Math.max(n(a.triage), cc.triage);
   const fixed = Math.max(n(a.remediation), cc.remediation);
@@ -74,7 +74,7 @@ export function valueOf({ credits = null, summary = null, backlog = null, ledger
   const available = credits?.available ?? null;
   return {
     rates,
-    actions: { triaged, fixed, fromCommandCenter: cc },
+    actions: { triaged, fixed, fromMeridian: cc },
     hours: { triage: round1(hoursTriage), fix: round1(hoursFix), total: round1(hours) },
     value: money(value),
     cost: money(cost),
