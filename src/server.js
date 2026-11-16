@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { Db, fail, text, email as cleanEmail } from './db.js';
 import { Backups } from './backups.js';
 import { Watchdog, healthChecks } from './health.js';
+import { readTable, recordsOf, matchRecords, logMessage, opportunityIdOf } from './salesforce.js';
+import { SfMailbox } from './sf-mailbox.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
 import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted } from './opportunities.js';
@@ -55,7 +57,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const mailer = new Mailer(db);
   // What the page may see of the settings: never the email server's or the proxy's secrets.
   const settings = () => {
-    const { smtp, network, lastWeeklyDrafts, ...rest } = { ...DEFAULT_SETTINGS, ...db.read('settings', {}) };
+    const { smtp, network, lastWeeklyDrafts, salesforce, ...rest } = { ...DEFAULT_SETTINGS, ...db.read('settings', {}) };
     return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
   };
   const fullSettings = () => db.read('settings', {});
@@ -67,6 +69,82 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const updater = new Updater({ dataDir, currentVersion: VERSION, ...(updaterOptions ?? {}) });
   users.sessionMs = (settings().security.sessionHours || 12) * 3600e3;
   const backupStore = new Backups({ dataDir, vault: db.vault, ...(backupOptions ?? {}) });
+
+  // ——— Salesforce, without its API (see salesforce.js) ———
+  const sfSettings = () => ({ logStages: true, logResults: true, ...(fullSettings().salesforce ?? {}) });
+  const sfAddressOf = (userId) => {
+    const e = db.read('sfaddresses', {})[userId];
+    if (!e?.address) return null;
+    try {
+      return { address: db.open(e.address), copy: e.copy !== false };
+    } catch {
+      return null;
+    }
+  };
+  const maskEmail = (a) => a.replace(/^(.{3})[^@]*(@.{4})[^.]*/, '$1…$2…');
+  const appLink = (opp) => (process.env.CC_PUBLIC_URL ? `${process.env.CC_PUBLIC_URL.replace(/\/$/, '')}/#/opp/${opp.id}` : '');
+  /** Send one log message to a person's Email to Salesforce address; recorded on the POV either way. */
+  async function sfLog(actor, opp, entry, { addressOf = actor.id } = {}) {
+    const who = sfAddressOf(addressOf);
+    if (!who) throw fail(409, 'Add your Email to Salesforce address under Settings → Profile & look first.');
+    if (!mailer.settings.host) throw fail(409, 'The email server is not set up yet (Settings → Email server).');
+    const msg = logMessage(opp, { ...entry, by: actor.name, link: appLink(opp) });
+    try {
+      await mailer.send({ to: [who.address], cc: [], subject: msg.subject, body: msg.body }, { replyTo: actor.email });
+    } catch (error) {
+      throw fail(502, `Salesforce did not get it: ${smtpHint(error)}`);
+    }
+    opps.mutate({ ...actor, role: 'admin' }, opp.id, fullSettings(), (o) => {
+      (o.sfLog ??= []).push({ at: new Date().toISOString(), by: actor.id, kind: entry.kind, title: text(entry.title, 200), itemId: entry.itemId ?? '' });
+      o.sfLog = o.sfLog.slice(-200);
+      if (entry.itemKind && entry.itemId) {
+        const item = (o[entry.itemKind] ?? []).find((x) => x.id === entry.itemId);
+        if (item) item.sfLoggedAt = new Date().toISOString();
+      }
+      (o.history ??= []).push({ at: new Date().toISOString(), by: actor.id, what: text(`Logged to Salesforce: ${entry.kind} — ${entry.title}`, 400) });
+    });
+    notify({ id: opp.id });
+    return { subject: msg.subject };
+  }
+  /** What a POV stands at, as a Salesforce activity. */
+  function sfStatus(opp) {
+    const p = progressOf(opp);
+    const r = row(opp);
+    const next = (opp.tasks ?? []).filter((t) => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).slice(0, 3);
+    return {
+      kind: 'POV status',
+      title: `${STAGES[opp.stage]}${p.total ? ` · ${p.met}/${p.total} criteria completed` : ''}${r.prediction?.score !== null && r.prediction?.score !== undefined ? ` · outlook ${r.prediction.label} (${r.prediction.score})` : ''}`,
+      lines: [
+        opp.endDate ? `POV ends: ${opp.endDate}${r.daysLeft !== null ? ` (${r.daysLeft} days)` : ''}` : '',
+        r.value?.hours ? `Value delivered: ${Math.round(r.value.hours)} hours saved` : '',
+        ...(r.gaps ?? []).filter((g) => g.level === 'bad').slice(0, 3).map((g) => `Gap: ${g.text}`),
+        ...next.map((t) => `Next: ${t.title}${t.due ? ` (due ${t.due})` : ''}`),
+      ].filter(Boolean),
+    };
+  }
+  /** Bring a Salesforce report in: match its rows to POVs and keep their fields. */
+  async function importReport(buf, meta, actor = null) {
+    const rows = await readTable(buf, meta);
+    const { records, columns } = recordsOf(rows);
+    const pool = actor ? opps.visible(actor).filter((o) => opps.canEdit(actor, o, fullSettings())) : opps.raw();
+    const { matched, unmatched } = matchRecords(records, pool);
+    const changed = opps.setSalesforce(matched.map((x) => ({ id: x.opp.id, rec: x.rec })), { ...meta, columns }, actor?.name ?? 'Salesforce report');
+    const summary = {
+      at: new Date().toISOString(),
+      source: meta.source,
+      file: text(meta.name || meta.subject, 200),
+      by: actor?.name ?? 'Report mailbox',
+      rows: records.length,
+      columns,
+      matched: matched.map((x) => ({ id: x.opp.id, customer: x.opp.customer, how: x.how, stage: x.rec.stage ?? '', changes: changed.get(x.opp.id) ?? [] })),
+      unmatched: unmatched.slice(0, 200).map((r) => ({ id: r.id, name: r.name, account: r.account, stage: r.stage ?? '' })),
+    };
+    db.write('sfimports', [summary, ...db.read('sfimports', [])].slice(0, 30));
+    rowCache.clear();
+    notify({ id: null });
+    return { rows: summary.rows, matched: summary.matched.length, unmatched: summary.unmatched.length, detail: summary };
+  }
+  const sfMailbox = new SfMailbox({ settings: () => sfSettings().mailbox ?? {}, open: (x) => db.open(x), importFile: (buf, meta) => importReport(buf, meta) });
   const restartServer = (actor, why) => {
     if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start Meridian with "npm start" or the container image.');
     audit.record(actor, 'system', `Restarted the server (${why})`);
@@ -187,6 +265,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       salesforceUrl: opp.salesforceUrl,
       sharepointUrl: opp.sharepointUrl,
       amount: opp.amount,
+      sf: opp.salesforce ? { stage: opp.salesforce.stage ?? '', amount: opp.salesforce.amount ?? null, closeDate: opp.salesforce.closeDate ?? '', probability: opp.salesforce.probability ?? null, forecast: opp.salesforce.forecast ?? '', nextStep: opp.salesforce.nextStep ?? '', reportAt: opp.salesforce.reportAt, source: opp.salesforce.source } : null,
       tenant: publicOpp(opp).tenant,
       progress: progressOf(opp),
       live,
@@ -326,6 +405,21 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     res.end(data);
   };
   const file = (res, name, type, content) => send(res, 200, content, { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${name.replace(/[^\w.\- ]+/g, '_')}"` });
+  /** A file sent as the request body (a Salesforce report), up to `max` bytes. */
+  const readRaw = (req, max) =>
+    new Promise((resolve, reject) => {
+      let size = 0;
+      const parts = [];
+      req.on('data', (c) => {
+        size += c.length;
+        if (size > max) {
+          reject(fail(413, `The file is larger than ${Math.round(max / 1048576)} MB.`));
+          req.destroy();
+        } else parts.push(c);
+      });
+      req.on('end', () => (size ? resolve(Buffer.concat(parts)) : reject(fail(400, 'The file was empty.'))));
+      req.on('error', reject);
+    });
   const readBody = (req) =>
     new Promise((resolve, reject) => {
       let size = 0;
@@ -386,7 +480,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
-    if (m !== 'GET' && !['Meridian', 'Meridian'].includes(req.headers['x-requested-with'])) return send(res, 403, { error: 'Missing request header.' });
+    if (m !== 'GET' && !['Meridian', 'CommandCenter'].includes(req.headers['x-requested-with'])) return send(res, 403, { error: 'Missing request header.' });
 
     if (route === 'POST /logout') {
       users.signOut(cookie(req, 'cc_session'));
@@ -394,6 +488,84 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (route === 'GET /meta') {
       return send(res, 200, { stages: STAGES, criterionStatus: CRITERION_STATUS, sessionTypes: SESSION_TYPES, categories: catalog.categories(), roles: Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.label])), permissions: PERMISSIONS, templates: TEMPLATES, themes: THEMES, scanWindowDays: SCAN_WINDOW_DAYS });
+    }
+    // ——— Salesforce ———
+    if (route === 'GET /me/salesforce') {
+      const a = sfAddressOf(user.id);
+      return send(res, 200, { set: Boolean(a), hint: a ? maskEmail(a.address) : '', copy: a?.copy ?? true, sender: mailer.settings.from || '' });
+    }
+    if (route === 'PUT /me/salesforce') {
+      const b = await readBody(req);
+      const all = db.read('sfaddresses', {});
+      if ('address' in b) {
+        const address = cleanEmail(b.address);
+        if (b.address && !address) throw fail(400, 'That is not an email address. Salesforce shows yours under Settings → My Email to Salesforce.');
+        if (address) all[user.id] = { address: db.seal(address), copy: b.copy !== false };
+        else delete all[user.id];
+      } else if (all[user.id]) all[user.id].copy = b.copy !== false;
+      db.write('sfaddresses', all);
+      audit.record(user, 'settings', 'address' in b ? (b.address ? 'Set their Email to Salesforce address' : 'Removed their Email to Salesforce address') : 'Changed copying emails to Salesforce');
+      const a = sfAddressOf(user.id);
+      return send(res, 200, { set: Boolean(a), hint: a ? maskEmail(a.address) : '', copy: a?.copy ?? true });
+    }
+    if (route === 'POST /salesforce/import') {
+      const buf = await readRaw(req, 15 * 1048576);
+      const r = await importReport(buf, { source: 'file', name: text(decodeURIComponent(req.headers['x-file-name'] ?? 'report'), 200), type: String(req.headers['content-type'] ?? '') }, user);
+      audit.record(user, 'salesforce', `Brought in a Salesforce report: ${r.rows} rows, ${r.matched} matched`);
+      return send(res, 200, r);
+    }
+    if (route === 'GET /salesforce/imports') {
+      const mine = new Set(opps.visible(user).map((o) => o.id));
+      const list = db.read('sfimports', []).map((x) => ({ ...x, matched: x.matched.filter((m) => mine.has(m.id)), unmatched: can(user, 'settings.manage') || x.by === user.name ? x.unmatched : [] }));
+      return send(res, 200, { imports: list, mailbox: can(user, 'settings.manage') ? sfMailbox.last : undefined });
+    }
+    if (route === 'GET /salesforce/settings') {
+      need(user, 'settings.manage');
+      const s2 = sfSettings();
+      const mb = s2.mailbox ?? {};
+      return send(res, 200, { logStages: s2.logStages, logResults: s2.logResults, mailbox: { enabled: Boolean(mb.enabled), host: mb.host ?? '', port: mb.port ?? 993, secure: mb.secure !== false, user: mb.user ?? '', hasPassword: Boolean(mb.pass), folder: mb.folder ?? 'INBOX', senders: mb.senders ?? 'salesforce.com', everyMinutes: mb.everyMinutes ?? 30 }, last: sfMailbox.last, sender: mailer.settings.from || '', publicUrl: process.env.CC_PUBLIC_URL || '' });
+    }
+    if (route === 'PUT /salesforce/settings') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = fullSettings();
+      const before = all.salesforce ?? {};
+      const mb = before.mailbox ?? {};
+      const nb = b.mailbox ?? {};
+      const host = text(nb.host ?? mb.host ?? '', 200);
+      if (host && !/^[a-z0-9.-]+$/i.test(host)) throw fail(400, 'The mailbox host is a name like outlook.office365.com.');
+      all.salesforce = {
+        logStages: 'logStages' in b ? Boolean(b.logStages) : before.logStages ?? true,
+        logResults: 'logResults' in b ? Boolean(b.logResults) : before.logResults ?? true,
+        mailbox: {
+          enabled: 'enabled' in nb ? Boolean(nb.enabled) : Boolean(mb.enabled),
+          host,
+          port: Math.min(65535, Math.max(1, Math.trunc(Number(nb.port ?? mb.port)) || 993)),
+          secure: 'secure' in nb ? Boolean(nb.secure) : mb.secure !== false,
+          user: text(nb.user ?? mb.user ?? '', 200),
+          pass: nb.pass ? db.seal(String(nb.pass)) : nb.clearPass ? '' : mb.pass ?? '',
+          folder: text(nb.folder ?? mb.folder ?? 'INBOX', 200) || 'INBOX',
+          senders: text(nb.senders ?? mb.senders ?? 'salesforce.com', 500),
+          everyMinutes: Math.min(1440, Math.max(5, Math.trunc(Number(nb.everyMinutes ?? mb.everyMinutes)) || 30)),
+        },
+      };
+      db.write('settings', all);
+      audit.record(user, 'settings', 'Changed the Salesforce settings');
+      return send(res, 200, { ok: true });
+    }
+    if (route === 'POST /salesforce/mailbox/test') {
+      need(user, 'settings.manage');
+      try {
+        return send(res, 200, await sfMailbox.test());
+      } catch (error) {
+        throw fail(error.status ?? 502, error.status ? error.message : `Could not open the mailbox: ${scrubText(String(error.responseText ?? error.message))}`);
+      }
+    }
+    if (route === 'POST /salesforce/mailbox/run') {
+      need(user, 'settings.manage');
+      const r = await sfMailbox.run();
+      audit.record(user, 'salesforce', `Read the report mailbox: ${r.imported?.length ?? 0} reports`);
+      return send(res, 200, r);
     }
     if (route === 'PATCH /me') return send(res, 200, { user: users.update(user, user.id, await readBody(req)) });
     if (route === 'POST /me/password') {
@@ -753,11 +925,20 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!sub && m === 'GET') return send(res, 200, detail(user, viewOpp(user, id)));
       if (!sub && m === 'PATCH') {
         const wasSuccessful = opps.get(id)?.povResult === 'successful';
+        const stageBefore = opps.get(id)?.stage;
         const opp = opps.update(user, id, await readBody(req), s);
         // A running POV is read now; one that just completed gets a final read for its report and deck.
         const read = opp.tenant && (POLLED_STAGES.has(opp.stage) || opp.stage === 'completed') ? monitor.refresh(id, { force: true }).catch(() => {}) : Promise.resolve();
         // Marked successful: once that final read is in, its results page is kept as it stands now.
         if (!wasSuccessful && opp.povResult === 'successful') read.then(() => freezeResults(id, user)).catch(() => {});
+        // Salesforce hears about stage changes and the POV result from the SE's own Email to Salesforce address.
+        const sfs = sfSettings();
+        const logIt = (entry) => {
+          const from = sfAddressOf(user.id) ? user.id : sfAddressOf(opp.ownerId) ? opp.ownerId : null;
+          if (from && mailer.settings.host) sfLog(user, opps.get(id), entry, { addressOf: from }).catch((error) => console.error(`Salesforce log failed: ${error.message}`));
+        };
+        if (sfs.logStages && opp.stage !== stageBefore) logIt({ kind: 'Stage', title: `${STAGES[stageBefore]} → ${STAGES[opp.stage]}`, lines: sfStatus(opp).lines });
+        if (sfs.logResults && !wasSuccessful && opp.povResult === 'successful') logIt({ kind: 'POV result', title: 'POV successful', lines: progressOf(opp).total ? [`${progressOf(opp).met} of ${progressOf(opp).total} success criteria completed successfully`] : [] });
         return done(opp);
       }
       if (!sub && m === 'DELETE') {
@@ -932,6 +1113,21 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         if (url.searchParams.get('download')) return file(res, `${opp.customer} POV success criteria.html`, 'text/html; charset=utf-8', html);
         return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:" });
       }
+      if (sub === 'salesforce' && parts[3] === 'log' && m === 'POST') {
+        const opp = viewOpp(user, id);
+        if (!opps.canEdit(user, opp, s)) throw fail(403, 'You can view this opportunity but not log it to Salesforce.');
+        const b = await readBody(req);
+        let entry;
+        if (b.kind === 'task' || b.kind === 'note') {
+          const list = b.kind === 'task' ? 'tasks' : 'notes';
+          const item = (opp[list] ?? []).find((x) => x.id === b.itemId);
+          if (!item) throw fail(404, `No such ${b.kind}.`);
+          entry = b.kind === 'task'
+            ? { kind: item.done ? 'Task completed' : 'Task', title: item.title, due: item.due ?? '', lines: [item.notes ?? ''].filter(Boolean), itemKind: 'tasks', itemId: item.id }
+            : { kind: 'Note', title: String(item.text ?? '').split('\n')[0].slice(0, 90), lines: [String(item.text ?? '')], itemKind: 'notes', itemId: item.id };
+        } else entry = sfStatus(opp);
+        return send(res, 200, await sfLog(user, opp, entry));
+      }
       if (sub === 'email' && parts[3] === 'draft' && m === 'POST') {
         const opp = viewOpp(user, id);
         const b = await readBody(req);
@@ -948,7 +1144,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         let messageId;
         const attachments = b.attachDeck ? [{ filename: `${opp.customer} - POV results.pptx`, content: await deckOf(opp) }] : [];
         try {
-          messageId = await mailer.send(msg, { replyTo: user.email, attachments });
+          const sf = sfAddressOf(user.id);
+          messageId = await mailer.send(msg, { replyTo: user.email, attachments, bcc: sf?.copy ? [sf.address] : [] });
         } catch (error) {
           throw fail(error.status ?? 502, `The email was not sent: ${scrubText(error.message)}`);
         }
@@ -1274,10 +1471,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   if (startBackground) backupStore.start({ version: VERSION });
   const watchdog = new Watchdog({ monitor, launched: updater.launched, restart: () => setTimeout(() => process.exit(RESTART_CODE), 300) });
   if (startBackground) watchdog.start();
+  if (startBackground) sfMailbox.start();
 
   server.on('close', () => {
     updater.stop();
     backupStore.stop();
+    sfMailbox.stop();
     watchdog.stop();
     monitor.stop();
     clearInterval(hourly);

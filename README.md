@@ -1,6 +1,6 @@
 # Meridian
 
-**One place for a Solution Engineering team to run every opportunity: from discovery, through technical sessions and the Checkmarx One POV, to the win.**
+**One line of sight on every POV: the technical value it proves and the revenue it moves — from discovery, through technical sessions and the Checkmarx One POV, to the win.**
 
 The consolidated view is the default. You can see every opportunity at once, grouped into stage buckets (POV running, POV completed, Technical sessions, Discovery, On hold, Won, Lost). The live POVs come first, each read from its Checkmarx One tenant every 10 minutes. Click an opportunity to drill down into everything about it.
 
@@ -25,9 +25,11 @@ The consolidated view is the default. You can see every opportunity at once, gro
 | **Troubleshooting from one place** | Download any scan's engine log, or a single bundle containing every failed scan of the last 7 days with its logs. You no longer need to sign in to ten tenants. |
 | **Mute** | Mute a POV's alerts for an hour, a day, a week or until you unmute it, or mute individual noisy projects. |
 | **Forecasts** | From what is already known, with no extra calls to Checkmarx One:<br>• **POV pace:** whether each POV will complete its success criteria by its end date at the current pace (projected date, days to spare or late, pace still needed)<br>• **Credits runway:** how many days each tenant's credits last at the recent burn<br>• **Scanning momentum:** whether scanning is speeding up or slowing down<br>The **Forecast** strip adds these up across every POV shown: on track, at risk, late, finishing this month, shortest credits runway and next POV end. Each card shows its ring gauge and forecast; line items have a Forecast column. |
+| **Salesforce, without its API** | **In:** drop a Salesforce opportunities report (.xlsx or .csv) on the Portfolio, or have Salesforce mail it daily to a mailbox Meridian reads (Settings → Salesforce). Each row is matched to its POV by the Opportunity ID in the POV's Salesforce link, and its stage, amount, close date, probability and next step appear beside the POV. Insights then show the pipeline carried by POVs, weighted by each POV's outlook, and gaps where Salesforce and the POV disagree (Salesforce lost while the POV runs, a close date before the POV ends or already past). **Out:** each SE adds their private Email to Salesforce address (Profile). Meridian copies it on the POV emails they send, and sends Salesforce tasks, notes, stage changes, the POV status and the result as activities. Nothing is ever written to Salesforce any other way. |
+| **Self-sustaining** | Every record, snapshot, results page and demo video is encrypted at rest (AES-256). Writes are atomic and flushed; a damaged record repairs itself from its previous copy or the newest backup. Checked backups every 6 hours (and before every update and restore), optionally copied off the server, restorable with one click and an undo. A watchdog restarts a stalled reader or a server using too much memory; the launcher restarts a crashed one and rolls back an update that does not start. **Settings → System & backups** shows the health checks and what was corrected. |
 | **Looks** | **Orbit** (the default): launch control. Deep space, glass instruments edged with light, telemetry in a mono face (JetBrains Mono, Space Grotesk, Inter), cyan and plasma-violet signals, in dark or daylight. Also: four house looks after the craft of the great houses, never their marks: **Maison** (the leather atelier: espresso, cognac, brass, saddle stitching; the default), **Calibre** (fine watchmaking: midnight dial, guilloché, white gold), **Joaillier** (high jewellery: crimson and gold filets) and **Hypercar** (racing blue on carbon). Eight plainer looks are also available. Every look comes in light, dark or automatic mode. The typefaces (Cormorant Garamond, Jost, Syncopate; SIL Open Font License) are bundled, so nothing loads from the internet. |
 
-Meridian only reads from Checkmarx One and never changes anything in a tenant. API keys and the SMTP password are encrypted at rest (AES-256-GCM) and never sent back to the browser.
+Meridian reads from Checkmarx One. The only changes it makes to a tenant are AI triage and remediation, and only when a person plans them, sees the credits they cost and confirms. API keys, passwords and Email to Salesforce addresses are never sent back to the browser.
 
 ## Run it
 
@@ -65,13 +67,17 @@ This starts a made-up team (VP, leader, two team leads, four SEs) with opportuni
 | --- | --- | --- |
 | `PORT` / `HOST` | `4310` / `127.0.0.1` (`0.0.0.0` in the container) | |
 | `CC_DATA_DIR` | `./data` (`/data` in the container) | Everything kept: users, opportunities, snapshots, outbox |
-| `CC_SECRET` | key file in the data folder | Seals API keys and the SMTP password |
+| `CC_SECRET` or `CC_SECRET_FILE` | key file in the data folder | The key everything is encrypted with: a passphrase, or a file holding one (a Docker/Kubernetes secret). Keep it off the data volume and in your password vault: backups cannot be read without it. |
+| `CC_BACKUP_DIR` | none | A mounted share or second disk: every backup is copied there too |
+| `CC_BACKUP_HOURS` | `6` | How often the automatic backup runs |
+| `CC_MAX_RSS_MB` | `1536` | Memory above this for 3 minutes: a clean restart |
+| `CC_PUBLIC_URL` | none | Meridian's address, so Salesforce activities link back to the POV |
 | `CC_ADMIN_EMAIL` / `CC_ADMIN_PASSWORD` | `admin@meridian.local` / random, printed once | The first Admin |
 | `REFRESH_MINUTES` | `10` (also under Settings → Organisation) | How often running POV tenants are read |
 | `CC_SECURE_COOKIES` | `false` | `true` when served over HTTPS |
 | `CX_MAX_CONCURRENCY`, `CC_MAX_SCANS`, `CC_MAX_PROJECTS` | `8`, `500`, `500` | Limits per tenant read |
 
-Backups: copy the data folder (with `CC_SECRET`, or with its `secret.key`).
+Backups are taken and checked by Meridian itself (Settings → System & backups). They never contain the key: to restore on another server, give it the same `CC_SECRET` / `CC_SECRET_FILE`.
 
 ## Checkmarx One calls (all read-only)
 

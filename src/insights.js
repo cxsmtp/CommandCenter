@@ -114,7 +114,18 @@ export function gaps(opp, row, { facts = null, people = null, catalog = null, no
     else if (left <= 14 && pov) add('warn', 'key', `The API key expires in ${left} day${left === 1 ? '' : 's'}`, 'Replace the key before then');
   }
   if (!(opp.stakeholders ?? []).some((x) => x.side === 'customer' && x.email)) add('warn', 'stakeholders', 'No customer stakeholder with an email', 'Add the champion and decision makers');
-  if (!opp.salesforceUrl) add('info', 'salesforce', 'No Salesforce link', 'Add the opportunity’s link');
+  const sf = opp.salesforce;
+  if (!opp.salesforceUrl && !sf) add('info', 'salesforce', 'No Salesforce link', 'Add the opportunity’s link');
+  if (sf) {
+    // Salesforce (from the latest report) and the POV should tell the same story.
+    if (/lost/i.test(sf.stage ?? '')) add('bad', 'sf-lost', `Salesforce says “${sf.stage}” while the POV is still open`, 'Check with the account executive, then close or reopen');
+    else if (/closed\s*won|\bwon\b/i.test(sf.stage ?? '') && opp.stage !== 'won') add('info', 'sf-won', `Salesforce says “${sf.stage}”`, 'Mark the opportunity won');
+    if (sf.closeDate && !/closed/i.test(sf.stage ?? '')) {
+      if (Date.parse(`${sf.closeDate}T23:59:59Z`) < now) add('warn', 'sf-past', `The Salesforce close date (${sf.closeDate}) has passed`, 'Ask the account executive to update it');
+      else if (pov && opp.endDate && sf.closeDate < opp.endDate) add('warn', 'sf-close', `Salesforce closes on ${sf.closeDate}, before the POV ends on ${opp.endDate}`, 'Align the close date and the POV plan');
+    }
+    if (sf.reportAt && now - Date.parse(sf.reportAt) > 14 * DAY) add('info', 'sf-stale', `The Salesforce figures are ${Math.floor((now - Date.parse(sf.reportAt)) / DAY)} days old`, 'Bring in a newer report');
+  }
   if (!opp.sharepointUrl && ['pov', 'completed'].includes(opp.stage)) add('info', 'sharepoint', 'No SharePoint site linked', 'Add the site’s link');
   const overdue = (opp.tasks ?? []).filter((t) => !t.done && t.due && Date.parse(`${t.due}T23:59:59Z`) < now);
   if (overdue.length) add('warn', 'tasks', `${overdue.length} overdue task${overdue.length > 1 ? 's' : ''}: ${overdue.slice(0, 2).map((t) => t.title).join(', ')}`, 'Close or re-date them');
@@ -135,7 +146,7 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
     const m = new Map();
     for (const r of rows) {
       const k = keyOf(r) || '—';
-      if (!m.has(k)) m.set(k, { name: k, povs: 0, running: 0, likely: 0, atRisk: 0, unlikely: 0, won: 0, lost: 0, gaps: 0, critical: 0, expected: 0, scored: 0, scoreSum: 0 });
+      if (!m.has(k)) m.set(k, { name: k, povs: 0, running: 0, likely: 0, atRisk: 0, unlikely: 0, won: 0, lost: 0, gaps: 0, critical: 0, expected: 0, scored: 0, scoreSum: 0, pipeline: 0 });
       const g = m.get(k);
       g.povs += 1;
       if (r.stage === 'won') g.won += 1;
@@ -150,6 +161,7 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
         else if (pr.score >= 40) g.atRisk += 1;
         else g.unlikely += 1;
       }
+      if (r.sf?.amount?.value && !['won', 'lost'].includes(r.stage)) g.pipeline += r.sf.amount.value;
       g.gaps += (r.gaps ?? []).filter((x) => x.level !== 'info').length;
       g.critical += (r.gaps ?? []).filter((x) => x.level === 'bad').length;
     }
@@ -157,6 +169,20 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
   };
   const ending30 = povs.filter((r) => r.daysLeft !== null && r.daysLeft >= 0 && r.daysLeft <= 30);
   const scored = povs.filter((r) => r.prediction?.score !== null && r.prediction?.score !== undefined);
+  // Revenue from the Salesforce reports: open pipeline in the main currency, and weighted by each POV's outlook.
+  const curCount = new Map();
+  for (const r of live) if (r.sf?.amount?.value) curCount.set(r.sf.amount.currency || '', (curCount.get(r.sf.amount.currency || '') ?? 0) + 1);
+  const currency = [...curCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+  const inCur = live.filter((r) => r.sf?.amount?.value && (r.sf.amount.currency || '') === currency);
+  const revenue = {
+    currency: currency || 'USD',
+    pipeline: Math.round(inCur.reduce((t, r) => t + r.sf.amount.value, 0)),
+    weighted: Math.round(inCur.reduce((t, r) => t + r.sf.amount.value * ((r.prediction?.score ?? r.sf.probability ?? 0) / 100), 0)),
+    povs: inCur.length,
+    otherCurrencies: live.filter((r) => r.sf?.amount?.value).length - inCur.length,
+    closing30: Math.round(inCur.filter((r) => r.sf.closeDate && Date.parse(`${r.sf.closeDate}T23:59:59Z`) - now <= 30 * DAY && Date.parse(`${r.sf.closeDate}T23:59:59Z`) >= now).reduce((t, r) => t + r.sf.amount.value, 0)),
+    linked: rows.filter((r) => r.sf).length,
+  };
   const gapCounts = new Map();
   for (const r of live) for (const g of r.gaps ?? []) if (g.level !== 'info') gapCounts.set(g.key, { key: g.key, text: g.text.split(':')[0], count: (gapCounts.get(g.key)?.count ?? 0) + 1, level: g.level });
   return {
@@ -173,6 +199,7 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
       lost: rows.filter((r) => r.stage === 'lost').length,
       critical: live.reduce((t, r) => t + (r.gaps ?? []).filter((g) => g.level === 'bad').length, 0),
     },
+    revenue,
     byRegion: group((r) => regionOf(r.owner.id) || r.tenant?.regionLabel || ''),
     byTenantRegion: group((r) => r.tenant?.regionLabel ?? 'No tenant'),
     byTeam: group((r) => teamOf(r.owner.id)),

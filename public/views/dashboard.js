@@ -1,6 +1,6 @@
 // The portfolio: every opportunity the viewer can see. Associates get detailed cards; managers get line items
 // they can filter by person, stage and words, grouped by person, and drill into.
-import { esc, fmt, api, state, local, openDialog, closeDialog, download, attempt, ago, when, tc, HEALTH, KIND, sevBar, sevLegend, spark, progressBar, ring, forecastLine, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, can } from '../core.js';
+import { esc, fmt, api, state, local, openDialog, closeDialog, download, attempt, ago, when, day, toast, tc, HEALTH, KIND, sevBar, sevLegend, spark, progressBar, ring, forecastLine, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, can } from '../core.js';
 
 const lastSeen = local.get('cc.lastSeen', 0);
 const markSeen = () => local.set('cc.lastSeen', Date.now());
@@ -42,6 +42,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
       <label class="check"><input type="checkbox" id="fAttention" ${ui.attention ? 'checked' : ''}> Needs attention only</label>
       <span class="spacer"></span>
       ${view === 'table' ? `<select id="fGroup" aria-label="Group">${Object.entries(GROUPS).map(([k, l]) => `<option value="${k}" ${(ui.groupBy ?? 'none') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
+      <button class="btn" data-act="sf-import" title="Bring in a Salesforce opportunities report (.xlsx or .csv)">Salesforce report</button>
       <button class="btn" data-act="results">Results pages</button>
       <div class="seg" role="group" aria-label="View"><button data-view="cards" aria-pressed="${view === 'cards'}">Cards</button><button data-view="table" aria-pressed="${view === 'table'}">Line items</button></div>
     </div>
@@ -90,6 +91,8 @@ function wire(main) {
       rerender();
     });
   main.querySelector('[data-act="results"]')?.addEventListener('click', () => openResults(main));
+  main.querySelector('[data-act="sf-import"]')?.addEventListener('click', () => openSfImport());
+  pageDrop();
   for (const b of main.querySelectorAll('[data-side]')) b.addEventListener('click', () => ((ui.side = b.dataset.side), save(), rerender()));
 }
 
@@ -207,7 +210,7 @@ const gapCell = (r) => {
 export const COLUMNS = [
   { label: 'POV', key: (r) => r.customer, html: (r) => `<div class="row center" style="gap:10px;flex-wrap:nowrap"><span class="chip" style="background:${tc(r.colour)}"></span><div><b>${esc(r.customer)}</b><div class="small muted">${esc([r.tenant ? `${r.tenant.tenant} · ${r.tenant.regionLabel}` : 'no tenant', r.region].filter(Boolean).join(' · '))}</div></div></div>` },
   { label: 'SE', key: (r) => r.owner.name, html: (r) => `${esc(r.owner.name)}${r.managers[0] ? `<div class="small muted">${esc(r.managers[0].name)}</div>` : ''}` },
-  { label: 'Stage', key: (r) => Object.keys(state.meta.stages).indexOf(r.stage), html: (r) => `${stageBadge(r.stage)} ${daysBadge(r)}` },
+  { label: 'Stage', key: (r) => Object.keys(state.meta.stages).indexOf(r.stage), html: (r) => `${stageBadge(r.stage)} ${daysBadge(r)}${r.sf ? `<div class="small muted sf-line" title="Salesforce, from the report of ${esc(when(r.sf.reportAt))}">SF · ${esc([r.sf.stage, sfMoney(r.sf.amount)].filter(Boolean).join(' · '))}</div>` : ''}` },
   { label: 'Outlook', key: (r) => r.prediction?.score ?? 200, html: (r) => outlook(r.prediction) },
   { label: 'Criteria', key: (r) => r.progress.percent, html: (r) => (r.progress.total ? `<div class="row center" style="gap:8px;flex-wrap:nowrap">${ring(r.progress, { size: 34, label: false })}<div><b class="num">${r.progress.met}/${r.progress.total}</b>${r.forecast?.criteria ? `<div class="small fc-${esc(r.forecast.criteria.state)}">${esc(shortForecast(r.forecast.criteria))}</div>` : ''}</div></div>` : '<span class="muted small">none yet</span>') },
   { label: 'Gaps', key: (r) => -((r.gaps ?? []).filter((x) => x.level === 'bad').length * 10 + (r.gaps ?? []).filter((x) => x.level === 'warn').length), html: gapCell },
@@ -280,4 +283,92 @@ function teamFeed(activity) {
       ? activity.map((a) => `<li data-go="#/opp/${esc(a.oppId)}"><span class="icon">✎</span><div><div class="t">${esc(a.what)}</div><div class="m">${esc(a.opp)}${a.byName ? ` · ${esc(a.byName)}` : ''}</div></div><span class="when" title="${esc(when(a.at))}">${ago(a.at)}</span></li>`).join('')
       : '<li style="display:block" class="empty">No changes yet.</li>'
   }</ul>`;
+}
+
+// ——— Salesforce report: a file dropped here (or chosen) is matched to the POVs by their Opportunity ID ———
+export const sfMoney = (a) => (a?.value ? `${a.currency && a.currency !== 'USD' ? `${a.currency} ` : '$'}${a.value >= 1e6 ? `${(a.value / 1e6).toFixed(1)}M` : a.value >= 1e3 ? `${Math.round(a.value / 1e3)}k` : Math.round(a.value)}` : '');
+
+async function uploadReport(file) {
+  if (!/\.(xlsx|csv|html?)$/i.test(file.name)) throw new Error('Use the report exported from Salesforce as .xlsx or .csv.');
+  const res = await fetch('/api/salesforce/import', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `The report was not taken (${res.status}).`);
+  return body;
+}
+
+function importResult(r) {
+  const d = r.detail;
+  return `<div class="stack" style="gap:10px">
+    <div class="row center"><span class="badge ok">${r.matched} matched</span>${r.unmatched ? `<span class="badge warn">${r.unmatched} not matched</span>` : ''}<span class="small muted">${r.rows} rows · columns: ${esc(d.columns.join(', '))}</span></div>
+    ${d.matched.length ? `<div class="table-wrap"><table><thead><tr><th>POV</th><th>Salesforce stage</th><th>What changed</th></tr></thead><tbody>${d.matched.map((m) => `<tr><td><a href="#/dashboard?open=${esc(m.id)}" data-close>${esc(m.customer)}</a>${m.how === 'name' ? ' <span class="small muted">(by name)</span>' : ''}</td><td>${esc(m.stage)}</td><td class="small">${m.changes.length ? esc(m.changes.join(' · ')) : '<span class="muted">nothing new</span>'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${d.unmatched.length ? `<details><summary class="small">Not matched to a POV (${d.unmatched.length})</summary><p class="small muted">Rows for opportunities without a POV here, or whose POV has no Salesforce link. Add the opportunity’s Salesforce link (it holds the 006… ID) to the POV and bring the report in again.</p><div class="small">${d.unmatched.slice(0, 60).map((u) => esc([u.account, u.name].filter(Boolean).join(' — '))).join('<br>')}</div></details>` : ''}
+  </div>`;
+}
+
+async function openSfImport(file = null) {
+  const { imports } = await api('/salesforce/imports');
+  await openDialog(
+    `<div class="dbody stack"><h2>Salesforce report</h2>
+      <p class="muted" style="margin:0">Bring Salesforce’s stage, amount, close date and next step in beside each POV — no API needed. In Salesforce, run an <b>Opportunities</b> report with the columns <b>Opportunity ID</b>, Opportunity Name, Account Name, Stage, Amount, Close Date, Probability and Next Step, then <b>Export → Details only → .xlsx</b>. Rows match a POV by the ID in its Salesforce link. Nothing is written back to Salesforce.</p>
+      <label class="drop" id="sfDrop"><input type="file" id="sfFile" accept=".xlsx,.csv" hidden><b>Drop the report here</b> or click to choose it<div class="small">.xlsx or .csv · up to 15 MB · you can also drop it anywhere on the Portfolio</div></label>
+      <div id="sfOut"></div>
+      ${imports.length ? `<details><summary class="small">Earlier reports (${imports.length})</summary><div class="small stack" style="gap:4px;margin-top:6px">${imports.slice(0, 10).map((x) => `<div>${esc(when(x.at))} · ${esc(x.source === 'mailbox' ? 'from the report mailbox' : x.by)} · ${x.rows} rows, ${x.matched.length} of your POVs</div>`).join('')}</div></details>` : ''}
+      <div class="dialog-actions"><span class="small muted">Admins can have this happen by itself: Settings → Salesforce.</span><span class="spacer"></span><button class="btn" data-close>Close</button></div></div>`,
+    {
+      wide: true,
+      onOpen(dlg) {
+        const out = dlg.querySelector('#sfOut');
+        const go = async (f) => {
+          out.innerHTML = '<div class="muted">Reading the report…</div>';
+          try {
+            const r = await uploadReport(f);
+            out.innerHTML = importResult(r);
+            document.dispatchEvent(new CustomEvent('cc:rerender'));
+          } catch (error) {
+            out.innerHTML = `<p class="form-error">${esc(error.message)}</p>`;
+          }
+          for (const a of out.querySelectorAll('[data-close]')) a.addEventListener('click', () => closeDialog());
+        };
+        for (const b of dlg.querySelectorAll('button[data-close]')) b.addEventListener('click', () => closeDialog());
+        const drop = dlg.querySelector('#sfDrop');
+        dlg.querySelector('#sfFile').addEventListener('change', (e) => e.target.files[0] && go(e.target.files[0]));
+        drop.addEventListener('dragover', (e) => (e.preventDefault(), drop.classList.add('over')));
+        drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+        drop.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          drop.classList.remove('over');
+          if (e.dataTransfer.files[0]) go(e.dataTransfer.files[0]);
+        });
+        if (file) go(file);
+      },
+    },
+  );
+}
+
+/** A report dropped anywhere on the Portfolio opens the dialog with it. */
+let dropWired = false;
+function pageDrop() {
+  if (dropWired) return;
+  dropWired = true;
+  const onPortfolio = () => /^#\/(dashboard)?(\?|$)/.test(location.hash || '#/') && !document.querySelector('#dialog')?.open;
+  const hasFile = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+  let depth = 0;
+  document.addEventListener('dragenter', (e) => {
+    if (!onPortfolio() || !hasFile(e)) return;
+    depth += 1;
+    document.body.classList.add('sf-dragging');
+  });
+  document.addEventListener('dragleave', () => {
+    depth = Math.max(0, depth - 1);
+    if (!depth) document.body.classList.remove('sf-dragging');
+  });
+  document.addEventListener('dragover', (e) => onPortfolio() && hasFile(e) && e.preventDefault());
+  document.addEventListener('drop', (e) => {
+    depth = 0;
+    document.body.classList.remove('sf-dragging');
+    if (!onPortfolio() || !e.dataTransfer?.files?.[0]) return;
+    e.preventDefault();
+    openSfImport(e.dataTransfer.files[0]);
+  });
 }

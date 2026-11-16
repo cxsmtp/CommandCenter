@@ -21,6 +21,7 @@ const TABS = [
   ['organisation', 'Organisation', () => can('settings.manage')],
   ['email', 'Email server', () => can('settings.manage')],
   ['roles', 'Roles & permissions', () => can('roles.manage')],
+  ['salesforce', 'Salesforce', () => can('settings.manage')],
   ['system', 'System & backups', () => can('settings.manage')],
 ];
 
@@ -32,7 +33,7 @@ export async function renderSettings(main, tab, { crumbs, applyLook }) {
   main.innerHTML = `<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === active}" data-tab="${k}">${l}</button>`).join('')}</div><div id="sBody"></div>`;
   for (const b of $$('[data-tab]', main)) b.addEventListener('click', () => (location.hash = `#/settings/${b.dataset.tab}`));
   const body = $('#sBody');
-  ({ profile, organisation, email, roles, system })[active](body, data, applyLook);
+  ({ profile, organisation, email, roles, salesforce, system })[active](body, data, applyLook);
 }
 
 function profile(body, data, applyLook) {
@@ -56,7 +57,9 @@ function profile(body, data, applyLook) {
       <h3>Password</h3>
       <div class="row"><label class="field">Current<input type="password" name="current" autocomplete="current-password" required></label><label class="field">New (10+ characters)<input type="password" name="next" minlength="10" autocomplete="new-password" required></label></div>
       <div><button class="btn">Change password</button></div>
-    </form></section></div>`;
+    </form></section></div>
+    <section class="panel" id="sfMe" style="margin-top:16px"></section>`;
+  sfMe($('#sfMe'));
   const savePrefs = async (prefs) => {
     const r = await attempt(() => api('/me', { method: 'PATCH', body: { prefs } }));
     if (r) {
@@ -195,3 +198,82 @@ async function system(body) {
     if (confirm(`Go back to ${u.previous}?`) && (await attempt(() => api('/updates/rollback', { method: 'POST', body: {} }), 'Going back — restarting'))) setTimeout(() => location.reload(), 8000);
   });
 }
+
+// ——— Your Email to Salesforce address ———
+async function sfMe(el) {
+  const me = await api('/me/salesforce');
+  el.innerHTML = `<div class="head"><h3>Email to Salesforce</h3>${me.set ? '<span class="badge ok">Connected</span>' : ''}</div><form id="sfMeForm" class="body stack" style="gap:10px;max-width:760px">
+    <p class="muted small" style="margin:0">Your private address from Salesforce (<b>Settings → Email → My Email to Salesforce</b>). Meridian sends it your tasks, notes, stage changes and POV results, and copies it on the POV emails you send, so they are saved in Salesforce as activities. It is stored encrypted and shown to no one.</p>
+    <label class="field">Your Email to Salesforce address<input name="address" type="email" autocomplete="off" placeholder="${me.set ? esc(`${me.hint} (kept — type to replace)`) : 'emailtosalesforce@….salesforce.com'}"></label>
+    <label class="check"><input type="checkbox" name="copy" ${me.copy ? 'checked' : ''}> Copy it on the POV emails I send from Meridian</label>
+    ${me.sender ? `<p class="small" style="margin:0">Once in Salesforce: add <b class="mono">${esc(me.sender)}</b> to <b>My Acceptable Email Addresses</b> on the same page — Salesforce only takes mail from addresses on that list.</p>` : '<p class="small warn-t" style="margin:0">The email server is not set up yet: an Admin sets it under Settings → Email server.</p>'}
+    <div class="row"><button class="btn primary">Save</button>${me.set ? '<button type="button" class="btn ghost" data-act="sf-clear">Remove</button>' : ''}</div>
+  </form>`;
+  $('#sfMeForm', el).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = formData(e.target);
+    const body = { copy: Boolean(b.copy) };
+    if (b.address) body.address = b.address;
+    if (await attempt(() => api('/me/salesforce', { method: 'PUT', body }), 'Saved')) sfMe(el);
+  });
+  $('[data-act="sf-clear"]', el)?.addEventListener('click', async () => {
+    if (confirm('Stop sending to Salesforce?') && (await attempt(() => api('/me/salesforce', { method: 'PUT', body: { address: '' } }), 'Removed'))) sfMe(el);
+  });
+}
+
+// ——— Salesforce (Admin): what is logged by itself, and the report mailbox ———
+async function salesforce(body) {
+  const s = await api('/salesforce/settings');
+  const mb = s.mailbox;
+  const last = s.last;
+  body.innerHTML = `<div class="stack" style="max-width:900px">
+    <form id="sfLogForm" class="panel"><div class="head"><h3>Logged by itself</h3></div><div class="body stack" style="gap:8px">
+      <p class="muted small" style="margin:0">Through each SE’s own Email to Salesforce address (they add it under Profile). Nothing is sent for people who have not added one.</p>
+      <label class="check"><input type="checkbox" name="logStages" ${s.logStages ? 'checked' : ''}> When a POV changes stage, send Salesforce the change and where the POV stands</label>
+      <label class="check"><input type="checkbox" name="logResults" ${s.logResults ? 'checked' : ''}> When a POV is marked successful, send Salesforce the result</label>
+      ${s.publicUrl ? '' : '<p class="small muted" style="margin:0">Tip: set CC_PUBLIC_URL to Meridian’s address so each Salesforce activity links back to the POV.</p>'}
+      <div><button class="btn primary">Save</button></div></div></form>
+
+    <form id="sfBoxForm" class="panel"><div class="head"><h3>Report mailbox</h3>${mb.enabled ? '<span class="badge ok">On</span>' : '<span class="badge">Off</span>'}</div><div class="body stack" style="gap:10px">
+      <p class="muted small" style="margin:0">Salesforce keeps every POV’s stage, amount and close date current with no API: subscribe a mailbox to the opportunities report, and Meridian reads it.<br>
+      <b>1.</b> In Salesforce, open the Opportunities report (columns: Opportunity ID, Opportunity Name, Account Name, Stage, Amount, Close Date, Probability, Next Step) → <b>Subscribe</b> → daily, recipient: this mailbox. Attach the file (.xlsx) if your org allows it; if not, the table in the email is read.<br>
+      <b>2.</b> Give Meridian the mailbox below (IMAP; for Microsoft 365, a shared mailbox with IMAP on). Only mail from the allowed senders is read; it is marked read and moved to “Meridian imported”.</p>
+      <label class="check"><input type="checkbox" name="enabled" ${mb.enabled ? 'checked' : ''}> Read the mailbox every <input type="number" name="everyMinutes" min="5" max="1440" value="${esc(mb.everyMinutes)}" style="width:70px"> minutes</label>
+      <div class="row"><label class="field">IMAP host<input name="host" value="${esc(mb.host)}" placeholder="outlook.office365.com"></label><label class="field" style="max-width:110px">Port<input type="number" name="port" value="${esc(mb.port)}"></label><label class="check"><input type="checkbox" name="secure" ${mb.secure ? 'checked' : ''}> TLS</label></div>
+      <div class="row"><label class="field">User<input name="user" value="${esc(mb.user)}" autocomplete="off"></label><label class="field">Password${mb.hasPassword ? ' (kept; type to replace)' : ''}<input type="password" name="pass" autocomplete="new-password"></label></div>
+      <div class="row"><label class="field">Folder<input name="folder" value="${esc(mb.folder)}"></label><label class="field">Allowed sender domains<input name="senders" value="${esc(mb.senders)}" placeholder="salesforce.com"></label></div>
+      <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" data-act="mb-test">Test the sign-in</button><button type="button" class="btn" data-act="mb-run">Read it now</button></div>
+      <div id="mbOut" class="small">${last ? lastRun(last) : '<span class="muted">Not read yet.</span>'}</div>
+    </div></form></div>`;
+  $('#sfLogForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = formData(e.target);
+    await attempt(() => api('/salesforce/settings', { method: 'PUT', body: { logStages: Boolean(b.logStages), logResults: Boolean(b.logResults) } }), 'Saved');
+  });
+  const boxBody = () => {
+    const b = formData($('#sfBoxForm'));
+    const m = { enabled: Boolean(b.enabled), host: b.host, port: Number(b.port), secure: Boolean(b.secure), user: b.user, folder: b.folder, senders: b.senders, everyMinutes: Number(b.everyMinutes) };
+    if (b.pass) m.pass = b.pass;
+    return { mailbox: m };
+  };
+  $('#sfBoxForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (await attempt(() => api('/salesforce/settings', { method: 'PUT', body: boxBody() }), 'Saved')) salesforce(body);
+  });
+  $('[data-act="mb-test"]', body).addEventListener('click', async () => {
+    await attempt(() => api('/salesforce/settings', { method: 'PUT', body: boxBody() }));
+    const r = await attempt(() => api('/salesforce/mailbox/test', { method: 'POST', body: {} }));
+    if (r) toast(`Signed in · ${r.folder}: ${r.messages} messages`);
+  });
+  $('[data-act="mb-run"]', body).addEventListener('click', async () => {
+    await attempt(() => api('/salesforce/settings', { method: 'PUT', body: boxBody() }));
+    $('#mbOut').innerHTML = '<span class="muted">Reading…</span>';
+    const r = await attempt(() => api('/salesforce/mailbox/run', { method: 'POST', body: {} }));
+    if (r) $('#mbOut').innerHTML = lastRun(r);
+  });
+}
+
+const lastRun = (r) => `<div><b>Last read ${esc(ago(r.at))}</b>${r.skipped === 'off' ? ' — the mailbox is off' : ''}${r.ok === false ? ` — <span class="bad-t">${esc(r.error)}</span>` : ''}</div>
+  ${(r.imported ?? []).map((x) => `<div>✓ ${esc(x.subject || 'report')}: ${x.rows} rows, ${x.matched} matched${x.unmatched ? `, ${x.unmatched} not matched` : ''}</div>`).join('')}
+  ${(r.skipped && r.skipped !== 'off' ? r.skipped : []).map((x) => `<div class="muted">Left: ${esc(x.subject || '(no subject)')} — ${esc(x.why)}</div>`).join('')}
+  ${r.ok !== false && !(r.imported ?? []).length && r.skipped !== 'off' ? '<div class="muted">No new report emails.</div>' : ''}`;

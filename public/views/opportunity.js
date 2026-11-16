@@ -42,7 +42,7 @@ export async function renderOpportunity(main, id, tab, { crumbs, drawer = null }
           <span>SE <b>${esc(r.owner.name)}</b>${r.managers.length ? ` → ${r.managers.map((m) => esc(m.name)).join(' → ')}` : ''}</span>
           ${o.startDate || o.endDate ? `<span>POV ${day(o.startDate)} – ${day(o.endDate)}</span>` : ''}
           ${o.amount ? `<span>${esc(o.amount)}</span>` : ''}
-          ${o.salesforceUrl ? `<a href="${esc(o.salesforceUrl)}" target="_blank" rel="noopener noreferrer">Salesforce ↗</a>` : ''}
+          ${o.salesforceUrl ? `<a href="${esc(o.salesforceUrl)}" target="_blank" rel="noopener noreferrer">Salesforce ↗</a>` : ''}${sfChip(o.salesforce)}
           ${o.sharepointUrl ? `<a href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">SharePoint ↗</a>` : ''}
           ${o.tenant ? `<a href="${esc(o.tenant.baseUrl)}" target="_blank" rel="noopener noreferrer">Checkmarx One ↗</a>` : ''}
         </div>
@@ -71,6 +71,29 @@ export async function renderOpportunity(main, id, tab, { crumbs, drawer = null }
     });
   main.querySelector('[data-act="edit"]')?.addEventListener('click', editDetails);
   WIRES[active]?.(main, d);
+  on(main, '[data-sf-log]', async (b) => {
+    b.disabled = true;
+    const r = await attempt(() => api(`/opportunities/${oid()}/salesforce/log`, { method: 'POST', body: { kind: b.dataset.sfLog, itemId: b.dataset.item || undefined } }));
+    b.disabled = false;
+    if (r) {
+      toast('Sent to Salesforce');
+      rerender();
+    }
+  });
+}
+
+// ——— Salesforce: the figures from the latest report, and logging to Salesforce ———
+const money = (a) => (a?.value ? `${a.currency && a.currency !== 'USD' ? `${a.currency} ` : '$'}${a.value >= 1e6 ? `${(a.value / 1e6).toFixed(1)}M` : a.value >= 1e3 ? `${Math.round(a.value / 1e3)}k` : Math.round(a.value)}` : '');
+const sfChip = (sf) => (sf ? `<span class="sf-chip" title="From the Salesforce report of ${esc(when(sf.reportAt))}"><span class="sf-cloud" aria-hidden="true"></span>${esc([sf.stage, money(sf.amount), sf.closeDate ? `closes ${day(sf.closeDate)}` : ''].filter(Boolean).join(' · '))}</span>` : '');
+const sfButton = (kind, itemId = '', logged = '') => (current.canEdit ? `<button class="btn sm ghost sf-log" data-sf-log="${kind}" ${itemId ? `data-item="${esc(itemId)}"` : ''} title="${logged ? `Sent to Salesforce ${esc(ago(logged))}` : 'Send to Salesforce as an activity'}">${logged ? '✓ Salesforce' : '→ Salesforce'}</button>` : '');
+function sfPanel(o) {
+  const sf = o.salesforce;
+  const rows = sf ? [['Stage', sf.stage], ['Amount', money(sf.amount)], ['Close date', sf.closeDate ? day(sf.closeDate) : ''], ['Probability', sf.probability !== undefined ? `${sf.probability}%` : ''], ['Forecast', sf.forecast], ['Next step', sf.nextStep], ['Owner', sf.owner]].filter(([, v]) => v) : [];
+  const last = (o.sfLog ?? []).at(-1);
+  return `<section class="panel"><div class="head"><h3>Salesforce</h3>${o.salesforceUrl ? `<a class="small" href="${esc(o.salesforceUrl)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}</div><div class="body stack" style="gap:8px">
+    ${rows.length ? `<dl class="sf-fields">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl><div class="small muted">From the report of ${esc(when(sf.reportAt))}${sf.source === 'mailbox' ? ' (read from the report mailbox)' : ''}</div>` : '<span class="muted small">No Salesforce figures yet. Bring in a report from the Portfolio (Salesforce report) and they appear here.</span>'}
+    <div class="row center">${sfButton('status')}<span class="small muted">${last ? `Last sent ${esc(ago(last.at))}: ${esc(last.kind)}` : 'Sends where the POV stands as an activity'}</span></div>
+  </div></section>`;
 }
 
 const rerender = () => document.dispatchEvent(new CustomEvent('cc:rerender'));
@@ -119,6 +142,7 @@ function overview(d) {
       ${current.canEdit ? '<div class="row" style="margin-top:8px"><button class="btn sm" data-act="save-summary">Save summary</button></div>' : ''}
     </div></section>
   </div><div class="stack">
+    ${sfPanel(o)}
     <section class="panel"><div class="head"><h3>Next tasks</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${openTasks.slice(0, 6).map((t) => `<div class="row center"><span class="${t.due && t.due < new Date().toISOString().slice(0, 10) ? 'bad-t' : ''}">${esc(t.title)}</span><span class="spacer"></span><span class="small muted">${t.due ? day(t.due) : ''}</span></div>`).join('') || '<span class="muted">Nothing open.</span>'}</div></section>
     <section class="panel"><div class="head"><h3>Latest notes</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${notes.map((n) => `<div class="item"><div class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · ${ago(n.at)}</div><div class="notes-box">${esc(n.text.length > 400 ? `${n.text.slice(0, 400)}…` : n.text)}</div></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></section>
     <section class="panel"><div class="head"><h3>Stakeholders</h3><a href="${tabHref('email')}" class="small">Manage</a></div><div class="body list">${(o.stakeholders ?? []).map((p) => `<div><b>${esc(p.name)}</b> <span class="small muted">${esc(p.title)} · ${p.side === 'internal' ? 'internal' : 'customer'}</span>${p.email ? `<div class="small"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}</div>`).join('') || '<span class="muted">None yet.</span>'}</div></section>
@@ -334,11 +358,11 @@ function notes(d) {
   const today = new Date().toISOString().slice(0, 10);
   return `<div class="layout"><div class="stack">
     ${current.canEdit ? `<form id="noteForm" class="panel body stack" style="gap:8px"><textarea name="text" rows="3" placeholder="A note: what happened, what was decided, what to remember." required></textarea><div class="row"><label class="check"><input type="checkbox" name="pinned"> Pin</label><span class="spacer"></span><button class="btn primary">Add note</button></div></form>` : ''}
-    <div class="list">${list.map((n) => `<div class="item"><div class="top"><span class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · <span title="${esc(when(n.at))}">${ago(n.at)}</span></span><span class="row"><button class="btn sm" data-copy-note="${esc(n.id)}">Copy</button>${current.canEdit ? `<button class="btn sm" data-pin-note="${esc(n.id)}">${n.pinned ? 'Unpin' : 'Pin'}</button><button class="btn sm ghost danger" data-del-note="${esc(n.id)}">Remove</button>` : ''}</span></div><div class="notes-box">${esc(n.text)}</div></div>`).join('') || '<div class="empty panel">No notes yet.</div>'}</div>
+    <div class="list">${list.map((n) => `<div class="item"><div class="top"><span class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · <span title="${esc(when(n.at))}">${ago(n.at)}</span></span><span class="row"><button class="btn sm" data-copy-note="${esc(n.id)}">Copy</button>${sfButton('note', n.id, n.sfLoggedAt)}${current.canEdit ? `<button class="btn sm" data-pin-note="${esc(n.id)}">${n.pinned ? 'Unpin' : 'Pin'}</button><button class="btn sm ghost danger" data-del-note="${esc(n.id)}">Remove</button>` : ''}</span></div><div class="notes-box">${esc(n.text)}</div></div>`).join('') || '<div class="empty panel">No notes yet.</div>'}</div>
   </div>
   <section class="panel"><div class="head"><h3>Tasks</h3></div><div class="body stack" style="gap:8px">
     ${current.canEdit ? `<form id="taskForm" class="row"><input name="title" placeholder="New task" required style="flex:1;min-width:140px"><input type="date" name="due" aria-label="Due"><button class="btn">Add</button></form>` : ''}
-    ${tasks.map((t) => `<div class="row center"><label class="check" style="flex:1"><input type="checkbox" data-task="${esc(t.id)}" ${t.done ? 'checked' : ''} ${ro()}><span style="${t.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(t.title)}</span></label><span class="small ${!t.done && t.due && t.due < today ? 'bad-t' : 'muted'}">${t.due ? day(t.due) : ''}</span>${current.canEdit ? `<button class="btn sm ghost" data-del-task="${esc(t.id)}" aria-label="Remove">✕</button>` : ''}</div>`).join('') || '<span class="muted">No tasks.</span>'}
+    ${tasks.map((t) => `<div class="row center"><label class="check" style="flex:1"><input type="checkbox" data-task="${esc(t.id)}" ${t.done ? 'checked' : ''} ${ro()}><span style="${t.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(t.title)}</span></label><span class="small ${!t.done && t.due && t.due < today ? 'bad-t' : 'muted'}">${t.due ? day(t.due) : ''}</span>${sfButton('task', t.id, t.sfLoggedAt)}${current.canEdit ? `<button class="btn sm ghost" data-del-task="${esc(t.id)}" aria-label="Remove">✕</button>` : ''}</div>`).join('') || '<span class="muted">No tasks.</span>'}
   </div></section></div>`;
 }
 

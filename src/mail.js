@@ -216,8 +216,8 @@ export class Mailer {
     await this.#transport().sendMail({ from: this.#from(), to, subject: 'Meridian test email', text: 'Your email server works with Meridian.' });
   }
 
-  async send(msg, { replyTo, attachments = [] } = {}) {
-    const info = await this.#transport().sendMail({ from: this.#from(), replyTo: replyTo || undefined, to: msg.to, cc: msg.cc, subject: msg.subject, text: msg.body, attachments });
+  async send(msg, { replyTo, attachments = [], bcc = [] } = {}) {
+    const info = await this.#transport().sendMail({ from: this.#from(), replyTo: replyTo || undefined, to: msg.to, cc: msg.cc, bcc: bcc.length ? bcc : undefined, subject: msg.subject, text: msg.body, attachments });
     return info.messageId ?? '';
   }
 

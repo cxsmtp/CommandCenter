@@ -61,17 +61,17 @@ function make(owner, body, { tenant, criteria = [], notes = [], sessions = [], s
   for (const c of opps.get(o.id).criteria.filter((c) => met.includes(c.capabilityId))) opps.upsertItem(who, o.id, 'criteria', { ...c, status: 'met', notes: 'Shown to the AppSec team; they confirmed the results.' }, {});
   return o;
 }
-make(ses[0], { customer: 'Acme Bank', name: 'AppSec platform FY27', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006XX0000001/view', sharepointUrl: 'https://example.sharepoint.com/sites/AcmeBankPOV', startDate: day(-12), endDate: day(4), amount: '$420k ARR', discovery: { goals: 'Replace the current SAST tool; one platform for SAST, SCA and IaC.', painPoints: 'Too many false positives; developers ignore results.', languages: 'Java, TypeScript, Python', scm: ['github', 'gitlab'], ci: ['jenkins', 'github-actions'], tracking: ['jira', 'servicenow'], ide: ['vscode', 'jetbrains', 'cursor', 'copilot'], requested: ['sast', 'sca', 'fusion', 'jenkins', 'jira'] } }, {
+make(ses[0], { customer: 'Acme Bank', name: 'AppSec platform FY27', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006Hs00001AcmeB/view', sharepointUrl: 'https://example.sharepoint.com/sites/AcmeBankPOV', startDate: day(-12), endDate: day(4), amount: '$420k ARR', discovery: { goals: 'Replace the current SAST tool; one platform for SAST, SCA and IaC.', painPoints: 'Too many false positives; developers ignore results.', languages: 'Java, TypeScript, Python', scm: ['github', 'gitlab'], ci: ['jenkins', 'github-actions'], tracking: ['jira', 'servicenow'], ide: ['vscode', 'jetbrains', 'cursor', 'copilot'], requested: ['sast', 'sca', 'fusion', 'jenkins', 'jira'] } }, {
   tenant: 'acme-bank', criteria: ['sast', 'fusion', 'secrets', 'iac', 'sca', 'containers', 'malicious', 'aisc', 'llm-scanner', 'mcp-scanner', 'dast-ai', 'dev-assist', 'ai-triage', 'ai-remediation', 'analytics', 'policy', 'mcp', 'jenkins', 'github-actions', 'github', 'jira', 'sso'], met: ['sast', 'sca', 'fusion', 'iac', 'jenkins', 'dev-assist', 'mcp'], progress: ['secrets', 'containers', 'ai-triage', 'llm-scanner', 'analytics', 'github-actions'],
   notes: ['Champion: Priya (AppSec lead). Wants Jira tickets created from critical findings.', 'Jenkins pipeline scans running on 5 core apps.'],
   sessions: [{ date: day(-20), type: 'discovery', title: 'Discovery with AppSec team', attendees: 'Priya Rao, Tom Lee', notes: 'Current tool: legacy SAST. Pain: false positives, slow scans.' }, { date: day(-10), type: 'technical', title: 'Jenkins and GitHub integration', notes: 'Plugin installed, first pipeline green.' }],
   stakeholders: [{ name: 'Priya Rao', email: 'priya.rao@acme-bank.example', title: 'AppSec Lead', side: 'customer' }, { name: 'Tom Lee', email: 'tom.lee@acme-bank.example', title: 'DevOps Manager', side: 'customer' }, { name: 'Jordan AE', email: 'jordan.ae@company.example', title: 'Account Executive', side: 'internal' }],
   tasks: [{ title: 'Show Jira feedback app', due: day(1) }, { title: 'Fusion results readout', due: day(3) }],
 });
-make(ses[1], { customer: 'Globex', startDate: day(-5), endDate: day(18), salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006XX0000002/view' }, { tenant: 'globex', criteria: ['sast', 'sca', 'containers', 'azure-pipelines', 'vscode'], tasks: [{ title: 'Kick-off email', due: day(-1) }] });
-make(ses[2], { customer: 'Initech', stage: 'completed', povResult: 'successful', summary: 'Checkmarx One scanned the 14 Initech projects from GitLab CI and the CLI. LAST found issues the legacy tool missed, and the security team signed off on the results.', startDate: day(-30), endDate: day(-1) }, { tenant: 'initech', criteria: ['sast', 'last', 'cli', 'gitlab-ci', 'secrets'], met: ['sast', 'cli', 'last'] });
-make(ses[3], { customer: 'Umbrella Health', startDate: day(-3), endDate: day(25) }, { tenant: 'umbrella', criteria: ['sast', 'sca', 'aisc', 'fusion', 'api', 'servicenow'] });
-make(ses[3], { customer: 'Hooli', stage: 'technical', discovery: { goals: 'Shift-left for 400 developers.', ci: ['github-actions'] } }, { criteria: ['sast', 'sca', 'github-actions', 'dev-assist'], sessions: [{ date: day(-2), type: 'technical', title: 'Architecture deep dive' }] });
+make(ses[1], { customer: 'Globex', startDate: day(-5), endDate: day(18), salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006Hs00001Globx/view' }, { tenant: 'globex', criteria: ['sast', 'sca', 'containers', 'azure-pipelines', 'vscode'], tasks: [{ title: 'Kick-off email', due: day(-1) }] });
+make(ses[2], { customer: 'Initech', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006Hs00001Initc/view', stage: 'completed', povResult: 'successful', summary: 'Checkmarx One scanned the 14 Initech projects from GitLab CI and the CLI. LAST found issues the legacy tool missed, and the security team signed off on the results.', startDate: day(-30), endDate: day(-1) }, { tenant: 'initech', criteria: ['sast', 'last', 'cli', 'gitlab-ci', 'secrets'], met: ['sast', 'cli', 'last'] });
+make(ses[3], { customer: 'Umbrella Health', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006Hs00001Umbrl/view', startDate: day(-3), endDate: day(25) }, { tenant: 'umbrella', criteria: ['sast', 'sca', 'aisc', 'fusion', 'api', 'servicenow'] });
+make(ses[3], { customer: 'Hooli', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006Hs00001Hooli/view', stage: 'technical', discovery: { goals: 'Shift-left for 400 developers.', ci: ['github-actions'] } }, { criteria: ['sast', 'sca', 'github-actions', 'dev-assist'], sessions: [{ date: day(-2), type: 'technical', title: 'Architecture deep dive' }] });
 make(ses[0], { customer: 'Stark Logistics', stage: 'discovery' }, { tasks: [{ title: 'Discovery call', due: day(2) }] });
 make(ses[2], { customer: 'Wayne Retail', stage: 'won', povResult: 'successful' }, { criteria: ['sast', 'sca'], met: ['sast', 'sca'] });
 make(ses[1], { customer: 'Cyberdyne', stage: 'lost' }, {});
@@ -94,4 +94,21 @@ app.server.listen(port, process.env.HOST || '127.0.0.1', () => {
     const video = fs.readFileSync(new URL('./demo-assets/ai-inventory-demo.mp4', import.meta.url));
     await fetch(`${base}/api/opportunities/${acme.id}/criteria/${c.id}/demo-video?name=ai-inventory-demo.mp4`, { method: 'PUT', headers: { ...h, 'Content-Type': 'video/mp4' }, body: video });
   })().catch((e) => console.error('demo video:', e.message));
+  // The VP brings in this week's Salesforce opportunities report.
+  (async () => {
+    const base = `http://127.0.0.1:${port}`;
+    const r = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'vp@demo.local', password: pw }) });
+    const cookie = r.headers.get('set-cookie').split(';')[0];
+    const rows = [
+      ['Opportunity ID', 'Account Name', 'Opportunity Name', 'Stage', 'Amount', 'Close Date', 'Probability (%)', 'Next Step', 'Opportunity Owner'],
+      ['006Hs00001AcmeB', 'Acme Bank', 'AppSec platform FY27', 'Negotiation', '420000', day(30), '70', 'Security review sign-off', 'Jordan AE'],
+      ['006Hs00001Globx', 'Globex', 'Globex', 'Proof of Value', '180000', day(10), '40', 'POV readout', 'Jordan AE'],
+      ['006Hs00001Umbrl', 'Umbrella Health', 'Umbrella Health', 'Value Proposition', '250000', day(60), '30', '', 'Mia AE'],
+      ['006Hs00001Initc', 'Initech', 'Initech', 'Negotiation', '300000', day(14), '80', 'Legal redlines', 'Mia AE'],
+      ['006Hs00001Hooli', 'Hooli', 'Hooli', 'Qualification', '500000', day(90), '20', 'Technical sessions', 'Mia AE'],
+      ['006Hs00001Other', 'Soylent', 'Soylent renewal', 'Prospecting', '90000', day(120), '10', '', 'Mia AE'],
+    ];
+    const csv = rows.map((x) => x.map((v) => `"${v}"`).join(',')).join('\n');
+    await fetch(`${base}/api/salesforce/import`, { method: 'POST', headers: { Cookie: cookie, 'X-Requested-With': 'Meridian', 'X-File-Name': 'Opportunities in POV.csv', 'Content-Type': 'text/csv' }, body: csv });
+  })().catch((e) => console.error('demo Salesforce:', e.message));
 });

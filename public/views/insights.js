@@ -15,10 +15,15 @@ export async function renderInsights(main, { crumbs }) {
     const n = Math.max(1, likely + atRisk + unlikely);
     return `<div class="obar" role="img" aria-label="${likely} likely, ${atRisk} at risk, ${unlikely} unlikely"><span class="ok" style="flex:${likely / n}"></span><span class="warn" style="flex:${atRisk / n}"></span><span class="bad" style="flex:${unlikely / n}"></span></div>`;
   };
-  const rollup = (title, rows, note = '') => `<section class="panel"><div class="head"><h3>${title}</h3><span class="small muted">${note}</span></div><div class="table-wrap"><table class="ins-table"><thead><tr><th></th><th class="n">POVs</th><th class="n">Running</th><th style="min-width:160px">Outlook</th><th class="n">Expected wins</th><th class="n">Avg score</th><th class="n">Won / lost</th><th class="n">Critical gaps</th></tr></thead><tbody>${
-    rows.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td class="n">${g.povs}</td><td class="n">${g.running}</td><td>${bar(g.likely, g.atRisk, g.unlikely)}<div class="small muted">${g.likely} likely · ${g.atRisk} at risk · ${g.unlikely} unlikely</div></td><td class="n"><b>${fmt(g.expected)}</b></td><td class="n">${g.avgScore ?? '—'}</td><td class="n">${g.won} / ${g.lost}</td><td class="n ${g.critical ? 'bad-t' : ''}">${g.critical}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing yet.</td></tr>'
+  const rollup = (title, rows, note = '') => `<section class="panel"><div class="head"><h3>${title}</h3><span class="small muted">${note}</span></div><div class="table-wrap"><table class="ins-table"><thead><tr><th></th><th class="n">POVs</th><th class="n">Running</th><th style="min-width:160px">Outlook</th><th class="n">Expected wins</th>${rv.linked ? '<th class="n">Pipeline</th>' : ''}<th class="n">Avg score</th><th class="n">Won / lost</th><th class="n">Critical gaps</th></tr></thead><tbody>${
+    rows.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td class="n">${g.povs}</td><td class="n">${g.running}</td><td>${bar(g.likely, g.atRisk, g.unlikely)}<div class="small muted">${g.likely} likely · ${g.atRisk} at risk · ${g.unlikely} unlikely</div></td><td class="n"><b>${fmt(g.expected)}</b></td>${rv.linked ? `<td class="n">${g.pipeline ? cur(g.pipeline) : '—'}</td>` : ''}<td class="n">${g.avgScore ?? '—'}</td><td class="n">${g.won} / ${g.lost}</td><td class="n ${g.critical ? 'bad-t' : ''}">${g.critical}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing yet.</td></tr>'
   }</tbody></table></div></section>`;
   const regions = [...new Set([...d.regions, ...d.tenantRegions])];
+  const rv = d.revenue;
+  const cur = (n) => `${rv.currency === 'USD' ? '$' : `${rv.currency} `}${n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : fmt(n)}`;
+  const revenueGroup = rv.linked
+    ? `<div class="ins-group g-value"><div class="ins-label">Revenue · Salesforce</div><div class="ins-figs"><div><b>${cur(rv.pipeline)}</b><span>open pipeline in POV (${rv.povs})</span></div><div><b class="ok-t">${cur(rv.weighted)}</b><span>weighted by outlook</span></div><div><b>${cur(rv.closing30)}</b><span>closing in 30 days</span></div></div>${rv.otherCurrencies ? `<div class="small muted">${rv.otherCurrencies} in other currencies not added</div>` : ''}</div>`
+    : `<div class="ins-group g-value"><div class="ins-label">Revenue · Salesforce</div><div class="small muted" style="margin-top:6px">Bring in a Salesforce opportunities report (Portfolio → Salesforce report) to see the pipeline each POV carries, weighted by its outlook.</div></div>`;
   main.innerHTML = `
     <div class="toolbar"><span class="muted">Predicted from each POV's pace against its end date, its must-haves, the tenant's activity, customer engagement and its gaps; every score says why.</span><span class="spacer"></span>
       <select id="iRegion" aria-label="Region"><option value="">Every region</option>${regions.map((r) => `<option ${ui.region === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
@@ -30,6 +35,7 @@ export async function renderInsights(main, { crumbs }) {
         <div class="ins-figs"><div><b>${fmt(t.expectedWins)}</b><span>expected wins of ${t.likely + t.atRisk + t.unlikely} POVs scored</span></div><div><b>${t.ending30}</b><span>end in 30 days</span></div><div><b>${fmt(t.ending30Expected)}</b><span>of those should win</span></div></div></div>
       <div class="ins-group g-pipeline"><div class="ins-label">Pipeline</div>
         <div class="ins-figs"><div><b>${t.open}</b><span>open</span></div><div><b>${t.running}</b><span>POVs running</span></div><div><b>${t.won}<small> / ${t.lost}</small></b><span>won / lost</span></div></div></div>
+      ${revenueGroup}
       <div class="ins-group g-gaps"><div class="ins-label">Gaps</div>
         <div class="ins-figs"><div><b class="${t.critical ? 'bad-t' : 'ok-t'}">${t.critical}</b><span>critical gaps now</span></div></div></div>
     </section>

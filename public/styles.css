@@ -375,3 +375,14 @@ body.drawer-open table[data-table="dash"] td:first-child { min-width: 0; }
 @media (min-width: 1380px) { .dash-hero { grid-template-columns: repeat(6, minmax(0, 1fr)); } .dash-hero .ins-figs > div b { font-size: 26px; } }
 @media (max-width: 720px) { .dash-hero { grid-template-columns: 1fr 1fr; } }
 .brand-tag { white-space: nowrap; }
+
+/* Salesforce */
+.sf-chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px 1px 6px; border-radius: 999px; border: 1px solid color-mix(in srgb, #1798c1 45%, var(--line)); color: var(--ink); font-size: 12px; }
+.sf-cloud { width: 14px; height: 9px; border-radius: 9px; background: #1798c1; box-shadow: 4px -3px 0 -1px #1798c1, -3px -1px 0 -2px #1798c1; margin: 3px 3px 0 2px; }
+.sf-fields { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 13px; }
+.sf-fields dt { color: var(--muted); }
+.sf-fields dd { margin: 0; }
+.sf-log { white-space: nowrap; }
+.drop { border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 28px; text-align: center; color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s; }
+.drop.over, .drop:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--ink); }
+body.sf-dragging::after { content: 'Drop the Salesforce report to bring it in'; position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 18px; display: grid; place-items: center; font-size: 20px; color: var(--ink); background: color-mix(in srgb, var(--bg) 80%, transparent); z-index: 90; pointer-events: none; }

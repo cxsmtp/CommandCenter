@@ -390,3 +390,43 @@ test('value: hours and money saved from the AI actions, at the rates set', async
   assert.equal(v.backlog.credits, 22);
   assert.equal(v.backlog.covered, true);
 });
+
+test('Salesforce: a dropped report fills each POV, gaps compare it with the POV, and Email to Salesforce stays private', async () => {
+  const link = 'https://x.lightning.force.com/lightning/r/Opportunity/006Ab00000Xyz12AAA/view';
+  assert.equal((await call('se1', `/api/opportunities/${ids.alpha}`, { method: 'PATCH', body: { salesforceUrl: link } })).status, 200);
+  const csv = 'Opportunity ID,Opportunity Name,Account Name,Stage,Amount,Close Date\n006Ab00000Xyz12,Alpha deal,Alpha Bank,Negotiation,"$420,000",2029-06-30\n006Zz00000Nope1,Other,Nobody,Prospecting,10,2029-01-01\n';
+  const up = async (who, body) => {
+    const r = await fetch(`${base}/api/salesforce/import`, { method: 'POST', headers: { Cookie: jar.get(who), 'X-Requested-With': 'Meridian', 'X-File-Name': 'report.csv', 'Content-Type': 'text/csv' }, body });
+    return { status: r.status, body: await r.json() };
+  };
+  const r = await up('se1', csv);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.matched, 1);
+  assert.equal(r.body.unmatched, 1);
+  // Another SE's import cannot touch a POV that is not theirs.
+  assert.equal((await up('se2', csv)).body.matched, 0);
+
+  const o = await call('vp', '/api/overview');
+  const row = o.body.rows.find((x) => x.id === ids.alpha);
+  assert.equal(row.sf.stage, 'Negotiation');
+  assert.equal(row.sf.amount.value, 420000);
+  assert.ok(row.gaps.some((g) => g.key === 'sf-past' || g.key === 'sf-close') === false, 'close date after the POV end: no gap');
+
+  const again = await up('se1', csv.replace('Negotiation', 'Closed Lost'));
+  assert.deepEqual(again.body.detail.matched[0].changes, ['Stage: Negotiation → Closed Lost']);
+  const row2 = (await call('vp', '/api/overview')).body.rows.find((x) => x.id === ids.alpha);
+  assert.ok(row2.gaps.some((g) => g.key === 'sf-lost' && g.level === 'bad'));
+  const ins = await call('vp', '/api/insights');
+  assert.equal(ins.body.revenue.linked, 1);
+
+  // Email to Salesforce: kept encrypted, shown masked, never returned whole.
+  assert.equal((await call('se1', '/api/me/salesforce', { method: 'PUT', body: { address: 'not-an-email' } })).status, 400);
+  const me = await call('se1', '/api/me/salesforce', { method: 'PUT', body: { address: 'emailtosalesforce@abc123xyz.le.salesforce.com', copy: true } });
+  assert.equal(me.body.set, true);
+  assert.ok(!JSON.stringify(me.body).includes('abc123xyz'));
+  assert.ok(!fs.readFileSync(path.join(dataDir, 'sfaddresses.json')).includes('emailtosalesforce'));
+  // No email server here: logging says so instead of failing silently.
+  const log = await call('se1', `/api/opportunities/${ids.alpha}/salesforce/log`, { method: 'POST', body: { kind: 'status' } });
+  assert.equal(log.status, 409);
+  assert.match(log.body.error, /email server/);
+});

@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { fail, text, dateOnly, httpUrl, email as cleanEmail, isoOrNull } from './db.js';
 import { deriveConnection } from './cxone/endpoints.js';
 import { cleanRates } from './value.js';
+import { changesOf } from './salesforce.js';
 
 export const STAGES = {
   discovery: 'Discovery',
@@ -149,6 +150,36 @@ export class Opportunities {
       const rest = changed.filter((k) => k !== 'povResult');
       if (rest.length) log(opp, actor, `Changed ${rest.join(', ')}`);
     });
+  }
+
+  /**
+   * Salesforce report rows for opportunities (from a dropped file or the report mailbox), all saved at once.
+   * @param {Array<{ id: string, rec: object }>} list
+   * @returns {Map<string, string[]>} what changed on each
+   */
+  setSalesforce(list, meta, byName) {
+    const all = this.#all();
+    const out = new Map();
+    const now = new Date().toISOString();
+    for (let { id, rec } of list) {
+      const opp = all.find((o) => o.id === id);
+      if (!opp) continue;
+      const before = opp.salesforce ?? null;
+      // A report changes only the columns it has: a narrower report keeps what an earlier one brought in.
+      const merged = { ...rec };
+      if (before && meta.columns) for (const k of Object.keys(before)) if (!meta.columns.includes(k) && !(k in merged) && !['reportAt', 'importedAt', 'source', 'file'].includes(k)) merged[k] = before[k];
+      rec = merged;
+      const changes = changesOf(before, rec);
+      opp.salesforce = { ...rec, reportAt: meta.at ?? now, importedAt: now, source: meta.source, file: text(meta.name, 200) };
+      const what = before ? (changes.length ? `Salesforce: ${changes.join(' · ')}` : '') : `Salesforce report linked${rec.stage ? ` (stage ${rec.stage})` : ''}`;
+      if (what) {
+        (opp.history ??= []).push({ at: now, by: '', byName, what: text(what, 400) });
+        if (opp.history.length > HISTORY) opp.history = opp.history.slice(-HISTORY);
+      }
+      out.set(id, changes);
+    }
+    this.#save(all);
+    return out;
   }
 
   remove(actor, id, settings) {
