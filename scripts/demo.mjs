@@ -38,6 +38,8 @@ const vp = add('vp@demo.local', 'Vera Patel', 'vp', null, 'VP Solution Engineeri
 const lead = add('leader@demo.local', 'Leon Duarte', 'leader', vp.id, 'Director, SE EMEA');
 const tl1 = add('tl1@demo.local', 'Tara Lim', 'team_lead', lead.id, 'SE Manager, North');
 const tl2 = add('tl2@demo.local', 'Omar Haddad', 'team_lead', lead.id, 'SE Manager, South');
+users.update(sudo, lead.id, { region: 'EMEA' });
+users.update(sudo, tl2.id, { region: 'APAC' });
 const ses = [add('se1@demo.local', 'Sam Okafor', 'associate', tl1.id, 'Senior SE'), add('se2@demo.local', 'Ana Ruiz', 'associate', tl1.id, 'SE'), add('se3@demo.local', 'Kenji Mori', 'associate', tl2.id, 'SE'), add('se4@demo.local', 'Priya Nair', 'associate', tl2.id, 'Principal SE')];
 // No forced password change in the demo.
 const list = app.db.read('users', []);

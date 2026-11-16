@@ -11,7 +11,8 @@ const ui = local.get('cc.dash', {});
 const save = () => local.set('cc.dash', ui);
 const defaultView = () => state.session.user.prefs?.view || (state.session.user.role === 'associate' ? 'cards' : 'table');
 
-export async function renderDashboard(main, { crumbs }) {
+export async function renderDashboard(main, { crumbs, open = '' }) {
+  ui.open = open;
   crumbs('<h2 style="font-size:16px">Command center</h2>');
   const owner = ui.owner && state.users.some((u) => u.id === ui.owner) ? ui.owner : '';
   state.overview = await api(`/overview${owner ? `?owner=${encodeURIComponent(owner)}` : ''}`);
@@ -37,7 +38,7 @@ export async function renderDashboard(main, { crumbs }) {
       <input type="search" id="fQ" placeholder="Search customer, SE, tenant…" value="${esc(ui.q ?? '')}">
       <label class="check"><input type="checkbox" id="fAttention" ${ui.attention ? 'checked' : ''}> Needs attention only</label>
       <span class="spacer"></span>
-      ${view === 'table' ? `<label class="check"><input type="checkbox" id="fGroup" ${ui.group !== false ? 'checked' : ''}> Group by person</label>` : ''}
+      ${view === 'table' ? `<select id="fGroup" aria-label="Group">${Object.entries(GROUPS).map(([k, l]) => `<option value="${k}" ${(ui.groupBy ?? 'none') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
       <button class="btn" data-act="results">Results pages</button>
       <div class="seg" role="group" aria-label="View"><button data-view="cards" aria-pressed="${view === 'cards'}">Cards</button><button data-view="table" aria-pressed="${view === 'table'}">Line items</button></div>
     </div>
@@ -46,20 +47,9 @@ export async function renderDashboard(main, { crumbs }) {
       <button data-stage="open" aria-pressed="${ui.stage === 'open'}"><b>${t.opportunities - stageCount('won') - stageCount('lost')}</b><span>Open</span></button>
       ${Object.entries(state.meta.stages).map(([k, label]) => `<button data-stage="${k}" aria-pressed="${ui.stage === k}"><b>${stageCount(k)}</b><span>${esc(label)}</span></button>`).join('')}
     </div>
-    <div class="kpis">
-      ${kpi('Need attention', t.needsAttention, t.needsAttention ? 'bad' : '')}
-      ${kpi('Ending ≤ 7 days', t.endingSoon, t.endingSoon ? 'warn' : '')}
-      ${kpi('Scans running', fmt(t.running))}
-      ${kpi('Scans 24h', fmt(t.scans24h), '', `${fmt(t.failed24h)} failed`)}
-      ${kpi('Fusion / LAST', `${fmt(t.fusion7d)} / ${fmt(t.last7d)}`)}
-      ${kpi('Credits', fmt(t.creditsAvailable), '', t.creditsUsed30d !== null ? `${fmt(Math.round(t.creditsUsed30d))} used in 30 d` : '')}
-      ${kpi('People active', t.usersTotal !== null ? `${fmt(t.usersActive)} / ${fmt(t.usersTotal)}` : '—', '', 'last 2 days')}
-      ${kpi('Critical / High', `${fmt(t.critical)} / ${fmt(t.high)}`)}
-      ${kpi('Criteria done', t.criteriaTotal ? `${Math.round((100 * t.criteriaMet) / t.criteriaTotal)}%` : '—', '', `${t.criteriaMet} of ${t.criteriaTotal}`)}
-    </div>
-    ${missionStrip(o.forecast)}
-    <div class="layout">
-      <div class="stack">${rows.length ? (view === 'cards' ? cards(rows) : lineItems(rows, ui.group !== false)) : '<div class="empty panel">Nothing matches.</div>'}</div>
+    ${figureGroups(t, o.forecast)}
+    <div class="layout${view === 'table' ? ' layout-list' : ''}">
+      <div class="stack">${rows.length ? (view === 'cards' ? cards(rows) : lineItems(rows, ui.groupBy ?? 'none')) : '<div class="empty panel">Nothing matches.</div>'}</div>
       ${sidePanel(o)}
     </div>`;
 
@@ -84,7 +74,7 @@ function wire(main) {
     }, 250);
   });
   main.querySelector('#fAttention').addEventListener('change', (e) => ((ui.attention = e.target.checked), save(), rerender()));
-  main.querySelector('#fGroup')?.addEventListener('change', (e) => ((ui.group = e.target.checked), save(), rerender()));
+  main.querySelector('#fGroup')?.addEventListener('change', (e) => ((ui.groupBy = e.target.value), save(), rerender()));
   for (const b of main.querySelectorAll('[data-view]')) b.addEventListener('click', () => ((ui.view = b.dataset.view), save(), rerender()));
   for (const b of main.querySelectorAll('[data-stage]')) b.addEventListener('click', () => ((ui.stage = b.dataset.stage), save(), rerender()));
   for (const b of main.querySelectorAll('[data-feed]')) b.addEventListener('click', () => ((ui.feed = b.dataset.feed), save(), rerender()));
@@ -125,6 +115,22 @@ async function openResults() {
       },
     },
   );
+}
+
+// The figures, grouped by the question each answers, each group with its own colour.
+function figureGroups(t, f) {
+  const v = t.value ?? {};
+  const cur = (n) => (n === null || n === undefined ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: v.currency || 'USD', maximumFractionDigits: 0 }).format(n));
+  const fig = (value, label, cls = '') => `<div class="${cls}"><b>${value}</b><span>${label}</span></div>`;
+  const grp = (key, title, figs) => `<div class="ins-group g-${key}"><div class="ins-label">${title}</div><div class="ins-figs">${figs.join('')}</div></div>`;
+  return `<section class="ins-hero dash-hero">
+    ${grp('gaps', 'Needs you', [fig(t.needsAttention, 'need attention', t.needsAttention ? 'bad-t' : 'ok-t'), fig(t.endingSoon, 'end within 7 days', t.endingSoon ? 'warn-t' : '')])}
+    ${grp('outlook', 'Outlook', [fig(f?.onTrack ?? 0, 'on track', 'ok-t'), fig(f?.atRisk ?? 0, 'at risk', (f?.atRisk ?? 0) ? 'warn-t' : ''), fig(f?.late ?? 0, 'late', (f?.late ?? 0) ? 'bad-t' : '')])}
+    ${grp('tenants', 'Tenants today', [fig(fmt(t.scans24h), `scans${t.failed24h ? `, <span class="bad-t">${fmt(t.failed24h)} failed</span>` : ''}`), fig(fmt(t.running), 'running now'), fig(t.usersTotal !== null ? `${fmt(t.usersActive)}<small>/${fmt(t.usersTotal)}</small>` : '—', 'people active')])}
+    ${grp('ai', 'AI scanning · 7 days', [fig(fmt(t.fusion7d), 'Fusion scans'), fig(fmt(t.last7d), 'LAST scans')])}
+    ${grp('value', 'Credits & value', [fig(fmt(t.creditsAvailable), 'credits left'), fig(fmt(v.hours ?? 0), 'hours saved by AI', 'ok-t'), fig(cur(v.value), 'value delivered', 'ok-t')])}
+    ${grp('pipeline', 'Success criteria', [fig(t.criteriaTotal ? `${Math.round((100 * t.criteriaMet) / t.criteriaTotal)}%` : '—', `${t.criteriaMet} of ${t.criteriaTotal} done`)])}
+  </section>`;
 }
 
 // The forecast strip: where the POVs are heading, across everything shown.
@@ -185,37 +191,47 @@ function card(r) {
   </article>`;
 }
 
-const COLUMNS = [
-  { label: 'Opportunity', key: (r) => r.customer, html: (r) => `<div class="row center" style="gap:8px;flex-wrap:nowrap"><span class="chip" style="background:${tc(r.colour)}"></span><div><b>${esc(r.customer)}</b>${r.name !== r.customer ? `<div class="small muted">${esc(r.name)}</div>` : ''}${r.tenant ? `<div class="small muted">${esc(r.tenant.tenant)} · ${esc(r.tenant.regionLabel)}</div>` : ''}</div></div>` },
-  { label: 'SE', key: (r) => r.owner.name, html: (r) => `${esc(r.owner.name)}${r.managers[0] ? `<div class="small muted">→ ${esc(r.managers[0].name)}</div>` : ''}` },
+// The manager's list: one line per POV, each column answering one question, colour only where it matters.
+const OUTLOOK_TONE = { ok: 'ok', warn: 'warn', bad: 'bad' };
+const outlook = (pr) => (pr ? `<span class="outlook ${OUTLOOK_TONE[pr.tone] ?? ''}" title="${esc(pr.drivers.map((d) => `${d.effect > 0 ? '+' : d.effect < 0 ? '−' : '·'} ${d.text}`).join('\n'))}"><b>${pr.score ?? '–'}</b><span>${esc(pr.label)}</span></span>` : '');
+const gapCell = (r) => {
+  const g = (r.gaps ?? []).filter((x) => x.level !== 'info');
+  if (!g.length) return '<span class="ok-t small">No gaps</span>';
+  const bad = g.filter((x) => x.level === 'bad').length;
+  return `<div class="gapcell"><span class="badge ${bad ? 'bad' : 'warn'}">${g.length} gap${g.length > 1 ? 's' : ''}</span><div class="small ${bad ? 'bad-t' : 'warn-t'}">${esc(g[0].text.length > 70 ? `${g[0].text.slice(0, 68)}…` : g[0].text)}</div></div>`;
+};
+export const COLUMNS = [
+  { label: 'POV', key: (r) => r.customer, html: (r) => `<div class="row center" style="gap:10px;flex-wrap:nowrap"><span class="chip" style="background:${tc(r.colour)}"></span><div><b>${esc(r.customer)}</b><div class="small muted">${esc([r.tenant ? `${r.tenant.tenant} · ${r.tenant.regionLabel}` : 'no tenant', r.region].filter(Boolean).join(' · '))}</div></div></div>` },
+  { label: 'SE', key: (r) => r.owner.name, html: (r) => `${esc(r.owner.name)}${r.managers[0] ? `<div class="small muted">${esc(r.managers[0].name)}</div>` : ''}` },
   { label: 'Stage', key: (r) => Object.keys(state.meta.stages).indexOf(r.stage), html: (r) => `${stageBadge(r.stage)} ${daysBadge(r)}` },
-  { label: 'Criteria', n: true, key: (r) => r.progress.percent, html: (r) => (r.progress.total ? `<b>${r.progress.percent}%</b><div class="small muted">${r.progress.met}/${r.progress.total}</div>` : '—') },
-  { label: 'Forecast', key: (r) => ({ late: 0, 'at-risk': 1, 'no-pace': 2, 'on-track': 3, done: 4 })[r.forecast?.criteria?.state] ?? 5, html: (r) => forecastLine(r.forecast?.criteria) || '<span class="muted small">—</span>' },
-  { label: 'Health', key: (r) => (r.muted ? 9 : r.alerts.filter((a) => a.level === 'bad').length * -10 - r.alerts.length), html: (r) => (r.alerts.length ? `<div class="alerts">${r.alerts.slice(0, 2).map((a) => `<div class="a ${r.muted ? 'muted' : a.level === 'bad' ? 'bad-t' : 'warn-t'}"><span class="dot ${r.muted ? '' : a.level}"></span>${esc(a.what)}</div>`).join('')}${r.alerts.length > 2 ? `<div class="small muted">+${r.alerts.length - 2} more</div>` : ''}${r.muted ? '<div class="small muted">Muted</div>' : ''}</div>` : r.live ? `<span class="health"><span class="dot ${r.live.health}"></span>${esc(HEALTH[r.live.health])}</span>` : '<span class="muted small">No tenant</span>') },
-  { label: 'Scans 24h', n: true, key: (r) => r.live?.summary?.scans24h ?? -1, html: (r) => (r.live?.summary ? `${fmt(r.live.summary.scans24h)}${r.live.summary.failed24h ? ` <span class="bad-t small">(${r.live.summary.failed24h} ✕)</span>` : ''}` : '—') },
-  { label: 'Running', n: true, key: (r) => (r.live?.summary ? r.live.summary.running + r.live.summary.queued : -1), html: (r) => (r.live?.summary ? fmt(r.live.summary.running + r.live.summary.queued) : '—') },
-  { label: 'Fusion / LAST', n: true, key: (r) => r.live?.summary?.fusion7d ?? -1, html: (r) => (r.live?.summary ? `${fmt(r.live.summary.fusion7d)} / ${fmt(r.live.summary.last7d)}` : '—') },
-  { label: 'C / H', n: true, key: (r) => (r.live?.summary?.findings ? r.live.summary.findings.critical * 1000 + r.live.summary.findings.high : -1), html: (r) => (r.live?.summary?.findings ? `${fmt(r.live.summary.findings.critical)} / ${fmt(r.live.summary.findings.high)}` : '—') },
-  { label: 'People', n: true, key: (r) => r.live?.summary?.users?.active ?? -1, html: (r) => (r.live?.summary?.users?.total != null ? `${fmt(r.live.summary.users.active)}/${fmt(r.live.summary.users.total)}` : '—') },
-  { label: 'Credits', n: true, key: (r) => r.live?.summary?.credits?.available ?? -1, html: (r) => fmt(r.live?.summary?.credits?.available) },
-  { label: 'Last activity', key: (r) => Date.parse(r.live?.summary?.lastActivityAt ?? r.updatedAt) || 0, html: (r) => `<span title="${esc(when(r.live?.summary?.lastActivityAt ?? r.updatedAt))}">${ago(r.live?.summary?.lastActivityAt ?? r.updatedAt)}</span>` },
-  { label: 'Links', html: (r) => `${r.progress.total ? `<a href="/api/opportunities/${esc(r.id)}/results" target="_blank" rel="noopener" title="POV results page">Results↗</a> ` : ''}${r.salesforceUrl ? `<a href="${esc(r.salesforceUrl)}" target="_blank" rel="noopener noreferrer" title="Salesforce">SF↗</a> ` : ''}${r.sharepointUrl ? `<a href="${esc(r.sharepointUrl)}" target="_blank" rel="noopener noreferrer" title="SharePoint">SP↗</a>` : ''}` },
+  { label: 'Outlook', key: (r) => r.prediction?.score ?? 200, html: (r) => outlook(r.prediction) },
+  { label: 'Criteria', key: (r) => r.progress.percent, html: (r) => (r.progress.total ? `<div class="row center" style="gap:8px;flex-wrap:nowrap">${ring(r.progress, { size: 34, label: false })}<div><b class="num">${r.progress.met}/${r.progress.total}</b>${r.forecast?.criteria ? `<div class="small fc-${esc(r.forecast.criteria.state)}">${esc(shortForecast(r.forecast.criteria))}</div>` : ''}</div></div>` : '<span class="muted small">none yet</span>') },
+  { label: 'Gaps', key: (r) => -((r.gaps ?? []).filter((x) => x.level === 'bad').length * 10 + (r.gaps ?? []).filter((x) => x.level === 'warn').length), html: gapCell },
+  { label: 'Tenant', key: (r) => (r.live?.summary ? r.live.summary.scans24h : -1), html: (r) => (r.live ? `<span class="health"><span class="dot ${r.live.refreshing ? 'loading' : r.live.health}"></span>${r.live.summary ? `${fmt(r.live.summary.scans24h)} scans today${r.live.summary.failed24h ? ` · <span class="bad-t">${r.live.summary.failed24h} failed</span>` : ''}` : esc(HEALTH[r.live.health])}</span><div class="small muted">${r.live.summary?.lastActivityAt ? `active ${ago(r.live.summary.lastActivityAt)}` : ''}${r.live.summary?.fusion7d || r.live.summary?.last7d ? ` · Fusion ${r.live.summary.fusion7d} · LAST ${r.live.summary.last7d}` : ''}</div>` : '<span class="muted small">—</span>') },
+  { label: 'People', n: true, key: (r) => r.live?.summary?.users?.active ?? -1, html: (r) => (r.live?.summary?.users?.total != null ? `<b class="num">${fmt(r.live.summary.users.active)}</b><span class="muted">/${fmt(r.live.summary.users.total)}</span>` : '—') },
+  { label: 'Credits · value', n: true, key: (r) => r.value?.hours.total ?? -1, html: (r) => (r.value ? `<b class="num">${fmt(r.value.credits?.available)}</b> <span class="muted small">left</span><div class="small ok-t">${fmt(r.value.hours.total)} h saved</div>` : '—') },
 ];
+const shortForecast = (f) => (f.state === 'on-track' ? `on pace${f.marginDays !== null && f.marginDays !== undefined ? `, ${f.marginDays} d spare` : ''}` : f.state === 'late' ? (f.marginDays !== undefined && f.marginDays !== null ? `${-f.marginDays} d late` : 'late') : f.state === 'done' ? 'all done' : f.state === 'at-risk' ? 'at risk' : f.state === 'no-pace' ? 'none done yet' : '');
 
-function lineItems(rows, group) {
-  const attrs = (r) => `class="click" data-go="#/opp/${esc(r.id)}"`;
-  if (!group) return `<section class="panel">${table('dash', COLUMNS, rows, { rowAttrs: attrs })}</section>`;
-  const byOwner = new Map();
+const GROUPS = { none: 'No grouping', owner: 'By SE', team: 'By team', region: 'By region', stage: 'By stage', outlook: 'By outlook' };
+const groupKey = (by, r) => (by === 'owner' ? r.owner.name : by === 'team' ? r.managers[0]?.name ?? r.owner.name : by === 'region' ? r.region || r.tenant?.regionLabel || 'No region' : by === 'stage' ? state.meta.stages[r.stage] : by === 'outlook' ? r.prediction?.label ?? '—' : '');
+
+function lineItems(rows, by) {
+  const attrs = (r) => `class="click${ui.open === r.id ? ' selected' : ''}" data-go="#/dashboard?open=${esc(r.id)}" tabindex="0"`;
+  if (!by || by === 'none') return `<section class="panel list-panel">${table('dash', COLUMNS, rows, { rowAttrs: attrs })}</section>`;
+  const groups = new Map();
   for (const r of rows) {
-    if (!byOwner.has(r.owner.id)) byOwner.set(r.owner.id, []);
-    byOwner.get(r.owner.id).push(r);
+    const k = groupKey(by, r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
   }
-  return [...byOwner.values()]
-    .map((list) => {
-      const r0 = list[0];
-      const bad = list.filter((r) => !r.muted && r.alerts.some((a) => a.level === 'bad')).length;
-      const povs = list.filter((r) => r.stage === 'pov').length;
-      return `<section class="panel"><div class="head"><div class="row center"><h3>${esc(r0.owner.name)}</h3><span class="muted small">${r0.managers.map((m) => esc(m.name)).join(' → ')}</span></div><div class="row center small"><span class="badge">${list.length} opportunities</span><span class="badge accent">${povs} POVs</span>${bad ? `<span class="badge bad">${bad} need attention</span>` : ''}</div></div>${table('dash', COLUMNS.filter((c) => c.label !== 'SE'), list, { rowAttrs: attrs })}</section>`;
+  return [...groups]
+    .map(([name, list]) => {
+      const bad = list.filter((r) => (r.gaps ?? []).some((g) => g.level === 'bad')).length;
+      const scored = list.filter((r) => r.prediction?.score !== null && r.prediction?.score !== undefined && !['won', 'lost'].includes(r.stage));
+      const expected = scored.reduce((t, r) => t + r.prediction.score / 100, 0);
+      const likely = scored.filter((r) => r.prediction.score >= 70).length;
+      return `<section class="panel list-panel"><div class="head"><div class="row center"><h3>${esc(name)}</h3><span class="muted small">${list.length} POV${list.length > 1 ? 's' : ''}</span></div><div class="row center small">${scored.length ? `<span class="badge ok">${likely} likely</span><span class="badge">${Math.round(expected * 10) / 10} expected wins</span>` : ''}${bad ? `<span class="badge bad">${bad} with critical gaps</span>` : ''}</div></div>${table('dash', by === 'owner' ? COLUMNS.filter((c) => c.label !== 'SE') : COLUMNS, list, { rowAttrs: attrs })}</section>`;
     })
     .join('');
 }

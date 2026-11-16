@@ -16,6 +16,7 @@ import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
+import { predict, gaps, rollups } from './insights.js';
 import { flowView } from './flow.js';
 import { Updater, RESTART_CODE } from './updates.js';
 import { Audit } from './audit.js';
@@ -167,9 +168,10 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const muted = isMuted(opp, now);
     const nextTask = (opp.tasks ?? []).filter((t) => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'))[0] ?? null;
     const lastNote = (opp.notes ?? []).reduce((m, n) => (n.at > m ? n.at : m), '');
-    return {
+    const base = {
       id: opp.id,
       name: opp.name,
+      region: regionOf(opp.ownerId),
       customer: opp.customer,
       stage: opp.stage,
       povResult: opp.povResult ?? '',
@@ -200,6 +202,25 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       sessions: (opp.sessions ?? []).length,
       updatedAt: opp.updatedAt,
     };
+    const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
+    base.prediction = predict(opp, base, { now });
+    base.gaps = gaps(placed(opp), base, { facts: snap ? tenantFacts(snap) : null, people: snap ? peopleActivity(snap, now) : null, catalog, now });
+    return base;
+  }
+
+  /** A person's sales region: their own, else their nearest manager's. */
+  function regionOf(userId) {
+    const u = users.get(userId);
+    if (u?.region) return u.region;
+    return users.chain(userId).find((m) => m.region)?.region ?? '';
+  }
+  /** A person's team: named after their team lead (or their manager, whoever that is). */
+  function teamOf(userId) {
+    const u = users.get(userId);
+    if (!u) return '—';
+    if (['team_lead', 'leader', 'vp', 'admin'].includes(u.role)) return u.name;
+    const m = users.chain(userId)[0];
+    return m ? m.name : u.name;
   }
 
   function overview(viewer, q) {
@@ -653,6 +674,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       return res.end(gz ? c.gzip : c.json);
     }
     if (route === 'GET /results') return send(res, 200, { results: resultsList(user, url.searchParams) });
+    if (route === 'GET /insights') {
+      const o = overview(user, url.searchParams);
+      const region = url.searchParams.get('region');
+      const rows = region ? o.rows.filter((r) => r.region === region || r.tenant?.regionLabel === region) : o.rows;
+      return send(res, 200, { at: o.at, ...rollups(rows, { teamOf, regionOf }), regions: [...new Set(o.rows.map((r) => r.region).filter(Boolean))].sort(), tenantRegions: [...new Set(o.rows.map((r) => r.tenant?.regionLabel).filter(Boolean))].sort() });
+    }
     if (route === 'GET /results/download') {
       const list = resultsList(user, url.searchParams);
       if (!list.length) throw fail(404, 'No POV with success criteria to make a results page for.');

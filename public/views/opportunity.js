@@ -17,7 +17,13 @@ const TABS = [
 let current = null; // the detail last read
 let catalog = null;
 
-export async function renderOpportunity(main, id, tab, { crumbs }) {
+// In a drawer (opened from a list), tabs and links stay in the drawer; on its own page, they move the page.
+let drawerCtx = null;
+const tabHref = (t, extra = '') => (drawerCtx ? `${drawerCtx.base}?open=${encodeURIComponent(oid())}&tab=${t}${extra ? `&x=${extra}` : ''}` : `#/opp/${oid()}/${t}${extra ? `?${extra}` : ''}`);
+const wants = (x) => new RegExp(`[?&](x=)?${x}(&|$)`).test(location.hash);
+
+export async function renderOpportunity(main, id, tab, { crumbs, drawer = null }) {
+  drawerCtx = drawer;
   const [d, cat] = await Promise.all([api(`/opportunities/${encodeURIComponent(id)}`), getCatalog()]);
   current = d;
   catalog = cat;
@@ -47,7 +53,7 @@ export async function renderOpportunity(main, id, tab, { crumbs }) {
     <div class="tabs" role="tablist">${TABS.map(([k, label]) => `<button role="tab" aria-selected="${k === active}" data-tab="${k}">${label}${k === 'criteria' && r.progress.total ? ` <span class="muted">${r.progress.percent}%</span>` : ''}${k === 'tenant' && r.live ? ` <span class="dot ${r.live.health}"></span>` : ''}</button>`).join('')}</div>
     <div id="tabBody">${VIEWS[active](d)}</div>`;
 
-  for (const b of $$('[data-tab]', main)) b.addEventListener('click', () => (location.hash = `#/opp/${o.id}/${b.dataset.tab}`));
+  for (const b of $$('[data-tab]', main)) b.addEventListener('click', () => (location.hash = tabHref(b.dataset.tab)));
   for (const b of $$('[data-stage]', main))
     b.addEventListener('click', async () => {
       if (b.dataset.stage === o.stage) return;
@@ -99,7 +105,7 @@ function overview(d) {
   ${o.stage === 'completed' && !o.povResult && current.canEdit ? '<section class="panel"><div class="body row center"><span style="flex:1">The POV is complete. Was it successful?</span><button class="btn primary" data-result="successful">Successful</button><button class="btn" data-result="unsuccessful">Not successful</button></div></section>' : ''}
   <div class="layout"><div class="stack">
     ${r.alerts.length ? `<section class="panel"><div class="head"><h3>Needs attention</h3>${r.muted ? '<span class="badge">Muted</span>' : ''}</div><div class="body">${alertList(r.alerts, r.muted)}</div></section>` : ''}
-    <section class="panel"><div class="head"><h3>Success criteria</h3><a href="#/opp/${esc(o.id)}/criteria" class="small">Open</a></div><div class="body">
+    <section class="panel"><div class="head"><h3>Success criteria</h3><a href="${tabHref('criteria')}" class="small">Open</a></div><div class="body">
       ${r.progress.total ? progressBar(r.progress) : '<span class="muted">None yet. Add what the customer wants to see.</span>'}
       ${r.progress.total ? `<div class="row small" style="margin-top:10px">${Object.entries(state.meta.criterionStatus).map(([k, label]) => `<span class="badge"><span class="status ${k}">${(o.criteria ?? []).filter((c) => c.status === k).length}</span> ${esc(label)}</span>`).join('')}</div>` : ''}
     </div></section>
@@ -113,9 +119,9 @@ function overview(d) {
       ${current.canEdit ? '<div class="row" style="margin-top:8px"><button class="btn sm" data-act="save-summary">Save summary</button></div>' : ''}
     </div></section>
   </div><div class="stack">
-    <section class="panel"><div class="head"><h3>Next tasks</h3><a href="#/opp/${esc(o.id)}/notes" class="small">All</a></div><div class="body list">${openTasks.slice(0, 6).map((t) => `<div class="row center"><span class="${t.due && t.due < new Date().toISOString().slice(0, 10) ? 'bad-t' : ''}">${esc(t.title)}</span><span class="spacer"></span><span class="small muted">${t.due ? day(t.due) : ''}</span></div>`).join('') || '<span class="muted">Nothing open.</span>'}</div></section>
-    <section class="panel"><div class="head"><h3>Latest notes</h3><a href="#/opp/${esc(o.id)}/notes" class="small">All</a></div><div class="body list">${notes.map((n) => `<div class="item"><div class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · ${ago(n.at)}</div><div class="notes-box">${esc(n.text.length > 400 ? `${n.text.slice(0, 400)}…` : n.text)}</div></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></section>
-    <section class="panel"><div class="head"><h3>Stakeholders</h3><a href="#/opp/${esc(o.id)}/email" class="small">Manage</a></div><div class="body list">${(o.stakeholders ?? []).map((p) => `<div><b>${esc(p.name)}</b> <span class="small muted">${esc(p.title)} · ${p.side === 'internal' ? 'internal' : 'customer'}</span>${p.email ? `<div class="small"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}</div>`).join('') || '<span class="muted">None yet.</span>'}</div></section>
+    <section class="panel"><div class="head"><h3>Next tasks</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${openTasks.slice(0, 6).map((t) => `<div class="row center"><span class="${t.due && t.due < new Date().toISOString().slice(0, 10) ? 'bad-t' : ''}">${esc(t.title)}</span><span class="spacer"></span><span class="small muted">${t.due ? day(t.due) : ''}</span></div>`).join('') || '<span class="muted">Nothing open.</span>'}</div></section>
+    <section class="panel"><div class="head"><h3>Latest notes</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${notes.map((n) => `<div class="item"><div class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · ${ago(n.at)}</div><div class="notes-box">${esc(n.text.length > 400 ? `${n.text.slice(0, 400)}…` : n.text)}</div></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></section>
+    <section class="panel"><div class="head"><h3>Stakeholders</h3><a href="${tabHref('email')}" class="small">Manage</a></div><div class="body list">${(o.stakeholders ?? []).map((p) => `<div><b>${esc(p.name)}</b> <span class="small muted">${esc(p.title)} · ${p.side === 'internal' ? 'internal' : 'customer'}</span>${p.email ? `<div class="small"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}</div>`).join('') || '<span class="muted">None yet.</span>'}</div></section>
   </div></div>`;
 }
 
@@ -397,7 +403,7 @@ const WIRES = {
   overview(main) {
     on(main, '[data-act="save-summary"]', () => save({ summary: $('#summary').value }));
     on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
-    on(main, '[data-act="share-deck"]', () => (location.hash = `#/opp/${oid()}/email?completion`));
+    on(main, '[data-act="share-deck"]', () => (location.hash = tabHref('email', 'completion')));
     on(main, '[data-result]', (b) => save({ povResult: b.dataset.result }, b.dataset.result === 'successful' ? 'POV marked successful' : 'Saved'));
     on(main, '[data-act="connect"]', connectTenant);
   },
@@ -466,7 +472,7 @@ const WIRES = {
       save({ discovery: data }, 'Discovery saved');
     });
     on(main, '[data-act="copy-disc"]', () => copy(discoveryText(d.opportunity)));
-    on(main, '[data-act="draft-disc"]', () => (location.hash = `#/opp/${oid()}/email?discovery`));
+    on(main, '[data-act="draft-disc"]', () => (location.hash = tabHref('email', 'discovery')));
     on(main, '[data-act="req-to-crit"]', async () => {
       const ids = $$('input[name="requested"]:checked', form).map((x) => x.value);
       if (!ids.length) return toast('Tick what they asked to see first.', { bad: true });
@@ -520,8 +526,8 @@ const WIRES = {
     };
     on(main, '[data-template]', (b) => load(b.dataset.template));
     on(main, '[data-outbox]', (li) => fill(d.outbox.find((m) => m.id === li.dataset.outbox)));
-    if (location.hash.endsWith('?discovery')) load('discovery');
-    if (location.hash.endsWith('?completion')) load('completion');
+    if (wants('discovery')) load('discovery');
+    if (wants('completion')) load('completion');
     const msg = () => formData(form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();

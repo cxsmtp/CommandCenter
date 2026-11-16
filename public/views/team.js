@@ -10,7 +10,7 @@ export async function renderTeam(main, { crumbs }) {
   const node = (n) => {
     const s = stats.get(n.id);
     const below = countBelow(n);
-    return `<li><div class="node">${avatar(n.name)}<div style="min-width:160px"><b>${esc(n.name)}</b><div class="small muted">${esc(n.roleLabel)}${n.title ? ` · ${esc(n.title)}` : ''} · ${esc(n.email)}</div></div>
+    return `<li><div class="node">${avatar(n.name)}<div style="min-width:160px"><b>${esc(n.name)}</b><div class="small muted">${esc(n.roleLabel)}${n.title ? ` · ${esc(n.title)}` : ''}${n.region ? ` · ${esc(n.region)}` : ''} · ${esc(n.email)}</div></div>
       <span class="badge">${s?.opportunities ?? 0} opportunities</span><span class="badge accent">${s?.povs ?? 0} POVs</span>${s?.attention ? `<span class="badge bad">${s.attention} need attention</span>` : ''}${below ? `<span class="badge">${below} in team</span>` : ''}${n.active === false ? '<span class="badge bad">inactive</span>' : ''}
       <span class="spacer"></span>
       <button class="btn sm" data-view-person="${esc(n.id)}">View work</button>
@@ -38,7 +38,8 @@ function editUser(u) {
       <div class="row"><label class="field">Name<input name="name" value="${esc(u?.name ?? '')}" required></label><label class="field">Email<input type="email" name="email" value="${esc(u?.email ?? '')}" required></label></div>
       <div class="row"><label class="field">Role<select name="role">${roles.map(([k, l]) => `<option value="${k}" ${(u?.role ?? 'associate') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
       <label class="field">Reports to<select name="managerId"><option value="">— nobody (top of a tree)</option>${peopleOptions(u ? u.managerId ?? "" : state.session.user.id)}</select></label></div>
-      <label class="field">Title<input name="title" value="${esc(u?.title ?? '')}" placeholder="e.g. Senior Solution Engineer, EMEA"></label>
+      <div class="row"><label class="field">Title<input name="title" value="${esc(u?.title ?? '')}" placeholder="e.g. Senior Solution Engineer"></label>
+      <label class="field">Sales region<input name="region" list="regionList" value="${esc(u?.region ?? '')}" placeholder="Their manager’s, unless set"><datalist id="regionList">${['NA', 'LATAM', 'EMEA', 'UK & I', 'DACH', 'Nordics', 'APAC', 'ANZ', 'India', 'Japan', 'Middle East'].map((r) => `<option value="${r}">`).join('')}</datalist></label></div>
       <label class="field">${u ? 'Set a new password (they choose their own at next sign-in)' : 'First password (they choose their own at first sign-in)'}<input name="password" type="text" minlength="10" ${u ? '' : 'required'} autocomplete="off"></label>
       ${u ? `<label class="check"><input type="checkbox" name="active" ${u.active !== false ? 'checked' : ''}> Can sign in</label>` : ''}
       <p class="form-error" id="userErr" role="alert"></p>

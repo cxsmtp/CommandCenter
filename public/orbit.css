@@ -192,3 +192,13 @@
 [data-look="orbit"] .ms-label { letter-spacing: 0.08em; }
 @media (max-width: 820px) { [data-look="orbit"] .kpi { border-bottom: 1px solid var(--line); } [data-look="orbit"] .pipeline { flex-wrap: nowrap; overflow-x: auto; } [data-look="orbit"] .pipeline button { flex: none; min-width: 118px; } }
 @media (min-width: 1200px) { [data-look="orbit"] .kpis { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); } }
+[data-look="orbit"] .ins-group { background: var(--panel); backdrop-filter: blur(14px); border-radius: 16px; }
+[data-look="orbit"] .ins-group::before { left: 18px; right: 18px; height: 1px; box-shadow: 0 0 14px var(--g); }
+[data-look="orbit"] .ins-label { font-family: var(--mono); font-weight: 400; letter-spacing: 0.14em; }
+[data-look="orbit"] .ins-figs b { font-family: var(--mono); font-weight: 300; font-size: 26px; }
+[data-look="orbit"] .g-tenants { --g: #5ce1ff; } [data-look="orbit"] .g-ai { --g: #ffc857; } [data-look="orbit"] .g-value { --g: #34e8a6; } [data-look="orbit"] .g-pipeline, [data-look="orbit"] .g-forecast { --g: #8b7cff; } [data-look="orbit"] .g-outlook { --g: #34e8a6; } [data-look="orbit"] .g-gaps { --g: #ff5c7a; }
+[data-look="orbit"] .drawer { background: rgba(5, 8, 16, 0.94); backdrop-filter: blur(22px); border-left: 1px solid rgba(92, 225, 255, 0.18); }
+[data-look="orbit"] .drawer-bar { background: rgba(255, 255, 255, 0.02); }
+[data-look="orbit"][data-theme="light"] .drawer { background: rgba(246, 248, 253, 0.97); }
+[data-look="orbit"] .outlook { font-family: var(--mono); font-size: 11px; }
+[data-look="orbit"] tr.click.selected td { background: rgba(92, 225, 255, 0.06); }

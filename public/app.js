@@ -5,6 +5,49 @@ import { renderTeam } from './views/team.js';
 import { renderCatalog } from './views/catalog.js';
 import { renderSettings } from './views/settings.js';
 import { openNewOpportunity } from './views/new-opportunity.js';
+import { renderInsights } from './views/insights.js';
+
+// ——— The detail drawer: a POV opened from a list, on the right half, the list still in view ———
+let drawerFor = '';
+let drawerReturn = null;
+async function renderDrawer(r) {
+  let el = document.getElementById('drawer');
+  if (!r.open || !['dashboard', 'insights'].includes(r.view)) {
+    if (el) {
+      el.remove();
+      document.body.classList.remove('drawer-open');
+      drawerReturn?.focus?.();
+      drawerFor = '';
+    }
+    return;
+  }
+  if (!el) {
+    drawerReturn = document.activeElement;
+    el = Object.assign(document.createElement('aside'), { id: 'drawer', className: 'drawer' });
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'POV details');
+    el.innerHTML = `<div class="drawer-bar"><button class="btn ghost sm" data-drawer="close" aria-label="Close (Esc)">✕ Close</button><span class="spacer"></span><a class="btn ghost sm" data-drawer="full">Open full page ↗</a></div><div class="drawer-body"></div>`;
+    document.body.append(el);
+    document.body.classList.add('drawer-open');
+  }
+  const body = el.querySelector('.drawer-body');
+  el.querySelector('[data-drawer="full"]').setAttribute('href', `#/opp/${encodeURIComponent(r.open)}/${r.openTab || 'overview'}`);
+  const keep = drawerFor === r.open ? body.scrollTop : 0;
+  await renderOpportunity(body, r.open, r.openTab, { crumbs: () => {}, drawer: { base: `#/${r.view}`, open: r.open } });
+  body.scrollTop = keep;
+  if (drawerFor !== r.open) el.querySelector('[data-drawer="close"]').focus();
+  drawerFor = r.open;
+}
+export function closeDrawer() {
+  const r = route();
+  location.hash = `#/${r.view}`;
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('drawer') && !document.querySelector('#dialog[open]')) closeDrawer();
+});
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-drawer="close"]')) closeDrawer();
+});
 
 const root = $('#root');
 
@@ -24,8 +67,10 @@ media.addEventListener('change', () => applyLook(state.session?.user?.prefs));
 
 // ——— Routing ———
 export function route() {
-  const [, view = '', id = '', tab = ''] = location.hash.split('?')[0].split('/');
-  return { view: view || 'dashboard', id, tab };
+  const [path, query = ''] = location.hash.split('?');
+  const [, view = '', id = '', tab = ''] = path.split('/');
+  const q = new URLSearchParams(query);
+  return { view: view || 'dashboard', id, tab, open: q.get('open') ?? '', openTab: q.get('tab') ?? '' };
 }
 const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICON = {
@@ -34,9 +79,10 @@ const ICON = {
   catalog: svg('<path d="M12 3.5l8.5 4.5L12 12.5 3.5 8z"/><path d="M3.5 12L12 16.5 20.5 12M3.5 16L12 20.5 20.5 16"/>'),
   settings: svg('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  insights: svg('<path d="M4 19h16"/><path d="M7 15l3.5-4 3 2.5L18 8"/><circle cx="18" cy="8" r="1.4"/>'),
 };
 const NAV = [
-  ['Work', [['dashboard', ICON.dashboard, 'Command center'], ['team', ICON.team, 'Teams']]],
+  ['Work', [['dashboard', ICON.dashboard, 'Command center'], ['insights', ICON.insights, 'Insights'], ['team', ICON.team, 'Teams']]],
   ['Set up', [['catalog', ICON.catalog, 'Capabilities'], ['settings', ICON.settings, 'Settings']]],
 ];
 
@@ -83,7 +129,9 @@ async function renderNow() {
   else if (r.view === 'team') await renderTeam($('#main'), { crumbs });
   else if (r.view === 'catalog') await renderCatalog($('#main'), { crumbs });
   else if (r.view === 'settings') await renderSettings($('#main'), r.id, { crumbs, applyLook });
-  else await renderDashboard($('#main'), { crumbs });
+  else if (r.view === 'insights') await renderInsights($('#main'), { crumbs });
+  else await renderDashboard($('#main'), { crumbs, open: r.open });
+  await renderDrawer(r);
   refreshNote();
 }
 
@@ -161,9 +209,13 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.matches('[data-go][tabindex]')) location.hash = e.target.dataset.go;
 });
+let lastView = '';
 addEventListener('hashchange', () => {
   $('#nav')?.classList.remove('open');
-  scrollTo(0, 0);
+  // Opening or moving inside the drawer keeps the list where it was.
+  const r = route();
+  if (r.view !== lastView || r.view === 'opp') scrollTo(0, 0);
+  lastView = r.view;
   render();
 });
 document.addEventListener('cc:rerender', () => render());

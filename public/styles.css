@@ -304,3 +304,53 @@ tr.group td { background: var(--panel-2); font-weight: 600; font-size: 12px; col
 table .fc { min-width: 190px; }
 .demo-box { margin-top: 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 6%, transparent); }
 .demo-player video { width: 100%; max-width: 640px; margin-top: 8px; border-radius: 10px; background: #000; display: block; }
+
+/* ——— Grouped figures: each group answers one question, with its own colour ——— */
+.ins-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.ins-group { --g: var(--accent); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px 14px; position: relative; overflow: hidden; box-shadow: var(--shadow); }
+.ins-group::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: var(--g); opacity: 0.9; }
+.ins-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--g); font-weight: 600; margin-bottom: 8px; }
+.ins-figs { display: flex; gap: 18px; flex-wrap: wrap; }
+.ins-figs > div { min-width: 64px; }
+.ins-figs b { display: block; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
+.ins-figs b small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.ins-figs span { font-size: 11px; color: var(--muted); }
+.g-gaps { --g: var(--bad); } .g-outlook { --g: var(--ok); } .g-tenants { --g: #4c9be8; } .g-ai { --g: var(--fusion, #d9a43c); } .g-value { --g: #2fbf8f; } .g-pipeline { --g: #8b7cff; } .g-forecast { --g: #8b7cff; }
+.ins-group .obar { margin-top: 10px; }
+.obar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--panel-2); gap: 2px; }
+.obar span { display: block; min-width: 0; }
+.obar .ok { background: var(--ok); } .obar .warn { background: var(--warn); } .obar .bad { background: var(--bad); }
+
+/* ——— The manager's list ——— */
+.layout.layout-list { grid-template-columns: minmax(0, 1fr); }
+.list-panel table td { vertical-align: middle; }
+tr.click.selected td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+tr.click.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.outlook { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 3px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; white-space: nowrap; }
+.outlook b { display: inline-grid; place-items: center; min-width: 26px; height: 22px; border-radius: 999px; font-size: 11px; font-variant-numeric: tabular-nums; background: var(--panel-2); }
+.outlook.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); } .outlook.ok b { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.outlook.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); } .outlook.warn b { background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.outlook.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); } .outlook.bad b { background: color-mix(in srgb, var(--bad) 18%, transparent); }
+.gapcell { max-width: 280px; } .gapcell .small { margin-top: 3px; line-height: 1.3; }
+.fc-late { color: var(--bad); } .fc-at-risk, .fc-no-pace { color: var(--warn); } .fc-on-track, .fc-done { color: var(--ok); }
+.ins-table td { vertical-align: middle; }
+
+/* ——— The drawer: a POV on the right half, the list still in view ——— */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(1040px, 56vw); z-index: 30; background: var(--bg); border-left: 1px solid var(--line); box-shadow: -24px 0 60px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; animation: drawer-in 0.22s ease-out; }
+@keyframes drawer-in { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+.drawer-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.drawer-body { overflow-y: auto; padding: 18px 22px 60px; flex: 1; }
+.drawer-body .opp-head h1 { font-size: 24px; }
+body.drawer-open main { padding-right: calc(min(1040px, 56vw) + 24px); }
+body.drawer-open .layout-list .table-wrap { overflow-x: auto; }
+@media (max-width: 1100px) { .drawer { width: 100vw; } body.drawer-open main { padding-right: 16px; } }
+@media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
+/* With the drawer open, the left side is a compact list to move from POV to POV: POV, stage, outlook, gaps. */
+body.drawer-open .ins-hero, body.drawer-open .pipeline, body.drawer-open .layout-list > .panel:not(.list-panel), body.drawer-open .toolbar .seg, body.drawer-open .toolbar [data-act="results"] { display: none; }
+body.drawer-open table[data-table="dash"] th:nth-child(2), body.drawer-open table[data-table="dash"] td:nth-child(2),
+body.drawer-open table[data-table="dash"] th:nth-child(5), body.drawer-open table[data-table="dash"] td:nth-child(5),
+body.drawer-open table[data-table="dash"] th:nth-child(n+6), body.drawer-open table[data-table="dash"] td:nth-child(n+6) { display: none; }
+body.drawer-open .gapcell { max-width: 200px; }
+body.drawer-open table[data-table="dash"] .outlook > span { display: none; }
+body.drawer-open table[data-table="dash"] .outlook { padding: 2px 3px; }
+body.drawer-open table[data-table="dash"] td:first-child { min-width: 0; }

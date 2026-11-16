@@ -158,7 +158,7 @@ export class Users {
    * Add a person. Only below oneself (an Admin anywhere), with a role below one's own, under a manager whose role is
    * above theirs.
    */
-  add(actor, { email, name, role, managerId, title, password }) {
+  add(actor, { email, name, role, managerId, title, password, region }) {
     const all = this.#all();
     const address = cleanEmail(email);
     if (!address) throw fail(400, 'Give a valid email address.');
@@ -168,7 +168,7 @@ export class Users {
     this.#checkPlacement(actor, role, manager);
     const problem = passwordProblem(password);
     if (problem) throw fail(400, problem);
-    const user = { id: randomUUID(), email: address, name: text(name, 120) || address, role, managerId: manager?.id ?? null, title: text(title, 120), active: true, password: hashPassword(password), mustChangePassword: true, prefs: {}, createdAt: new Date().toISOString(), createdBy: actor.id };
+    const user = { id: randomUUID(), email: address, name: text(name, 120) || address, role, managerId: manager?.id ?? null, title: text(title, 120), region: text(region, 60), active: true, password: hashPassword(password), mustChangePassword: true, prefs: {}, createdAt: new Date().toISOString(), createdBy: actor.id };
     all.push(user);
     this.#save(all);
     return publicUser(user);
@@ -191,6 +191,7 @@ export class Users {
     // Your own profile: name, title, preferences, password. Your team: also role, manager, email, active.
     if ('name' in changes) user.name = text(changes.name, 120) || user.email;
     if ('title' in changes) user.title = text(changes.title, 120);
+    if ('region' in changes && (!self || actor.role === 'admin')) user.region = text(changes.region, 60);
     if (changes.prefs && typeof changes.prefs === 'object') user.prefs = { ...user.prefs, ...cleanPrefs(changes.prefs) };
     if (!self) {
       if ('email' in changes) {
