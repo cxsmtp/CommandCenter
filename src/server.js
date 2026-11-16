@@ -20,6 +20,7 @@ import { flowView } from './flow.js';
 import { Updater, RESTART_CODE } from './updates.js';
 import { Audit } from './audit.js';
 import { zip } from './zip.js';
+import { gzipSync } from 'node:zlib';
 import { AiActions } from './ai-actions.js';
 import { valueOf, ratesFor, cleanRates, totalValue, VALUE_DEFAULTS } from './value.js';
 import { X509Certificate } from 'node:crypto';
@@ -27,7 +28,7 @@ import { spawn } from 'node:child_process';
 import { criteriaForecast, creditsForecast, activityForecast, portfolioForecast } from './forecast.js';
 import { resultsPage } from './results.js';
 import { platformView, AI_POWERED, stateOf } from './platform.js';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { CxClient } from './cxone/client.js';
 import { deriveConnection, publicConnection, scrubText } from './cxone/endpoints.js';
 import { tenantColours } from '../public/tenant-colour.js';
@@ -82,6 +83,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // ——— Live updates (server-sent events), each client told only about what it may see ———
   const clients = new Set();
   const notify = (event) => {
+    // Someone changed something: every cached list and this POV's row are worked out again.
+    overviewCache.clear();
+    if (event.id) rowCache.delete(event.id);
     const opp = event.id ? opps.get(event.id) : null;
     const line = `event: update\ndata: ${JSON.stringify({ id: event.id ?? null, refreshing: Boolean(event.refreshing) })}\n\n`;
     for (const c of clients) if (!opp || opps.canView(users.get(c.userId), opp)) c.res.write(line);
@@ -141,7 +145,23 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     return out;
   }
 
+  // Each POV's row is worked out once per change (its record, its tenant's read, the hour), not on every request:
+  // with hundreds of POVs and dozens of people watching, the list is mostly reused.
+  const rowCache = new Map();
+  const overviewCache = new Map();
+  const OVERVIEW_TTL_MS = 3000;
+  // A change anyone makes shows at once to everyone: the cached lists go.
+  monitor.on('update', () => overviewCache.clear());
+  monitor.on('update', (e) => e.id && rowCache.delete(e.id));
   function row(opp, now = Date.now(), colour = colours()[opp.id]) {
+    const key = `${opp.updatedAt}|${colour}|${Math.floor(now / 60_000)}|${ai.ledger(opp.id).length}`;
+    const hit = rowCache.get(opp.id);
+    if (hit?.key === key) return hit.row;
+    const value = rowUncached(opp, now, colour);
+    rowCache.set(opp.id, { key, row: value });
+    return value;
+  }
+  function rowUncached(opp, now, colour) {
     const live = opp.tenant ? monitor.live(opp.id, now) : null;
     const owner = users.get(opp.ownerId);
     const muted = isMuted(opp, now);
@@ -217,7 +237,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const since = Date.parse(q.get('since') ?? '') || 0;
     const events = list
       .filter((o) => o.tenant)
-      .flatMap((o) => eventsOf(monitor.snapshot(o.id), { povId: o.id, since }).filter((e) => !(o.mute?.projects ?? []).includes(e.projectId)))
+      .flatMap((o) => eventsOf(monitor.snapshot(o.id), { povId: o.id, since }).filter((e) => !(o.mute?.projects ?? []).includes(e.projectId)).slice(0, 30))
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
       .slice(0, 250);
     // What the team did in CommandCenter (notes, stage changes, criteria met), newest first.
@@ -270,8 +290,16 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   // ——— HTTP plumbing ———
   const send = (res, status, body, headers = {}) => {
-    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
-    res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
+    const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+    const type = headers['Content-Type'] ?? 'application/json; charset=utf-8';
+    // Lists of hundreds of POVs are large and very repetitive: compressed, they are about a tenth of the size.
+    const accepts = /\bgzip\b/.test(String(res.req?.headers['accept-encoding'] ?? ''));
+    if (accepts && data.length > 8 * 1024 && /json|html|text|csv/.test(type) && !headers['Content-Disposition']) {
+      res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...headers, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
+      return res.end(gzipSync(data, { level: 5 }));
+    }
+    res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...headers });
+    res.end(data);
   };
   const file = (res, name, type, content) => send(res, 200, content, { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${name.replace(/[^\w.\- ]+/g, '_')}"` });
   const readBody = (req) =>
@@ -608,7 +636,22 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
 
     // Dashboards
-    if (route === 'GET /overview') return send(res, 200, overview(user, url.searchParams));
+    if (route === 'GET /overview') {
+      // The same scope (the people one can see) and filters give the same answer for a few seconds: worked out
+      // and compressed once, served to everyone looking at it.
+      const scope = [...users.visibleIds(user)].sort().join(',');
+      const key = `${createHash('sha1').update(scope).digest('hex')}|${url.searchParams}`;
+      const hit = overviewCache.get(key);
+      const gz = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+      if (!hit || Date.now() - hit.at > OVERVIEW_TTL_MS) {
+        const json = JSON.stringify(overview(user, url.searchParams));
+        overviewCache.set(key, { at: Date.now(), json, gzip: gzipSync(json, { level: 5 }) });
+        if (overviewCache.size > 500) overviewCache.delete(overviewCache.keys().next().value);
+      }
+      const c = overviewCache.get(key);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Accept-Encoding', ...(gz ? { 'Content-Encoding': 'gzip' } : {}) });
+      return res.end(gz ? c.gzip : c.json);
+    }
     if (route === 'GET /results') return send(res, 200, { results: resultsList(user, url.searchParams) });
     if (route === 'GET /results/download') {
       const list = resultsList(user, url.searchParams);
@@ -1017,7 +1060,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     try {
-      if (url.pathname === '/healthz') return send(res, 200, { ok: true, version: VERSION });
+      if (url.pathname === '/healthz') return send(res, 200, { ok: true, version: VERSION, reading: monitor.load(), memoryMb: Math.round(process.memoryUsage().rss / 1048576) });
       if (url.pathname.startsWith('/api/')) await api(req, res, url);
       else if (req.method === 'GET') serveStatic(req, res, url);
       else send(res, 405, { error: 'Method not allowed.' });

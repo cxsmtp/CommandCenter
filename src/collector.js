@@ -374,7 +374,7 @@ export async function scanLog(connection, scanId, engine, { client = new CxClien
  * One full read of a POV's tenant. Each part fails on its own: a tenant without, say, the scan-summary service still
  * shows its scans. `errors` lists what could not be read.
  */
-export async function collect(connection, { client = new CxClient(connection), now = Date.now() } = {}) {
+export async function collect(connection, { client = new CxClient(connection), now = Date.now(), previous = null, slow = true } = {}) {
   const started = Date.now();
   const since = new Date(now - SCAN_WINDOW_DAYS * DAY).toISOString();
   const errors = [];
@@ -394,7 +394,11 @@ export async function collect(connection, { client = new CxClient(connection), n
     part('running', () => activeScans(client), []),
   ]);
   const names = new Map(projects.list.map((p) => [p.id, p.name]));
-  const [creditInfo, ai, people] = await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null)]);
+  // The slow parts (credits, AI settings, IAM people) every hour; in between, the last read's are kept.
+  const keep = !slow && previous;
+  const [creditInfo, ai, people] = keep
+    ? [previous.credits ?? null, previous.ai ?? null, previous.people ?? null]
+    : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null)]);
   const findings = projects.list.length ? await part('findings', () => latestFindings(client, projects.list.map((p) => p.id)), null) : { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, byProject: {} };
   // Nothing at all could be read (a rejected key, an unreachable tenant): the read failed.
   if (['projects', 'scans', 'running'].every((name) => errors.some((e) => e.part === name))) {

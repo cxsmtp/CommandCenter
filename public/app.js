@@ -103,14 +103,27 @@ setInterval(refreshNote, 1000);
 let pending;
 function connectStream() {
   const es = new EventSource('/api/stream');
+  // With hundreds of tenants a read lands every few seconds: the page draws again at most every 5 s, and only while
+  // it is on screen (once more when it comes back).
+  let dirty = false;
+  let lastDraw = 0;
+  const draw = () => {
+    if (!dirty || document.visibilityState !== 'visible') return;
+    // Never re-draw under someone's typing or an open dialog.
+    if ($('#dialog').open || document.activeElement?.matches('input, textarea, select')) return void setTimeout(draw, 3000);
+    dirty = false;
+    lastDraw = Date.now();
+    state.overview = null;
+    render();
+  };
+  document.addEventListener('visibilitychange', draw);
   es.addEventListener('update', () => {
-    clearTimeout(pending);
+    dirty = true;
+    if (pending) return;
     pending = setTimeout(() => {
-      // Never re-draw under someone's typing or an open dialog.
-      if ($('#dialog').open || document.activeElement?.matches('input, textarea, select')) return;
-      state.overview = null;
-      render();
-    }, 800);
+      pending = null;
+      draw();
+    }, Math.max(800, 5000 - (Date.now() - lastDraw)));
   });
   es.onerror = () => {
     es.close();
