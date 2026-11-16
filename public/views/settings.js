@@ -1,5 +1,5 @@
 // Settings: your profile and look, and (by permission) the organisation, the email server and the roles.
-import { $, $$, esc, api, state, can, attempt, toast, formData } from '../core.js';
+import { $, $$, esc, api, state, can, attempt, toast, formData, when, ago } from '../core.js';
 
 const LOOKS = {
   orbit: ['Orbit — launch control', ['#03050b', '#5ce1ff', '#8b7cff']],
@@ -21,6 +21,7 @@ const TABS = [
   ['organisation', 'Organisation', () => can('settings.manage')],
   ['email', 'Email server', () => can('settings.manage')],
   ['roles', 'Roles & permissions', () => can('roles.manage')],
+  ['system', 'System & backups', () => can('settings.manage')],
 ];
 
 export async function renderSettings(main, tab, { crumbs, applyLook }) {
@@ -31,7 +32,7 @@ export async function renderSettings(main, tab, { crumbs, applyLook }) {
   main.innerHTML = `<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === active}" data-tab="${k}">${l}</button>`).join('')}</div><div id="sBody"></div>`;
   for (const b of $$('[data-tab]', main)) b.addEventListener('click', () => (location.hash = `#/settings/${b.dataset.tab}`));
   const body = $('#sBody');
-  ({ profile, organisation, email, roles })[active](body, data, applyLook);
+  ({ profile, organisation, email, roles, system })[active](body, data, applyLook);
 }
 
 function profile(body, data, applyLook) {
@@ -128,5 +129,69 @@ function roles(body, data) {
     e.preventDefault();
     const m = Object.fromEntries(roleKeys.map((r) => [r, $$(`input[data-role="${r}"]:checked`, body).map((x) => x.value)]));
     await attempt(() => api('/settings/roles', { method: 'PUT', body: { matrix: m } }), 'Roles saved');
+  });
+}
+
+// ——— System & backups: is it healthy, what did it fix by itself, the backups, and updates ———
+const LEVEL = { ok: ['ok', 'Good'], warn: ['warn', 'Look'], bad: ['bad', 'Act'] };
+const size = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+async function system(body) {
+  const [h, u] = await Promise.all([api('/system/health'), api('/updates')]);
+  const worst = h.checks[0]?.level ?? 'ok';
+  body.innerHTML = `<div class="stack">
+    <section class="panel sys-head ${worst}"><div class="body row center" style="gap:14px">
+      <span class="sys-dot ${worst}"></span>
+      <div><h3 style="margin:0">${worst === 'ok' ? 'Everything is healthy' : worst === 'warn' ? 'Healthy, with things worth a look' : 'Something needs you'}</h3>
+      <div class="small muted">Checked now · the server corrects what it can by itself every minute · key ${esc(h.key.fingerprint)}</div></div>
+      <span class="spacer"></span><button class="btn" data-act="recheck">Check again</button></div></section>
+
+    <section class="panel"><div class="head"><h3>Health</h3></div><div class="checks">
+      ${h.checks.map((c) => `<div class="check-row ${c.level}"><span class="badge ${LEVEL[c.level][0]}">${LEVEL[c.level][1]}</span><div><b>${esc(c.label)}</b><div>${esc(c.text)}</div>${c.fix ? `<div class="small muted">${esc(c.fix)}</div>` : ''}</div></div>`).join('')}
+    </div></section>
+
+    <section class="panel"><div class="head"><h3>Backups</h3><div class="row center"><a class="btn" href="/api/system/backup/download">Download the data (encrypted)</a><button class="btn primary" data-act="backup">Back up now</button></div></div>
+      <div class="body small muted" style="padding-bottom:0">Taken by itself every few hours, before every update and every restore. Each one is opened and checked when it is taken. Records stay encrypted and the key is never in a backup — keep the key safe somewhere else.${h.offsite ? ` Each is also copied to <span class="mono">${esc(h.offsite)}</span>.` : ''}</div>
+      <div class="table-wrap"><table><thead><tr><th>Taken</th><th>Why</th><th>Version</th><th class="n">Files</th><th class="n">Size</th><th>Check</th>${h.offsite ? '<th>Off the server</th>' : ''}<th></th></tr></thead><tbody>
+      ${h.backups.map((b) => `<tr><td>${esc(b.at ? when(b.at) : b.name)}<div class="small muted">${b.at ? esc(ago(b.at)) : ''}</div></td><td>${esc(b.label === 'auto' ? 'Automatic' : b.label === 'manual' ? 'By hand' : b.label === 'before-restore' ? 'Before a restore' : b.label.startsWith('before-') ? `Before update ${b.label.slice(7)}` : b.label)}</td><td class="mono">${esc(b.version)}</td><td class="n">${b.files}</td><td class="n">${size(b.bytes)}</td>
+        <td>${b.verified === true ? (b.sameKey ? '<span class="badge ok">Readable</span>' : '<span class="badge warn">Another key</span>') : b.verified === false ? `<span class="badge bad" title="${esc(b.problems.join('\n'))}">Failed</span>` : '<span class="badge">Not checked</span>'}</td>
+        ${h.offsite ? `<td>${b.offsite ? '<span class="badge ok">Copied</span>' : '<span class="badge warn">Missing</span>'}</td>` : ''}
+        <td class="row" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn sm ghost" data-verify="${esc(b.name)}">Check</button>${h.launched ? `<button class="btn sm" data-restore="${esc(b.name)}" data-at="${esc(b.at ? when(b.at) : b.name)}">Restore</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No backup yet — the first is taken a minute after the server starts.</td></tr>'}
+      </tbody></table></div></section>
+
+    <div class="grid2">
+      <section class="panel"><div class="head"><h3>Corrected by itself</h3></div><div class="body stack" style="gap:8px">
+        ${[...h.corrections.map((c) => ({ at: c.at, text: `${c.what} — ${c.action}` })), ...h.repairs.map((r) => ({ at: r.at, text: r.from ? `${r.name} was damaged — repaired from ${r.from}` : `${r.name} was damaged — no good copy, set aside` }))].sort((a, b) => b.at.localeCompare(a.at)).map((c) => `<div><div class="small muted">${esc(when(c.at))}</div>${esc(c.text)}</div>`).join('') || '<span class="muted">Nothing needed correcting since the server started.</span>'}
+      </div></section>
+      <section class="panel"><div class="head"><h3>Updates</h3><button class="btn sm" data-act="check-updates">Check now</button></div><div class="body stack" style="gap:10px">
+        <div>Running <b class="mono">${esc(u.current)}</b>${u.updateAvailable ? ` · <span class="badge accent">${esc(u.available[0].version)} available</span>` : ' · up to date'}${u.lastCheck ? `<div class="small muted">Last checked ${esc(ago(u.lastCheck))}${u.checkError ? ` · ${esc(u.checkError)}` : ''}</div>` : ''}</div>
+        ${u.lastFailure ? `<div class="small bad-t">${esc(u.lastFailure.version)} failed to start and was rolled back by itself.</div>` : ''}
+        <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''} ${u.launched ? '' : 'disabled'}> Install new versions by itself at <select id="autoHour" ${u.launched ? '' : 'disabled'}>${Array.from({ length: 24 }, (_, i) => `<option value="${i}" ${u.auto.hour === i ? 'selected' : ''}>${String(i).padStart(2, '0')}:00</option>`).join('')}</select></label>
+        <div class="small muted">A backup is taken first; a version that does not start is rolled back by itself.${u.launched ? '' : ' Updating needs the launcher (npm start or the container image).'}</div>
+        <div class="row">${u.updateAvailable && u.launched ? `<button class="btn primary" data-act="install">Install ${esc(u.available[0].version)}</button>` : ''}${u.previous && u.launched ? `<button class="btn ghost" data-act="rollback">Go back to ${esc(u.previous)}</button>` : ''}</div>
+      </div></section>
+    </div></div>`;
+  const again = () => system(body);
+  $('[data-act="recheck"]', body).addEventListener('click', again);
+  $('[data-act="backup"]', body).addEventListener('click', async () => (await attempt(() => api('/system/backup', { method: 'POST', body: {} }), 'Backup taken and checked')) && again());
+  for (const b of $$('[data-verify]', body))
+    b.addEventListener('click', async () => {
+      const r = await attempt(() => api(`/system/backups/${encodeURIComponent(b.dataset.verify)}/verify`, { method: 'POST', body: {} }));
+      if (r) toast(r.ok ? 'Readable: every record opens and matches its checksum' : `Not restorable: ${r.problems.join('; ')}`, { bad: !r.ok });
+    });
+  for (const b of $$('[data-restore]', body))
+    b.addEventListener('click', async () => {
+      if (!confirm(`Put back the data as it was at ${b.dataset.at}? Everything since then is replaced (a backup of it is taken first, so this can be undone). The server restarts.`)) return;
+      if (await attempt(() => api('/system/restore', { method: 'POST', body: { name: b.dataset.restore } }), 'Restored — restarting')) setTimeout(() => location.reload(), 6000);
+    });
+  $('[data-act="check-updates"]', body).addEventListener('click', async () => (await attempt(() => api('/updates/check', { method: 'POST', body: {} }))) && again());
+  const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, hour: Number($('#autoHour').value) } }), 'Saved');
+  $('#autoOn').addEventListener('change', saveAuto);
+  $('#autoHour').addEventListener('change', saveAuto);
+  $('[data-act="install"]', body)?.addEventListener('click', async () => {
+    if (confirm(`Install ${u.available[0].version}? People see a short pause while the server restarts.`) && (await attempt(() => api('/updates/install', { method: 'POST', body: { version: u.available[0].version } }), 'Installing — restarting'))) setTimeout(() => location.reload(), 8000);
+  });
+  $('[data-act="rollback"]', body)?.addEventListener('click', async () => {
+    if (confirm(`Go back to ${u.previous}?`) && (await attempt(() => api('/updates/rollback', { method: 'POST', body: {} }), 'Going back — restarting'))) setTimeout(() => location.reload(), 8000);
   });
 }

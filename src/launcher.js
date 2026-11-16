@@ -37,14 +37,14 @@ export function chooseDir(state, dataDir = DATA, builtin = BUILTIN) {
 export function serverEnv(base = process.env, dataDir = DATA) {
   const env = { ...base, CC_LAUNCHED: '1', CC_DATA_DIR: dataDir };
   try {
-    const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8'));
-    const n = settings.network ?? {};
+    const store = new Db(dataDir);
+    const n = store.read('settings', {}).network ?? {};
     if (n.proxy) {
       let proxy = n.proxy;
       if (n.proxyUser) {
         const url = new URL(n.proxy);
         url.username = encodeURIComponent(n.proxyUser);
-        if (n.proxyPass) url.password = encodeURIComponent(new Db(dataDir).open(n.proxyPass));
+        if (n.proxyPass) url.password = encodeURIComponent(store.open(n.proxyPass));
         proxy = url.href;
       }
       Object.assign(env, { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NODE_USE_ENV_PROXY: '1', NO_PROXY: [n.noProxy, 'localhost', '127.0.0.1'].filter(Boolean).join(',') });

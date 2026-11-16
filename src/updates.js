@@ -14,6 +14,7 @@
  * which ran before, what was tried) and <data>/backups/ (a copy of the data before each update; the last 5 kept).
  */
 import fs from 'node:fs';
+import { Backups } from './backups.js';
 import path from 'node:path';
 import { createHash, createPublicKey, verify as verifySig } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -25,7 +26,6 @@ export const RESTART_CODE = 75; // the launcher restarts the server on this exit
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const CHECK_EVERY_MS = 6 * 3600e3;
 const KEEP_VERSIONS = 3;
-const KEEP_BACKUPS = 5;
 const HOSTS = new Set(['api.github.com', 'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'codeload.github.com']);
 
 /** Compare two versions: -1, 0, 1 (a pre-release sorts before its release). */
@@ -259,26 +259,9 @@ export class Updater {
     return { version: target ?? 'built-in', restarting: true };
   }
 
-  /** A copy of the data folder's own files (not the app versions, not other backups). */
+  /** A checked backup of the data (see backups.js). */
   backup(label = 'manual') {
-    const root = path.join(this.#dataDir, 'backups');
-    const dest = path.join(root, `${new Date().toISOString().replace(/[:.]/g, '-')}-${label.replace(/[^\w.-]+/g, '_')}`);
-    fs.mkdirSync(dest, { recursive: true, mode: 0o700 });
-    const copy = (from, to) => {
-      for (const name of fs.readdirSync(from)) {
-        if (from === this.#dataDir && ['app', 'backups'].includes(name)) continue;
-        const src = path.join(from, name);
-        const dst = path.join(to, name);
-        if (fs.statSync(src).isDirectory()) {
-          fs.mkdirSync(dst, { recursive: true, mode: 0o700 });
-          copy(src, dst);
-        } else fs.copyFileSync(src, dst);
-      }
-    };
-    copy(this.#dataDir, dest);
-    const all = fs.readdirSync(root).sort();
-    for (const old of all.slice(0, Math.max(0, all.length - KEEP_BACKUPS))) fs.rmSync(path.join(root, old), { recursive: true, force: true });
-    return path.basename(dest);
+    return new Backups({ dataDir: this.#dataDir }).take(label, { version: this.#current });
   }
 
   #prune() {

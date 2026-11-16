@@ -18,6 +18,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { collect, summarize, healthOf } from './collector.js';
 import { CxClient } from './cxone/client.js';
+import { Vault } from './vault.js';
 
 const SLOW_EVERY_MS = 60 * 60_000;
 const MAX_BACKOFF_MS = 60 * 60_000;
@@ -57,6 +58,7 @@ export class Monitor extends EventEmitter {
   #state = new Map();
   #lanes;
   #clients = new Map(); // id → { key, client }: the sign-in token is reused between reads
+  #vault;
   stats = { reads: 0, failures: 0, lastReadMs: 0, startedAt: new Date().toISOString() };
 
   /**
@@ -69,6 +71,7 @@ export class Monitor extends EventEmitter {
     this.#lanes = new Lanes(Math.max(1, concurrency));
     this.#source = source;
     this.#dir = path.join(dataDir, 'snapshots');
+    this.#vault = new Vault(dataDir);
     this.#collect = collectFn;
     this.setInterval(intervalMinutes);
     fs.mkdirSync(this.#dir, { recursive: true, mode: 0o700 });
@@ -88,7 +91,7 @@ export class Monitor extends EventEmitter {
       entry = { snapshot: null, previous: null, error: null, history: [], refreshing: null, timer: null, nextAt: null, failures: 0, slowAt: 0 };
       if (SAFE_ID.test(id)) {
         try {
-          Object.assign(entry, JSON.parse(fs.readFileSync(path.join(this.#dir, `${id}.json`), 'utf8')), { refreshing: null, timer: null, nextAt: null, slowAt: 0 });
+          Object.assign(entry, this.#vault.readJson(path.join(this.#dir, `${id}.json`)), { refreshing: null, timer: null, nextAt: null, slowAt: 0 });
         } catch {}
       }
       this.#state.set(id, entry);
@@ -98,10 +101,8 @@ export class Monitor extends EventEmitter {
 
   #persist(id, entry) {
     if (!SAFE_ID.test(id)) return;
-    const file = path.join(this.#dir, `${id}.json`);
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ snapshot: entry.snapshot, previous: entry.previous, error: entry.error, history: entry.history, failures: entry.failures }), { mode: 0o600 });
-    fs.renameSync(tmp, file);
+    // A snapshot is a cache of what Checkmarx One says: no previous copy is needed, the next read rebuilds it.
+    this.#vault.writeFile(path.join(this.#dir, `${id}.json`), JSON.stringify({ snapshot: entry.snapshot, previous: entry.previous, error: entry.error, history: entry.history, failures: entry.failures }), { keepPrevious: false });
   }
 
   /** The first reads, spread over the interval (at most 10 minutes), the stalest first. */

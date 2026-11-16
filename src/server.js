@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Db, fail, text, email as cleanEmail } from './db.js';
+import { Backups } from './backups.js';
+import { Watchdog, healthChecks } from './health.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
 import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted } from './opportunities.js';
@@ -45,7 +47,7 @@ const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']
 const POLLED_STAGES = new Set(['pov']);
 const DEFAULT_SETTINGS = { orgName: 'Command Center', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true };
 
-export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null } = {}) {
+export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null, backupOptions = null, startBackground = true } = {}) {
   const db = new Db(dataDir);
   const users = new Users(db);
   const catalog = new Catalog(db);
@@ -64,6 +66,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const valueFor = (opp, live = opp.tenant ? monitor.live(opp.id) : null) => (live?.summary ? valueOf({ credits: monitor.snapshot(opp.id)?.credits, summary: live.summary, backlog: monitor.snapshot(opp.id)?.findings?.ai ?? null, ledger: ai.ledger(opp.id), rates: ratesFor(db.read('settings', {}).valueRates ?? {}, opp.valueRates ?? {}) }) : null);
   const updater = new Updater({ dataDir, currentVersion: VERSION, ...(updaterOptions ?? {}) });
   users.sessionMs = (settings().security.sessionHours || 12) * 3600e3;
+  const backupStore = new Backups({ dataDir, vault: db.vault, ...(backupOptions ?? {}) });
   const restartServer = (actor, why) => {
     if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start CommandCenter with "npm start" or the container image.');
     audit.record(actor, 'system', `Restarted the server (${why})`);
@@ -612,23 +615,41 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       restartServer(user, 'from Settings');
       return send(res, 202, { restarting: true });
     }
+    if (route === 'GET /system/health') {
+      need(user, 'settings.manage');
+      return send(res, 200, { checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION }), corrections: watchdog.corrections, repairs: db.repairs, backups: backupStore.list(), offsite: backupStore.offsite, key: { source: db.vault.source, fingerprint: db.vault.fingerprint }, launched: updater.launched });
+    }
     if (route === 'POST /system/backup') {
       need(user, 'settings.manage');
-      const name = updater.backup('manual');
+      const name = backupStore.take('manual', { version: VERSION });
       audit.record(user, 'system', `Took a backup (${name})`);
-      return send(res, 200, { backup: name, backups: backups() });
+      return send(res, 200, { backup: name, backups: backupStore.list() });
+    }
+    if (m === 'POST' && parts[0] === 'system' && parts[1] === 'backups' && parts[2] && parts[3] === 'verify') {
+      need(user, 'settings.manage');
+      return send(res, 200, backupStore.verify(parts[2]));
+    }
+    if (route === 'POST /system/restore') {
+      need(user, 'settings.manage');
+      if (!updater.launched) throw fail(409, 'Restoring needs the launcher (npm start or the container image), which restarts the server with the restored records.');
+      const b = await readBody(req);
+      const r = backupStore.restore(text(b.name, 200), { version: VERSION });
+      audit.record(user, 'system', `Restored the backup ${r.restored} (the data before it is in ${r.undo})`);
+      setTimeout(() => process.exit(RESTART_CODE), 300);
+      return send(res, 202, { ...r, restarting: true });
     }
     if (route === 'GET /system/backup/download') {
       need(user, 'settings.manage');
       audit.record(user, 'system', 'Downloaded a backup of the data');
-      res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="commandcenter-backup-${new Date().toISOString().slice(0, 10)}.tar.gz"`, 'Cache-Control': 'no-store' });
-      const tar = spawn('tar', ['-czf', '-', '--exclude=./app', '--exclude=./backups', '-C', dataDir, '.']);
+      res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="meridian-backup-${new Date().toISOString().slice(0, 10)}.tar.gz"`, 'Cache-Control': 'no-store' });
+      // Encrypted records only: never the key, the snapshots (read again from Checkmarx One) or temporary copies.
+      const tar = spawn('tar', ['-czf', '-', '--exclude=./app', '--exclude=./backups', '--exclude=./snapshots', '--exclude=./secret.key', '--exclude=*.prev', '--exclude=*.tmp', '--exclude=*.damaged-*', '-C', dataDir, '.']);
       tar.stdout.pipe(res);
       tar.on('error', () => res.end());
       return;
     }
     if (route === 'GET /system/about') {
-      return send(res, 200, { version: VERSION, node: process.version, repo: updater.status().repo, licence: 'Internal use', startedAt: STARTED_AT, launched: updater.launched, dataDir: can(user, 'settings.manage') ? dataDir : undefined, backups: can(user, 'settings.manage') ? backups() : undefined, audit: can(user, 'settings.manage') ? audit.verify() : undefined });
+      return send(res, 200, { version: VERSION, node: process.version, repo: updater.status().repo, licence: 'Internal use', startedAt: STARTED_AT, launched: updater.launched, dataDir: can(user, 'settings.manage') ? dataDir : undefined, backups: can(user, 'settings.manage') ? backupStore.list().slice(0, 10).map((x) => x.name) : undefined, audit: can(user, 'settings.manage') ? audit.verify() : undefined });
     }
     if (route === 'GET /audit') {
       need(user, 'settings.manage');
@@ -685,7 +706,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!list.length) throw fail(404, 'No POV with success criteria to make a results page for.');
       const files = list.map((r) => {
         const last = r.finalAt ? finals(r.id)[0] : null;
-        const html = last ? fs.readFileSync(path.join(resultsDir(r.id), last.file), 'utf8') : resultsPage(resultsData(opps.get(r.id)));
+        const html = last ? db.vault.readFile(path.join(resultsDir(r.id), last.file)).toString('utf8') : resultsPage(resultsData(opps.get(r.id)));
         return { name: `${r.customer} - POV results${last ? ' (final)' : ''}.html`, data: html };
       });
       const esc2 = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -883,7 +904,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const opp = viewOpp(user, id);
         const last = finals(id)[0];
         if (!last) throw fail(404, 'This POV has no final results yet: it gets one when it is marked successful.');
-        const html = fs.readFileSync(path.join(resultsDir(id), last.file), 'utf8');
+        const html = db.vault.readFile(path.join(resultsDir(id), last.file)).toString('utf8');
         if (url.searchParams.get('download')) return file(res, `${opp.customer} - POV results (final).html`, 'text/html; charset=utf-8', html);
         const nonce = randomBytes(12).toString('base64');
         return send(res, 200, html.replace('<script>', `<script nonce="${nonce}">`), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; media-src data:; frame-ancestors 'self'` });
@@ -1121,7 +1142,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
           reject(fail(413, 'The video is larger than 25 MB: trim it or export it smaller (720p is plenty).'));
         }
       });
-      req.pipe(out);
+      req.pipe(db.vault.encryptingStream()).pipe(out);
       out.on('finish', () => {
         if (size > MAX_VIDEO) return;
         if (!size) {
@@ -1142,7 +1163,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const v = c.demo?.video;
     if (!v) throw fail(404, 'No demo video.');
     const file = videoPath(oppId, v);
-    const size = fs.statSync(file).size;
+    const size = db.vault.plainSize(file);
     const head = { 'Content-Type': v.type, 'Content-Disposition': 'inline', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
     const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
     if (m) {
@@ -1153,17 +1174,17 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         return res.end();
       }
       res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
-      return fs.createReadStream(file, { start, end }).pipe(res);
+      return db.vault.readStream(file, start, end).pipe(res);
     }
     res.writeHead(200, { ...head, 'Content-Length': size });
-    fs.createReadStream(file).pipe(res);
+    db.vault.readStream(file).pipe(res);
   }
   /** The video as a data: address for the self-contained results page (it plays offline, from the file itself). */
   function demoVideoData(oppId, c) {
     const v = c.demo?.video;
     if (!v) return null;
     try {
-      return { name: v.name, type: v.type, size: v.size, src: `data:${v.type};base64,${fs.readFileSync(videoPath(oppId, v)).toString('base64')}` };
+      return { name: v.name, type: v.type, size: v.size, src: `data:${v.type};base64,${db.vault.readFile(videoPath(oppId, v)).toString('base64')}` };
     } catch {
       return null;
     }
@@ -1183,7 +1204,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (!opp) return;
     const dir = resultsDir(id);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(dir, `${new Date().toISOString().replace(/:/g, '-').replace('.', '-')}.html`), resultsPage(resultsData(opp)), { mode: 0o600 });
+    db.vault.writeFile(path.join(dir, `${new Date().toISOString().replace(/:/g, '-').replace('.', '-')}.html`), resultsPage(resultsData(opp)), { keepPrevious: false });
     opps.mutate({ ...actor, role: 'admin' }, id, fullSettings(), (o) => (o.history ??= []).push({ at: new Date().toISOString(), by: actor?.id ?? '', what: 'Kept the final results page' }));
     notify({ id });
   }
@@ -1229,13 +1250,6 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     } catch {}
     return now !== startedCerts || JSON.stringify(db.read('settings', {}).network ?? {}) !== startedNetwork;
   };
-  const backups = () => {
-    try {
-      return fs.readdirSync(path.join(dataDir, 'backups')).sort().reverse().slice(0, 10);
-    } catch {
-      return [];
-    }
-  };
   /** Every connection the server makes or takes, for the network team. */
   const allowlist = () => {
     const out = [{ direction: 'in', host: 'this server', port: Number(process.env.PORT) || 4310, why: 'People opening CommandCenter (HTTPS when behind your reverse proxy)' }];
@@ -1257,13 +1271,18 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   };
   const can = (u, p) => users.can(u, p, fullSettings());
   updater.start();
+  if (startBackground) backupStore.start({ version: VERSION });
+  const watchdog = new Watchdog({ monitor, launched: updater.launched, restart: () => setTimeout(() => process.exit(RESTART_CODE), 300) });
+  if (startBackground) watchdog.start();
 
   server.on('close', () => {
     updater.stop();
+    backupStore.stop();
+    watchdog.stop();
     monitor.stop();
     clearInterval(hourly);
   });
-  return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit };
+  return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit, backups: backupStore, watchdog };
 }
 
 /** An email server error, said so it can be fixed. */
@@ -1304,6 +1323,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     app.monitor.start();
   });
   const stop = () => app.server.close(() => process.exit(0));
+  // The last line of defence: an unexpected error is logged; a thrown one ends the process, and the launcher starts
+  // a clean one within seconds (records are written atomically, so nothing is half-saved).
+  process.on('unhandledRejection', (error) => console.error('Unhandled rejection:', error));
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception, restarting:', error);
+    process.exit(1);
+  });
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 }

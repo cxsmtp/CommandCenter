@@ -1,14 +1,14 @@
 /**
- * Storage: one JSON file per collection in the data folder, written atomically (temp file + rename), mode 0600.
- * Sized for a team's worth of opportunities (hundreds), where a database would only add moving parts; a backup is a
- * copy of the folder.
+ * Storage: one JSON file per collection in the data folder, encrypted (see vault.js), written atomically and flushed
+ * to disk, with the previous copy kept beside it. Sized for a team's worth of opportunities (hundreds), where a
+ * database would only add moving parts.
  *
- * Secrets (Checkmarx One API keys, the SMTP password) are sealed with AES-256-GCM. The key comes from CC_SECRET when
- * set, otherwise from a random key file made beside the data the first time.
+ * Self-repair: a collection that cannot be read (damaged, cut short, changed by hand) is restored from its previous
+ * copy, else from the newest backup that holds it; each repair is recorded and shown under Settings → System.
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { Vault } from './vault.js';
 
 export const fail = (status, message) => Object.assign(new Error(message), { status });
 export const text = (v, max = 200) => (v === null || v === undefined ? '' : String(v).trim().slice(0, max));
@@ -35,59 +35,78 @@ export const email = (v) => {
 export class Db {
   #dir;
   #cache = new Map();
-  #key;
+  #vault;
+  /** Repairs made since the start: { name, from, at, error }. */
+  repairs = [];
 
   constructor(dir) {
     this.#dir = dir;
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    this.#key = secretKey(dir);
+    this.#vault = new Vault(dir);
   }
 
   get dir() {
     return this.#dir;
   }
 
+  get vault() {
+    return this.#vault;
+  }
+
   read(name, fallback) {
     if (this.#cache.has(name)) return this.#cache.get(name);
+    const file = path.join(this.#dir, `${name}.json`);
     let value = fallback;
-    try {
-      value = JSON.parse(fs.readFileSync(path.join(this.#dir, `${name}.json`), 'utf8'));
-    } catch {}
+    if (fs.existsSync(file)) {
+      try {
+        value = this.#vault.readJson(file);
+      } catch (error) {
+        value = this.#repair(name, file, error, fallback);
+      }
+    }
     this.#cache.set(name, value);
     return value;
   }
 
+  #repair(name, file, error, fallback) {
+    const candidates = [[`${file}.prev`, 'its previous copy']];
+    try {
+      const root = path.join(this.#dir, 'backups');
+      for (const b of fs.readdirSync(root).sort().reverse()) candidates.push([path.join(root, b, `${name}.json`), `backup ${b}`]);
+    } catch {}
+    for (const [from, label] of candidates) {
+      try {
+        const value = this.#vault.readJson(from);
+        fs.copyFileSync(file, `${file}.damaged-${Date.now()}`);
+        this.#vault.writeFile(file, JSON.stringify(value), { keepPrevious: false });
+        this.repairs.push({ name, from: label, at: new Date().toISOString(), error: String(error.message).slice(0, 200) });
+        console.error(`Repaired ${name}.json from ${label} (${error.message})`);
+        return value;
+      } catch {}
+    }
+    this.repairs.push({ name, from: null, at: new Date().toISOString(), error: String(error.message).slice(0, 200) });
+    console.error(`Could not read ${name}.json and found no good copy (${error.message}); it was set aside.`);
+    try {
+      fs.renameSync(file, `${file}.damaged-${Date.now()}`);
+    } catch {}
+    return fallback;
+  }
+
   write(name, value) {
     this.#cache.set(name, value);
-    const file = path.join(this.#dir, `${name}.json`);
-    const tmp = `${file}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(value, null, 1), { mode: 0o600 });
-    fs.renameSync(tmp, file);
+    this.#vault.writeFile(path.join(this.#dir, `${name}.json`), JSON.stringify(value));
+  }
+
+  /** Forget what is held in memory (after a restore). */
+  reload() {
+    this.#cache.clear();
   }
 
   seal(plain) {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.#key, iv);
-    const data = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
-    return [iv, cipher.getAuthTag(), data].map((b) => b.toString('base64')).join('.');
+    return this.#vault.seal(plain);
   }
 
   open(sealed) {
-    const [iv, tag, data] = String(sealed).split('.').map((s) => Buffer.from(s, 'base64'));
-    const decipher = createDecipheriv('aes-256-gcm', this.#key, iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+    return this.#vault.open(sealed);
   }
-}
-
-function secretKey(dir) {
-  if (process.env.CC_SECRET) return createHash('sha256').update(process.env.CC_SECRET).digest();
-  const file = path.join(dir, 'secret.key');
-  try {
-    const key = Buffer.from(fs.readFileSync(file, 'utf8').trim(), 'base64');
-    if (key.length === 32) return key;
-  } catch {}
-  const key = randomBytes(32);
-  fs.writeFileSync(file, key.toString('base64'), { mode: 0o600 });
-  return key;
 }
