@@ -26,7 +26,9 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
   }
 
   const q = (ui.q ?? '').toLowerCase();
-  const rows = o.rows.filter((r) => (!ui.stage || r.stage === ui.stage || (ui.stage === 'open' && !['won', 'lost'].includes(r.stage))) && (!ui.attention || (!r.muted && r.alerts.length)) && (!q || [r.customer, r.name, r.owner.name, r.tenant?.tenant, ...r.managers.map((m) => m.name)].join(' ').toLowerCase().includes(q)));
+  const regions = [...new Set(o.rows.map((r) => r.region || 'No region'))].sort();
+  if (ui.region && !regions.includes(ui.region)) ui.region = '';
+  const rows = o.rows.filter((r) => (!ui.stage || r.stage === ui.stage || (ui.stage === 'open' && !['won', 'lost'].includes(r.stage))) && (!ui.attention || (!r.muted && r.alerts.length)) && (!ui.region || (r.region || 'No region') === ui.region) && (!q || [r.customer, r.name, r.owner.name, r.tenant?.tenant, ...r.managers.map((m) => m.name)].join(' ').toLowerCase().includes(q)));
   const rank = (r) => (r.muted ? 5 : r.alerts.some((a) => a.level === 'bad') ? 0 : r.alerts.length ? 1 : r.stage === 'pov' ? 2 : ['won', 'lost'].includes(r.stage) ? 4 : 3);
   rows.sort((a, b) => rank(a) - rank(b) || (a.daysLeft ?? 999) - (b.daysLeft ?? 999) || a.customer.localeCompare(b.customer));
 
@@ -35,6 +37,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
   main.innerHTML = `
     <div class="toolbar">
       <select id="fOwner" aria-label="Whose work">${peopleOptions(owner, { any: true, anyLabel: state.session.user.role === 'associate' ? 'My work' : 'Everyone I can see' })}</select>
+      ${regions.length > 1 ? `<select id="fRegion" aria-label="Region"><option value="">Every region</option>${regions.map((x) => `<option ${ui.region === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>` : ''}
       <input type="search" id="fQ" placeholder="Search customer, SE, tenant…" value="${esc(ui.q ?? '')}">
       <label class="check"><input type="checkbox" id="fAttention" ${ui.attention ? 'checked' : ''}> Needs attention only</label>
       <span class="spacer"></span>
@@ -58,6 +61,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
 
 function wire(main) {
   const rerender = () => document.dispatchEvent(new CustomEvent('cc:rerender'));
+  main.querySelector('#fRegion')?.addEventListener('change', (e) => ((ui.region = e.target.value), save(), rerender()));
   main.querySelector('#fOwner').addEventListener('change', (e) => ((ui.owner = e.target.value), save(), rerender()));
   let timer;
   main.querySelector('#fQ').addEventListener('input', (e) => {
