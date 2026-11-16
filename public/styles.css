@@ -302,3 +302,5 @@ tr.group td { background: var(--panel-2); font-weight: 600; font-size: 12px; col
 @media (max-width: 600px) { .mission { grid-template-columns: repeat(2, 1fr); } }
 
 table .fc { min-width: 190px; }
+.demo-box { margin-top: 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 6%, transparent); }
+.demo-player video { width: 100%; max-width: 640px; margin-top: 8px; border-radius: 10px; background: #000; display: block; }

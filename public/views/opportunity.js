@@ -260,6 +260,7 @@ function criteria(d) {
               ${cap?.proof || cap?.tech || own.length ? `<details class="small proof"><summary>How it is proven</summary>${cap?.proof ? `<div><b>Show the customer:</b> ${esc(cap.proof)}</div>` : ''}${cap?.tech ? `<div><b>How CommandCenter checks:</b> ${esc(cap.tech)}</div>` : ''}${own.length ? `<div><b>Also counted for this criterion:</b> ${esc(own.join(', '))}</div>` : ''}</details>` : ''}`;
           })()}
           ${evLine(c)}
+          ${demoLine(c)}
           ${c.notes ? `<div class="small notes-box" style="margin-top:4px">${esc(c.notes)}</div>` : ''}
           ${c.evidenceLink ? `<div class="small"><a href="${esc(c.evidenceLink)}" target="_blank" rel="noopener noreferrer">Evidence ↗</a></div>` : ''}
           ${c.confirmedAt ? `<div class="small muted">Confirmed by ${esc(person(c.confirmedBy))} ${ago(c.confirmedAt)}</div>` : ''}
@@ -436,6 +437,16 @@ const WIRES = {
     on(main, '[data-act="add-custom"]', () => editCriterion(null));
     on(main, '[data-edit-crit]', (b) => editCriterion(d.opportunity.criteria.find((c) => c.id === b.dataset.editCrit)));
     on(main, '[data-del-crit]', (b) => removeItem('criteria', b.dataset.delCrit, 'this success criterion'));
+    on(main, '[data-demo]', (b) => recordDemo(d.opportunity.criteria.find((x) => x.id === b.dataset.demo)));
+    on(main, '[data-watch]', (b) => {
+      const box = b.closest('.demo-box').querySelector('.demo-player');
+      box.innerHTML = `<video controls autoplay playsinline controlslist="nodownload" disablepictureinpicture src="/api/opportunities/${oid()}/criteria/${b.dataset.watch}/demo-video"></video>`;
+      box.querySelector('video').addEventListener('contextmenu', (e) => e.preventDefault());
+    });
+    on(main, '[data-unvideo]', async (b) => {
+      if (!confirm('Remove the demo video?')) return;
+      if (await attempt(() => api(`/opportunities/${oid()}/criteria/${b.dataset.unvideo}/demo-video`, { method: 'DELETE' }), 'Video removed')) rerender();
+    });
     on(main, '[data-met]', (b) => {
       const c = d.opportunity.criteria.find((x) => x.id === b.dataset.met);
       item('criteria', { ...c, status: 'met' }, `"${c.title}" met`);
@@ -625,6 +636,66 @@ async function addCapabilities() {
       return api(`/opportunities/${oid()}/criteria/bulk`, { method: 'POST', body: { capabilityIds: (b.capabilities ?? []).filter((x) => !have.includes(x)), priority: b.priority } });
     },
     { wide: true },
+  );
+}
+
+// ——— Demonstrated by the SE ———
+function demoLine(c) {
+  const dm = c.demo;
+  const button = current.canEdit ? `<button class="btn sm" data-demo="${esc(c.id)}">${dm ? 'Edit the demo' : 'Record a demo'}</button>` : '';
+  if (!dm) return current.canEdit && c.status !== 'met' ? `<div class="row" style="margin-top:6px">${button}<span class="small muted">Shown by you instead of in the customer’s tenant?</span></div>` : '';
+  return `<div class="demo-box">
+    <div class="small"><b class="ok-t">▶ Demonstrated by ${esc(person(dm.by) || 'the SE')}</b> on ${day(dm.date)}${dm.environment ? ` · ${esc(dm.environment)}` : ''}${dm.attendees ? ` · seen by ${esc(dm.attendees)}` : ''}</div>
+    ${dm.notes ? `<div class="small notes-box muted">${esc(dm.notes)}</div>` : ''}
+    <div class="row center" style="margin-top:6px">${dm.video ? `<button class="btn sm" data-watch="${esc(c.id)}">▶ Watch (${esc(dm.video.name)}, ${dm.video.size < 1048576 ? `${Math.max(1, Math.round(dm.video.size / 1024))} KB` : `${(dm.video.size / 1048576).toFixed(1)} MB`})</button>${current.canEdit ? `<button class="btn sm ghost" data-unvideo="${esc(c.id)}">Remove video</button>` : ''}` : ''}${dm.recordingUrl ? `<a class="btn sm ghost" href="${esc(dm.recordingUrl)}" target="_blank" rel="noopener noreferrer">Session recording ↗</a>` : ''}${button}</div>
+    <div class="demo-player"></div>
+  </div>`;
+}
+
+function recordDemo(c) {
+  const dm = c.demo ?? {};
+  return openDialog(
+    `<form id="demoForm"><h2>Demonstrated by the SE</h2>
+      <p class="muted" style="margin:0">For <b>${esc(c.title)}</b>, shown by you (in your own demo environment, or on a screen share) instead of in the customer’s tenant. Reports show it as <b>Demonstrated by the SE</b>, apart from what was completed in the tenant.</p>
+      <div class="row"><label class="field">Date<input type="date" name="date" value="${esc(dm.date ?? new Date().toISOString().slice(0, 10))}" required></label><label class="field">Where it was shown<input name="environment" value="${esc(dm.environment ?? '')}" placeholder="e.g. SE demo tenant, screen share"></label></div>
+      <label class="field">Who saw it<input name="attendees" value="${esc(dm.attendees ?? '')}" placeholder="e.g. Priya Rao (AppSec lead), Tom Lee"></label>
+      <label class="field">What was shown<textarea name="notes" rows="3">${esc(dm.notes ?? '')}</textarea></label>
+      <label class="field">Session recording link (Teams, Zoom, SharePoint)<input type="url" name="recordingUrl" value="${esc(dm.recordingUrl ?? '')}"></label>
+      <label class="field">A short demo video (MP4 or WebM, up to 25 MB)${dm.video ? ` — replaces ${esc(dm.video.name)}` : ''}<input type="file" name="video" accept="video/mp4,video/webm,video/quicktime"></label>
+      <p class="small muted" style="margin:0">The video plays inside the results page (also when it is downloaded or shared); it is not offered as a file to download.</p>
+      <label class="check"><input type="checkbox" name="markCompleted" ${c.status === 'met' && c.proofType !== 'demo' ? '' : 'checked'}> Count it as completed successfully (demonstrated)</label>
+      <p class="form-error" id="demoErr" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Save</button></div>
+    </form>`,
+    {
+      onOpen(d) {
+        d.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+        d.querySelector('#demoForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const f = e.target;
+          const file = f.video.files[0];
+          const err = $('#demoErr');
+          if (file && file.size > 25 * 1048576) return (err.textContent = 'The video is larger than 25 MB: trim it or export it smaller (720p is plenty).');
+          const btn = f.querySelector('.btn.primary');
+          btn.disabled = true;
+          try {
+            await api(`/opportunities/${oid()}/criteria/${c.id}/demo`, { method: 'POST', body: { date: f.date.value, environment: f.environment.value, attendees: f.attendees.value, notes: f.notes.value, recordingUrl: f.recordingUrl.value, markCompleted: f.markCompleted.checked } });
+            if (file) {
+              btn.textContent = 'Uploading the video…';
+              const r = await fetch(`/api/opportunities/${oid()}/criteria/${c.id}/demo-video?name=${encodeURIComponent(file.name)}`, { method: 'PUT', headers: { 'X-Requested-With': 'CommandCenter', 'Content-Type': file.type || 'video/mp4' }, body: file });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Upload failed (${r.status})`);
+            }
+            closeDialog('ok');
+            toast('Demo recorded');
+            rerender();
+          } catch (error) {
+            err.textContent = error.message;
+            btn.disabled = false;
+            btn.textContent = 'Save';
+          }
+        });
+      },
+    },
   );
 }
 

@@ -59,7 +59,7 @@ function make(owner, body, { tenant, criteria = [], notes = [], sessions = [], s
   for (const c of opps.get(o.id).criteria.filter((c) => met.includes(c.capabilityId))) opps.upsertItem(who, o.id, 'criteria', { ...c, status: 'met', notes: 'Shown to the AppSec team; they confirmed the results.' }, {});
   return o;
 }
-make(ses[0], { customer: 'Acme Bank', name: 'AppSec platform FY27', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006XX0000001/view', sharepointUrl: 'https://example.sharepoint.com/sites/AcmeBankPOV', startDate: day(-12), endDate: day(4), amount: '$420k ARR', discovery: { goals: 'Replace the current SAST tool; one platform for SAST, SCA and IaC.', painPoints: 'Too many false positives; developers ignore results.', languages: 'Java, TypeScript, Python', scm: ['github', 'gitlab'], ci: ['jenkins', 'github-actions'], tracking: ['jira'], requested: ['sast', 'sca', 'fusion', 'jenkins', 'jira'] } }, {
+make(ses[0], { customer: 'Acme Bank', name: 'AppSec platform FY27', salesforceUrl: 'https://example.lightning.force.com/lightning/r/Opportunity/006XX0000001/view', sharepointUrl: 'https://example.sharepoint.com/sites/AcmeBankPOV', startDate: day(-12), endDate: day(4), amount: '$420k ARR', discovery: { goals: 'Replace the current SAST tool; one platform for SAST, SCA and IaC.', painPoints: 'Too many false positives; developers ignore results.', languages: 'Java, TypeScript, Python', scm: ['github', 'gitlab'], ci: ['jenkins', 'github-actions'], tracking: ['jira', 'servicenow'], ide: ['vscode', 'jetbrains', 'cursor', 'copilot'], requested: ['sast', 'sca', 'fusion', 'jenkins', 'jira'] } }, {
   tenant: 'acme-bank', criteria: ['sast', 'fusion', 'secrets', 'iac', 'sca', 'containers', 'malicious', 'aisc', 'llm-scanner', 'mcp-scanner', 'dast-ai', 'dev-assist', 'ai-triage', 'ai-remediation', 'analytics', 'policy', 'mcp', 'jenkins', 'github-actions', 'github', 'jira', 'sso'], met: ['sast', 'sca', 'fusion', 'iac', 'jenkins', 'dev-assist', 'mcp'], progress: ['secrets', 'containers', 'ai-triage', 'llm-scanner', 'analytics', 'github-actions'],
   notes: ['Champion: Priya (AppSec lead). Wants Jira tickets created from critical findings.', 'Jenkins pipeline scans running on 5 core apps.'],
   sessions: [{ date: day(-20), type: 'discovery', title: 'Discovery with AppSec team', attendees: 'Priya Rao, Tom Lee', notes: 'Current tool: legacy SAST. Pain: false positives, slow scans.' }, { date: day(-10), type: 'technical', title: 'Jenkins and GitHub integration', notes: 'Plugin installed, first pipeline green.' }],
@@ -80,4 +80,16 @@ app.server.listen(port, process.env.HOST || '127.0.0.1', () => {
   console.log(`Sign in as vp@demo.local, leader@demo.local, tl1@demo.local, se1@demo.local … or admin@demo.local — password: ${pw}`);
   app.monitor.start();
   for (const o of opps.raw().filter((x) => x.tenant)) app.monitor.refresh(o.id, { force: true });
+  // AI Inventory was shown by the SE in their demo tenant, with a short video.
+  (async () => {
+    const base = `http://127.0.0.1:${port}`;
+    const r = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'se1@demo.local', password: pw }) });
+    const cookie = r.headers.get('set-cookie').split(';')[0];
+    const h = { Cookie: cookie, 'X-Requested-With': 'CommandCenter' };
+    const acme = opps.raw().find((o) => o.customer === 'Acme Bank');
+    const c = acme.criteria.find((x) => x.capabilityId === 'aisc');
+    await fetch(`${base}/api/opportunities/${acme.id}/criteria/${c.id}/demo`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ date: day(-3), environment: 'SE demo tenant (screen share)', attendees: 'Priya Rao (AppSec lead), Tom Lee', notes: 'Showed the AI inventory of a sample repository: the models, providers and MCP servers found, and the risks on each.', recordingUrl: 'https://example.sharepoint.com/sites/AcmeBankPOV/recordings/ai-inventory', markCompleted: true }) });
+    const video = fs.readFileSync(new URL('./demo-assets/ai-inventory-demo.mp4', import.meta.url));
+    await fetch(`${base}/api/opportunities/${acme.id}/criteria/${c.id}/demo-video?name=ai-inventory-demo.mp4`, { method: 'PUT', headers: { ...h, 'Content-Type': 'video/mp4' }, body: video });
+  })().catch((e) => console.error('demo video:', e.message));
 });

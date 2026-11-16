@@ -232,6 +232,11 @@ export class Opportunities {
     });
   }
 
+  /** A criterion as stored, from a request (the demo route uses it). */
+  cleanCriterion(c, actor, existing) {
+    return CLEANERS.criteria(c, actor, existing);
+  }
+
   #addCriterion(opp, item, actor = null) {
     const cap = item.capabilityId ? this.#catalog.get(item.capabilityId) : null;
     if (cap && opp.criteria.some((c) => c.capabilityId === cap.id)) return opp.criteria.find((c) => c.capabilityId === cap.id);
@@ -274,9 +279,28 @@ const CLEANERS = {
       due: dateOnly(c.due),
       confirmedBy: confirmed ? actor?.id ?? '' : status === 'met' ? existing?.confirmedBy ?? '' : '',
       confirmedAt: confirmed ? new Date().toISOString() : status === 'met' ? existing?.confirmedAt ?? null : null,
+      // How it was completed: in the customer's tenant, or demonstrated by the SE (their own environment).
+      proofType: status === 'met' && (c.proofType ?? existing?.proofType) === 'demo' ? 'demo' : 'tenant',
+      demo: cleanDemo(c.demo ?? existing?.demo ?? null, existing?.demo ?? null),
     };
   },
 };
+
+/** A demo session recorded against a criterion: when, where, who saw it, a recording link, an uploaded video. */
+function cleanDemo(d, before) {
+  if (!d) return null;
+  return {
+    date: dateOnly(d.date) || new Date().toISOString().slice(0, 10),
+    environment: text(d.environment, 200),
+    attendees: text(d.attendees, 1000),
+    recordingUrl: httpUrl(d.recordingUrl),
+    notes: text(d.notes, 4000),
+    by: text(d.by ?? before?.by, 80),
+    at: d.at ?? before?.at ?? new Date().toISOString(),
+    // The video is set only by its upload (src/server.js), never from a request body.
+    video: before?.video ?? null,
+  };
+}
 
 const DISCOVERY_TEXT = ['goals', 'currentTools', 'painPoints', 'languages', 'teamSize', 'timeline', 'decisionProcess', 'competition', 'environment', 'notes', 'nextSteps'];
 const DISCOVERY_LISTS = ['scm', 'ci', 'tracking', 'ide', 'requested'];
@@ -338,7 +362,8 @@ export function progressOf(opp) {
   const met = counted.filter((c) => c.status === 'met').length;
   const must = counted.filter((c) => c.priority === 'must');
   const mustMet = must.filter((c) => c.status === 'met').length;
-  return { total: counted.length, met, percent: counted.length ? Math.round((100 * met) / counted.length) : 0, must: must.length, mustMet, notMet: counted.filter((c) => c.status === 'not_met').length, inProgress: counted.filter((c) => c.status === 'in_progress').length };
+  const demonstrated = counted.filter((c) => c.status === 'met' && c.proofType === 'demo').length;
+  return { demonstrated, inTenant: met - demonstrated, total: counted.length, met, percent: counted.length ? Math.round((100 * met) / counted.length) : 0, must: must.length, mustMet, notMet: counted.filter((c) => c.status === 'not_met').length, inProgress: counted.filter((c) => c.status === 'in_progress').length };
 }
 
 /** An opportunity as the page gets it: never the API key. */

@@ -289,3 +289,44 @@ test('results pages for every POV: the list, a final copy kept on success, all o
   assert.ok(buf.includes(Buffer.from('Alpha Bank - POV results (final).html')));
   assert.equal((await call('se2', `/api/opportunities/${ids.alpha}/results?final=1`, { raw: true })).status, 404, 'a peer cannot read it');
 });
+
+test('the integration flow: the customer’s tools and the engines at each stage', async () => {
+  const { flowView } = await import('../src/flow.js');
+  const { Catalog } = await import('../src/catalog.js');
+  const cat = new Catalog({ read: (k, d) => d, write() {} });
+  const crit = (id, status) => ({ id: `c-${id}`, capabilityId: id, title: id, status, category: cat.get(id).category });
+  const opp = { discovery: { ide: ['vscode', 'cursor'], tracking: ['jira'] }, criteria: [crit('jenkins', 'met'), crit('sast', 'met'), crit('dev-assist', 'in_progress'), crit('containers', 'not_started'), crit('analytics', 'not_started')] };
+  const v = flowView(opp, cat, { scans: [], projects: { list: [] } }, { origins: [{ name: 'Jenkins', count: 7 }], scans7d: 7, scans24h: 2 });
+  const st = Object.fromEntries(v.stages.map((s) => [s.key, s]));
+  assert.deepEqual(st.code.tools.map((t) => t.label), ['VS Code extension', 'Cursor']);
+  assert.equal(st.build.tools[0].label, 'Jenkins');
+  assert.equal(st.build.tools[0].scans, 7);
+  assert.ok(st.build.engines.some((e) => e.id === 'sast'), 'with a CI tool in use, the code scanners sit in the pipeline');
+  assert.ok(st.code.engines.some((e) => e.id === 'dev-assist' && e.state === 'progress'));
+  assert.ok(st.run.engines.some((e) => e.id === 'containers'));
+  assert.ok(st.govern.tools.some((t) => t.label === 'Jira ticketing'));
+  assert.match(st.build.value[0], /Jenkins \(7\)/);
+});
+
+test('a criterion demonstrated by the SE, with a short video that plays in the results page', async () => {
+  const d = (await call('se1', `/api/opportunities/${ids.alpha}`)).body;
+  const c = d.opportunity.criteria.find((x) => x.status !== 'met');
+  const r = await call('se1', `/api/opportunities/${ids.alpha}/criteria/${c.id}/demo`, { method: 'POST', body: { date: '2026-11-10', environment: 'SE demo tenant', attendees: 'Priya', notes: 'Shown live', markCompleted: true } });
+  const after = r.body.opportunity.criteria.find((x) => x.id === c.id);
+  assert.equal(after.status, 'met');
+  assert.equal(after.proofType, 'demo');
+  assert.equal(r.body.row.progress.demonstrated >= 1, true);
+  const video = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'scripts', 'demo-assets', 'ai-inventory-demo.mp4'));
+  const up = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=demo.mp4`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'CommandCenter', 'Content-Type': 'video/mp4' }, body: video });
+  assert.equal(up.status, 200);
+  const bad = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=x.exe`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'CommandCenter', 'Content-Type': 'application/octet-stream' }, body: 'MZ' });
+  assert.equal(bad.status, 415, 'only videos');
+  const part = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video`, { headers: { Cookie: jar.get('tl'), Range: 'bytes=0-99' } });
+  assert.equal(part.status, 206);
+  assert.equal(part.headers.get('content-disposition'), 'inline');
+  assert.equal((await part.arrayBuffer()).byteLength, 100);
+  const page = await call('tl', `/api/opportunities/${ids.alpha}/results`, { raw: true });
+  assert.match(page.body, /Demonstrated by the SE/);
+  assert.match(page.body, /data:video\/mp4;base64,/, 'the video travels inside the page');
+  assert.match(page.body, /controlsList/);
+});

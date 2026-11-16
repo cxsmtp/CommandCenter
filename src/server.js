@@ -16,6 +16,7 @@ import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
+import { flowView } from './flow.js';
 import { Updater, RESTART_CODE } from './updates.js';
 import { Audit } from './audit.js';
 import { zip } from './zip.js';
@@ -23,8 +24,8 @@ import { X509Certificate } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { criteriaForecast, creditsForecast, activityForecast, portfolioForecast } from './forecast.js';
 import { resultsPage } from './results.js';
-import { platformView, AI_POWERED, STATE as PLATFORM_STATE } from './platform.js';
-import { randomBytes } from 'node:crypto';
+import { platformView, AI_POWERED, stateOf } from './platform.js';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { CxClient } from './cxone/client.js';
 import { deriveConnection, publicConnection, scrubText } from './cxone/endpoints.js';
 import { tenantColours } from '../public/tenant-colour.js';
@@ -686,6 +687,44 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         for (const title of (b.custom ?? []).slice(0, 50)) if (text(title)) opps.upsertItem(user, id, 'criteria', { title, category: 'custom' }, s);
         return done();
       }
+      // A demo session recorded against a criterion (completed by the SE's demonstration, not in the tenant)
+      if (sub === 'criteria' && parts[3] && parts[4] === 'demo' && m === 'POST') {
+        const b = await readBody(req);
+        opps.mutate(user, id, s, (o) => {
+          const c = (o.criteria ?? []).find((x) => x.id === parts[3]);
+          if (!c) throw fail(404, 'No such criterion.');
+          const before = c.status;
+          const next = opps.cleanCriterion({ ...c, status: b.markCompleted === false ? c.status : 'met', proofType: b.markCompleted === false ? c.proofType : 'demo', demo: { ...b, by: c.demo?.by || user.id } }, user, c);
+          Object.assign(c, next);
+          (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `"${c.title}": demonstrated by the SE on ${c.demo.date}${before !== c.status ? ' — Completed successfully' : ''}` });
+        });
+        return done();
+      }
+      if (sub === 'criteria' && parts[3] && parts[4] === 'demo-video') {
+        const opp = viewOpp(user, id);
+        const c = (opp.criteria ?? []).find((x) => x.id === parts[3]);
+        if (!c) throw fail(404, 'No such criterion.');
+        if (m === 'GET') return streamVideo(req, res, opp.id, c);
+        if (!opps.canEdit(user, opps.get(id), s)) throw fail(403, 'You can view this POV but not change its demos.');
+        if (m === 'DELETE') {
+          removeVideo(opp.id, c);
+          opps.mutate(user, id, s, (o) => {
+            const x = o.criteria.find((y) => y.id === c.id);
+            if (x.demo) x.demo.video = null;
+            (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `"${x.title}": removed the demo video` });
+          });
+          return done();
+        }
+        if (m === 'PUT') {
+          const video = await saveVideo(req, opp.id, c, url.searchParams.get('name'));
+          opps.mutate(user, id, s, (o) => {
+            const x = o.criteria.find((y) => y.id === c.id);
+            x.demo = { ...(x.demo ?? { date: new Date().toISOString().slice(0, 10), by: user.id, at: new Date().toISOString() }), video };
+            (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `"${x.title}": uploaded a demo video (${video.name}, ${(video.size / 1048576).toFixed(1)} MB)` });
+          });
+          return done();
+        }
+      }
       if (KINDS.has(sub) && m === 'POST') {
         const b = await readBody(req);
         opps.upsertItem(user, id, sub, parts[3] ? { ...b, id: parts[3] } : b, s);
@@ -702,7 +741,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const html = fs.readFileSync(path.join(resultsDir(id), last.file), 'utf8');
         if (url.searchParams.get('download')) return file(res, `${opp.customer} - POV results (final).html`, 'text/html; charset=utf-8', html);
         const nonce = randomBytes(12).toString('base64');
-        return send(res, 200, html.replace('<script>', `<script nonce="${nonce}">`), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; frame-ancestors 'self'` });
+        return send(res, 200, html.replace('<script>', `<script nonce="${nonce}">`), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; media-src data:; frame-ancestors 'self'` });
       }
       if (sub === 'results' && m === 'POST' && parts[3] === 'freeze') {
         const opp = viewOpp(user, id);
@@ -715,7 +754,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const nonce = randomBytes(12).toString('base64');
         const html = resultsPage(resultsData(opp), { nonce });
         if (url.searchParams.get('download')) return file(res, `${opp.customer} - POV results.html`, 'text/html; charset=utf-8', resultsPage(resultsData(opp)));
-        return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; frame-ancestors 'self'` });
+        return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; media-src data:; frame-ancestors 'self'` });
       }
       if (sub === 'deck' && m === 'GET') {
         const opp = viewOpp(user, id);
@@ -793,7 +832,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
           title: c.title,
           group: groups[c.category] ?? 'Other',
           priority: c.priority,
-          state: PLATFORM_STATE[c.status] ?? 'planned',
+          state: stateOf(c),
+          demo: c.demo ? { ...c.demo, by: c.demo.by ? users.get(c.demo.by)?.name ?? '' : '', video: demoVideoData(opp.id, c) } : null,
           ai: AI_POWERED.has(c.capabilityId),
           cxName: cap?.cxName ?? '',
           proof: cap?.proof ?? '',
@@ -821,6 +861,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       summary: opp.summary ?? '',
       progress: progressOf(opp),
       platform: platformView(opp, catalog),
+      flow: flowView(opp, catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null),
       criteria,
       tenant: opp.tenant ? monitor.live(opp.id).summary : null,
       sessions: [...(opp.sessions ?? [])].sort((a, b) => a.date.localeCompare(b.date)).map((x) => ({ date: x.date, title: x.title, type: SESSION_TYPES[x.type] ?? '' })),
@@ -830,7 +871,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   function deckOf(opp) {
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
-    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog });
+    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null) });
   }
 
   /** One text file: the tenant's read, every failed scan of the last 7 days and each failed engine's log. */
@@ -910,6 +951,78 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
   });
+  // ——— Demo videos: small (≤ 25 MB) MP4 or WebM, kept in the data folder, played in the app and embedded in the results page ———
+  const MAX_VIDEO = 25 * 1048576;
+  const VIDEO_TYPES = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
+  const videoPath = (oppId, v) => path.join(dataDir, 'demos', oppId.replace(/[^0-9a-f-]/gi, ''), `${String(v.id).replace(/[^0-9a-f-]/gi, '')}.${VIDEO_TYPES[v.type] ?? 'bin'}`);
+  function saveVideo(req, oppId, c, name) {
+    const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+    if (!VIDEO_TYPES[type]) throw fail(415, 'Upload an MP4 or WebM video.');
+    const declared = Number(req.headers['content-length']);
+    if (declared > MAX_VIDEO) throw fail(413, 'The video is larger than 25 MB: trim it or export it smaller (720p is plenty).');
+    const v = { id: randomUUID(), name: text(name, 120) || `demo.${VIDEO_TYPES[type]}`, type, size: 0, at: new Date().toISOString() };
+    const file = videoPath(oppId, v);
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    return new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(file, { mode: 0o600 });
+      let size = 0;
+      req.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > MAX_VIDEO) {
+          req.destroy();
+          out.destroy();
+          fs.rmSync(file, { force: true });
+          reject(fail(413, 'The video is larger than 25 MB: trim it or export it smaller (720p is plenty).'));
+        }
+      });
+      req.pipe(out);
+      out.on('finish', () => {
+        if (size > MAX_VIDEO) return;
+        if (!size) {
+          fs.rmSync(file, { force: true });
+          return reject(fail(400, 'The video was empty.'));
+        }
+        if (c.demo?.video) removeVideo(oppId, c);
+        resolve({ ...v, size });
+      });
+      out.on('error', reject);
+    });
+  }
+  function removeVideo(oppId, c) {
+    if (c.demo?.video) fs.rmSync(videoPath(oppId, c.demo.video), { force: true });
+  }
+  /** Played, never offered as a download: inline, with seeking (Range) support. */
+  function streamVideo(req, res, oppId, c) {
+    const v = c.demo?.video;
+    if (!v) throw fail(404, 'No demo video.');
+    const file = videoPath(oppId, v);
+    const size = fs.statSync(file).size;
+    const head = { 'Content-Type': v.type, 'Content-Disposition': 'inline', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
+    const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
+    if (m) {
+      const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+      const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+      if (start >= size || start > end) {
+        res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+        return res.end();
+      }
+      res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+      return fs.createReadStream(file, { start, end }).pipe(res);
+    }
+    res.writeHead(200, { ...head, 'Content-Length': size });
+    fs.createReadStream(file).pipe(res);
+  }
+  /** The video as a data: address for the self-contained results page (it plays offline, from the file itself). */
+  function demoVideoData(oppId, c) {
+    const v = c.demo?.video;
+    if (!v) return null;
+    try {
+      return { name: v.name, type: v.type, size: v.size, src: `data:${v.type};base64,${fs.readFileSync(videoPath(oppId, v)).toString('base64')}` };
+    } catch {
+      return null;
+    }
+  }
+
   // ——— Results pages: one per POV; a final copy kept when it is marked successful ———
   const resultsDir = (id) => path.join(dataDir, 'results', id.replace(/[^0-9a-f-]/gi, ''));
   const finals = (id) => {

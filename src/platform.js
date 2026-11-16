@@ -59,6 +59,8 @@ const LABELS = {
 
 /** done (met) · progress (in progress) · planned (not started) · missed (not met); not applicable is left off. */
 const STATE = { met: 'done', in_progress: 'progress', not_started: 'planned', not_met: 'missed' };
+/** A criterion's mark: done (in the tenant), demo (demonstrated by the SE), progress, planned or missed. */
+export const stateOf = (c) => (c.status === 'met' && c.proofType === 'demo' ? 'demo' : STATE[c.status] ?? 'planned');
 
 /**
  * What the slide shows for this opportunity: the pillars, groups and items it has criteria for, nothing else.
@@ -73,7 +75,7 @@ export function platformView(opp, catalog) {
   const extra = (category) => [...byCap.keys()].filter((id) => !placed.has(id) && catalog?.get(id)?.category === category);
   const item = (id) => {
     const c = byCap.get(id);
-    return c ? { id, criterionId: c.id, label: LABELS[id] ?? catalog?.get(id)?.name ?? c.title, state: STATE[c.status] ?? 'planned', title: c.title, ai: AI_POWERED.has(id) } : null;
+    return c ? { id, criterionId: c.id, label: LABELS[id] ?? catalog?.get(id)?.name ?? c.title, state: stateOf(c), title: c.title, ai: AI_POWERED.has(id) } : null;
   };
   const pillars = [];
   for (const p of PILLARS) {
@@ -91,7 +93,7 @@ export function platformView(opp, catalog) {
     }
   }
   const all = pillars.flatMap((p) => (p.groups ? p.groups.flatMap((g) => g.items) : p.rows));
-  const counts = { done: 0, progress: 0, planned: 0, missed: 0 };
+  const counts = { done: 0, demo: 0, progress: 0, planned: 0, missed: 0 };
   for (const x of all) counts[x.state] += 1;
   return { pillars, counts, total: all.length };
 }

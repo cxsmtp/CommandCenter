@@ -8,18 +8,21 @@ import PptxGenJS from 'pptxgenjs';
 import { CRITERION_STATUS, SESSION_TYPES, progressOf } from './opportunities.js';
 import { platformView } from './platform.js';
 
-const INK = '2A1C13';
-const PAPER = 'FBF7F0';
-const BRASS = 'B08D57';
-const MUTED = '7D6754';
-const LINE = 'DCCAB2';
-const STATUS_COLOR = { met: '4F6B3A', not_met: '8C2A1E', in_progress: 'A8742A', not_started: '8A8F96', na: '8A8F96' };
-const HEAD = 'Georgia';
-const BODY = 'Calibri';
+// Every slide in the platform slide's own look: deep violet, white, the orange-to-violet accent.
+const INK = 'FFFFFF';
+const PAPER = '140920';
+const PANEL = '1D1030';
+const BRASS = 'F25928';
+const MUTED = 'B9B0CC';
+const LINE = '3A2352';
+const STATUS_COLOR = { met: '3CCF8E', not_met: '8A8197', in_progress: 'F5C518', not_started: '9E94B8', na: '8A8197' };
+const HEAD = 'Arial';
+const BODY = 'Arial';
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
 
-export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Command Center', catalog = null }) {
+export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Command Center', catalog = null, flow = null }) {
   const pptx = new PptxGenJS();
+  pageNo = 1;
   pptx.layout = 'LAYOUT_WIDE'; // 13.33 × 7.5 in
   pptx.title = `${opp.customer} — POV results`;
   pptx.company = org;
@@ -32,13 +35,16 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     slide.background = { color: PAPER };
     slide.addText(String(kicker ?? '').toUpperCase(), { x: 0.6, y: 0.35, w: 12, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 4 });
     slide.addText(title, { x: 0.6, y: 0.62, w: 12, h: 0.7, fontFace: HEAD, fontSize: 30, color: INK });
-    slide.addShape(pptx.ShapeType.line, { x: 0.6, y: 1.35, w: 1.2, h: 0, line: { color: BRASS, width: 1 } });
-    slide.addText(`${opp.customer} · ${org}`, { x: 0.6, y: 7.0, w: 8, h: 0.3, fontFace: BODY, fontSize: 9, color: MUTED });
+    slide.addShape(pptx.ShapeType.line, { x: 0.6, y: 1.35, w: 1.0, h: 0, line: { color: BRASS, width: 2.25 } });
+    slide.addShape(pptx.ShapeType.line, { x: 1.6, y: 1.35, w: 1.0, h: 0, line: { color: '8C3DF8', width: 2.25 } });
+    footer(pptx, slide, opp.customer);
     return slide;
   };
 
   // 1 — The platform slide, as designed, with only this POV's engines and their status
   platformSlide(pptx, platformView(opp, catalog));
+  // 2 — The integration flow: the customer's tools stage by stage, and what Checkmarx One adds at each
+  if (flow?.hasAny) flowSlide(pptx, flow, opp.customer);
 
   // 2 — The answer
   const answer = page(p.percent === 100 ? 'Every success criterion completed successfully' : `${p.met} of ${p.total} success criteria completed successfully`, `${opp.customer} · ${day(opp.startDate)} – ${day(opp.endDate)}${owner?.name ? ` · ${owner.name}` : ''}`);
@@ -50,7 +56,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   ];
   figures.forEach(([v, l], i) => {
     const x = 0.6 + i * 3.1;
-    answer.addShape(pptx.ShapeType.rect, { x, y: 1.8, w: 2.9, h: 1.7, fill: { color: 'FFFFFF' }, line: { color: LINE, width: 0.75 } });
+    answer.addShape(pptx.ShapeType.rect, { x, y: 1.8, w: 2.9, h: 1.7, fill: { color: PANEL }, line: { color: LINE, width: 0.75 } });
     answer.addText(v, { x, y: 1.95, w: 2.9, h: 0.9, fontFace: HEAD, fontSize: 40, color: INK, align: 'center' });
     answer.addText(l.toUpperCase(), { x, y: 2.9, w: 2.9, h: 0.4, fontFace: BODY, fontSize: 10, color: MUTED, align: 'center', charSpacing: 2 });
   });
@@ -60,7 +66,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   const rows = [...(opp.criteria ?? [])].sort((a, b) => String(catLabel[a.category] ?? 'zz').localeCompare(String(catLabel[b.category] ?? 'zz')));
   for (let i = 0; i < rows.length; i += 11) {
     const slide = page('Success criteria', `Success criteria ${rows.length > 11 ? `${Math.floor(i / 11) + 1} of ${Math.ceil(rows.length / 11)}` : ''}`);
-    const head = ['Group', 'Criterion', 'Status', 'Evidence'].map((t) => ({ text: t.toUpperCase(), options: { bold: false, color: MUTED, fontSize: 9, charSpacing: 2, fill: { color: PAPER } } }));
+    const head = ['Group', 'Criterion', 'Status', 'Evidence'].map((t) => ({ text: t.toUpperCase(), options: { bold: false, color: MUTED, fontSize: 9, charSpacing: 2, fill: { color: PANEL } } }));
     const body = rows.slice(i, i + 11).map((c) => [
       { text: catLabel[c.category] ?? 'Custom', options: { color: MUTED, fontSize: 10 } },
       { text: `${c.title}${c.priority === 'nice' ? ' (nice to have)' : ''}`, options: { color: INK, fontSize: 11 } },
@@ -116,6 +122,9 @@ const SYMBOL = 'Segoe UI Symbol';
 const DIM = 'B9B0CC';
 const MARK = {
   done: { glyph: '✓', color: '3CCF8E' },
+  demo: { glyph: '▶', color: '3CCF8E' },
+  seen: { glyph: '●', color: '5CE1FF' },
+  uses: { glyph: '', color: 'B9B0CC' },
   progress: { glyph: '◷', color: 'F5C518' },
   planned: { glyph: '◷', color: '9E94B8' },
   missed: { glyph: '✕', color: '8A8197' },
@@ -223,6 +232,7 @@ function platformSlide(pptx, view) {
   slide.addText(
     [
       { text: '✓', options: { fontFace: SYMBOL, color: MARK.done.color, bold: true } }, { text: ' Completed successfully     ', options: { color: DIM } },
+      { text: '▶', options: { fontFace: SYMBOL, color: MARK.demo.color, bold: true } }, { text: ' Demonstrated by the SE     ', options: { color: DIM } },
       { text: '◷', options: { fontFace: SYMBOL, color: MARK.progress.color, bold: true } }, { text: ' In progress     ', options: { color: DIM } },
       { text: '◷', options: { fontFace: SYMBOL, color: MARK.planned.color, bold: true } }, { text: ' Planned', options: { color: DIM } },
     ],
@@ -231,4 +241,63 @@ function platformSlide(pptx, view) {
   slide.addShape(pptx.ShapeType.rect, { x: 0, y: Y(669), w: 13.333, h: Y(60), fill: { color: VIOLET }, line: { color: VIOLET } });
   slide.addText('Checkmarx', { x: X(52), y: Y(686), w: X(200), h: Y(26), fontFace: FONT, fontSize: 11, bold: true, color: 'FFFFFF', margin: 0, valign: 'middle' });
   slide.addText('1', { x: X(1240), y: Y(686), w: X(50), h: Y(26), fontFace: FONT, fontSize: 8, color: 'FFFFFF', margin: 0, valign: 'middle', align: 'right' });
+}
+
+let pageNo = 1;
+/** The violet band at the foot of every slide, with the page number. */
+function footer(pptx, slide, customer) {
+  pageNo += 1;
+  slide.addShape(pptx.ShapeType.rect, { x: 0, y: Y(669), w: 13.333, h: Y(60), fill: { color: VIOLET }, line: { color: VIOLET } });
+  slide.addText('Checkmarx', { x: X(52), y: Y(686), w: X(200), h: Y(26), fontFace: FONT, fontSize: 11, bold: true, color: 'FFFFFF', margin: 0, valign: 'middle' });
+  slide.addText(`${customer} · Proof of Value`, { x: X(466), y: Y(686), w: X(400), h: Y(26), fontFace: FONT, fontSize: 8, color: 'E8E0FF', margin: 0, valign: 'middle', align: 'center' });
+  slide.addText(String(pageNo), { x: X(1240), y: Y(686), w: X(50), h: Y(26), fontFace: FONT, fontSize: 8, color: 'FFFFFF', margin: 0, valign: 'middle', align: 'right' });
+}
+
+// ——— The integration flow slide ———
+function flowSlide(pptx, flow, customer) {
+  const slide = pptx.addSlide();
+  slide.background = { color: BG };
+  slide.addText(`${customer} · From code to cloud`.toUpperCase(), { x: X(60), y: Y(30), w: X(1200), h: Y(22), fontFace: FONT, fontSize: 10, bold: true, color: 'F25928', charSpacing: 2, margin: 0 });
+  slide.addText(`Where Checkmarx One works in ${customer}’s flow`, { x: X(60), y: Y(54), w: X(1210), h: Y(52), fontFace: FONT, fontSize: 26, color: 'FFFFFF', margin: 0 });
+  slide.addShape(pptx.ShapeType.line, { x: X(60), y: Y(114), w: X(100), h: 0, line: { color: 'F25928', width: 2.25 } });
+  slide.addShape(pptx.ShapeType.line, { x: X(160), y: Y(114), w: X(100), h: 0, line: { color: '8C3DF8', width: 2.25 } });
+  const colours = ['F25928', 'E0477A', 'C13FB4', '8F3EE6', '6B34FD'];
+  const n = flow.stages.length;
+  const gap = 18;
+  const w = (1212 - gap * (n - 1)) / n;
+  const top = 134;
+  const h = 448;
+  flow.stages.forEach((st, i) => {
+    const x = 60 + i * (w + gap);
+    const c = colours[i];
+    slide.addShape(pptx.ShapeType.roundRect, { x: X(x), y: Y(top), w: X(w), h: Y(h), rectRadius: 0.08, fill: { color: mix(BG, c, 0.08) }, line: { color: mix(BG, c, st.empty ? 0.25 : 0.55), width: 1 } });
+    slide.addShape(pptx.ShapeType.rect, { x: X(x + 10), y: Y(top), w: X(w - 20), h: Y(3), fill: { color: c }, line: { color: c } });
+    slide.addText([{ text: `0${i + 1}  `, options: { color: c, bold: true, fontSize: 9 } }, { text: st.title, options: { color: 'FFFFFF', bold: true, fontSize: 14 } }], { x: X(x + 10), y: Y(top + 10), w: X(w - 20), h: Y(24), fontFace: FONT, margin: 0 });
+    slide.addText(st.sub, { x: X(x + 10), y: Y(top + 34), w: X(w - 20), h: Y(16), fontFace: FONT, fontSize: 8.5, color: DIM, margin: 0 });
+    const runs = (items) => items.flatMap((t, k) => [...(k ? [{ text: '   ', options: {} }] : []), { text: t.label, options: { color: ['done', 'demo'].includes(t.state) ? 'FFFFFF' : DIM, bold: ['done', 'demo'].includes(t.state) } }, ...(t.ai ? [{ text: ' ✦', options: { fontFace: SYMBOL, color: SPARKLE } }] : []), ...(MARK[t.state]?.glyph ? [{ text: ` ${MARK[t.state].glyph}`, options: { fontFace: SYMBOL, color: MARK[t.state].color, bold: true } }] : [])]);
+    slide.addText('CUSTOMER’S TOOLS', { x: X(x + 10), y: Y(top + 58), w: X(w - 20), h: Y(14), fontFace: FONT, fontSize: 7.5, color: DIM, charSpacing: 2, margin: 0 });
+    slide.addText(st.tools.length ? runs(st.tools) : [{ text: '—', options: { color: DIM } }], { x: X(x + 10), y: Y(top + 74), w: X(w - 20), h: Y(86), fontFace: FONT, fontSize: 9, valign: 'top', margin: 0, paraSpaceAfter: 2 });
+    slide.addText('CHECKMARX ONE', { x: X(x + 10), y: Y(top + 166), w: X(w - 20), h: Y(14), fontFace: FONT, fontSize: 7.5, color: 'B9A2FF', charSpacing: 2, margin: 0 });
+    slide.addText(st.engines.length ? runs(st.engines) : [{ text: '—', options: { color: DIM } }], { x: X(x + 10), y: Y(top + 182), w: X(w - 20), h: Y(110), fontFace: FONT, fontSize: 9, valign: 'top', margin: 0 });
+    slide.addShape(pptx.ShapeType.line, { x: X(x + 10), y: Y(top + 298), w: X(w - 20), h: 0, line: { color: LINE, width: 0.75 } });
+    const val = [];
+    if (st.metric) val.push({ text: Number(st.metric.value).toLocaleString('en-US'), options: { fontSize: 20, color: c, breakLine: true } }, { text: st.metric.label.toUpperCase(), options: { fontSize: 7, color: DIM, breakLine: true } });
+    for (const v of st.value) val.push({ text: v, options: { fontSize: 8.5, color: 'DDD6EA', breakLine: true } });
+    if (!val.length && st.empty) val.push({ text: 'Not in this POV’s scope.', options: { fontSize: 8.5, color: DIM } });
+    slide.addText(val, { x: X(x + 10), y: Y(top + 304), w: X(w - 20), h: Y(h - 312), fontFace: FONT, valign: 'top', margin: 0, paraSpaceAfter: 3 });
+    if (i < n - 1) slide.addShape(pptx.ShapeType.rightArrow, { x: X(x + w + 2), y: Y(top + h / 2 - 6), w: X(gap - 4), h: Y(12), fill: { color: '8C3DF8' }, line: { color: '8C3DF8' } });
+  });
+  slide.addText('↺  Findings, AI fixes and tickets flow back to the developer', { x: X(60), y: Y(top + h + 8), w: X(1212), h: Y(18), fontFace: FONT, fontSize: 9, color: DIM, align: 'center', margin: 0 });
+  slide.addText(
+    [
+      { text: '✓', options: { fontFace: SYMBOL, color: MARK.done.color, bold: true } }, { text: ' Completed successfully    ', options: { color: DIM } },
+      { text: '▶', options: { fontFace: SYMBOL, color: MARK.demo.color, bold: true } }, { text: ' Demonstrated by the SE    ', options: { color: DIM } },
+      { text: '◷', options: { fontFace: SYMBOL, color: MARK.progress.color, bold: true } }, { text: ' In progress    ', options: { color: DIM } },
+      { text: '◷', options: { fontFace: SYMBOL, color: MARK.planned.color, bold: true } }, { text: ' Planned    ', options: { color: DIM } },
+      { text: '●', options: { fontFace: SYMBOL, color: MARK.seen.color } }, { text: ' Seen in the tenant    ', options: { color: DIM } },
+      { text: '✦', options: { fontFace: SYMBOL, color: SPARKLE } }, { text: ' AI-powered', options: { color: DIM } },
+    ],
+    { x: X(60), y: Y(top + h + 30), w: X(1000), h: Y(16), fontFace: FONT, fontSize: 8, margin: 0 },
+  );
+  footer(pptx, slide, customer);
 }

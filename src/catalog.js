@@ -26,7 +26,7 @@ export const CATEGORIES = [
   ['scm', 'Source code management'],
   ['ci', 'CI/CD & build'],
   ['cli', 'CLI, API & portal'],
-  ['ide', 'IDE & developer'],
+  ['ide', 'IDEs & AI coding agents'],
   ['tracking', 'Defect tracking & feedback'],
   ['platform', 'Platform & access'],
 ];
@@ -101,6 +101,13 @@ export const DEFAULT_CATALOG = [
     ['visual-studio', 'Visual Studio extension', ['visual studio']],
     ['eclipse', 'Eclipse plugin', ['eclipse']],
   ].map(([id, name, origins]) => c(id, 'ide', name, `Checkmarx One ${name}`, { origins, keywords: origins }, { proof: `In ${name.split(' ')[0]}, show results of the project and a scan started from the IDE.`, tech: `Scans whose origin names ${name.split(' ')[0]} (GET /api/scans). Browsing results alone leaves no scan: confirmed by the SE then.` })),
+  ...[
+    ['copilot', 'GitHub Copilot', ['copilot'], ['copilot', 'github copilot']],
+    ['cursor', 'Cursor', ['cursor'], ['cursor']],
+    ['claude-code', 'Claude Code', ['claude', 'claude-code'], ['claude code', 'claude']],
+    ['windsurf', 'Windsurf', ['windsurf'], ['windsurf']],
+    ['kiro', 'Kiro', ['kiro'], ['kiro']],
+  ].map(([id, name, origins, keywords]) => c(id, 'ide', `${name} (AI coding agent)`, `Checkmarx One Developer Assist in ${name}`, { origins, keywords }, { proof: `In ${name}, show Developer Assist (or the Checkmarx MCP server) catching a vulnerability in AI-written code and the fix it proposes.`, tech: `Scans whose origin or user agent names ${name} (GET /api/scans). Prevention in the agent alone leaves no scan: confirmed by the SE then.` })),
   // ——— Tracking ———
   c('jira', 'tracking', 'Jira ticketing', 'Feedback Apps — Jira', { keywords: ['jira'] }, { proof: 'Create Jira tickets from findings (by hand and by the feedback app’s rules); show them closing when fixed.', tech: MANUAL }),
   c('azure-boards', 'tracking', 'Azure Boards', 'Feedback Apps — Azure Boards', { keywords: ['azure boards', 'work item'] }, { proof: 'Create work items from findings.', tech: MANUAL }),
