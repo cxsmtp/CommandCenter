@@ -107,6 +107,26 @@ export function slimScan(s) {
   };
 }
 
+/**
+ * What AI Triage and Remediation could act on in one scan summary: SAST and SCA results by state (the engines they
+ * support). To verify: to triage, 1 credit each; confirmed (and urgent): to fix, 3 credits each.
+ */
+export function aiStatesOf(summary) {
+  const out = { toVerify: 0, confirmed: 0, urgent: 0, notExploitable: 0, proposedNotExploitable: 0 };
+  for (const key of ['sastCounters', 'scaCounters']) {
+    for (const c of summary?.[key]?.stateCounters ?? []) {
+      const st = String(c?.state ?? '').toUpperCase();
+      const v = Number(c?.counter) || 0;
+      if (st === 'TO_VERIFY') out.toVerify += v;
+      else if (st === 'CONFIRMED') out.confirmed += v;
+      else if (st === 'URGENT') out.urgent += v;
+      else if (st === 'NOT_EXPLOITABLE') out.notExploitable += v;
+      else if (st === 'PROPOSED_NOT_EXPLOITABLE') out.proposedNotExploitable += v;
+    }
+  }
+  return out;
+}
+
 /** Results by severity from one scan summary (every engine's counters added up). */
 export function severityOf(summary) {
   const sev = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
@@ -165,12 +185,14 @@ async function latestFindings(client, projectIds) {
     const answer = await client.request('/api/scan-summary', { query: { 'scan-ids': ids } });
     for (const summary of Array.isArray(answer?.scansSummaries) ? answer.scansSummaries : []) {
       const pid = byScan.get(text(summary?.scanId, 80));
-      if (pid) byProject[pid] = { ...severityOf(summary), scanId: lastScans[pid].id, scanAt: lastScans[pid].at };
+      if (pid) byProject[pid] = { ...severityOf(summary), ...aiStatesOf(summary), scanId: lastScans[pid].id, scanAt: lastScans[pid].at };
     }
   });
   const totals = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const sev of Object.values(byProject)) for (const s of SEVERITIES) totals[s] += sev[s];
-  return { ...totals, total: SEVERITIES.reduce((n, s) => n + totals[s], 0), byProject };
+  const ai = { toVerify: 0, confirmed: 0, urgent: 0, notExploitable: 0, proposedNotExploitable: 0 };
+  for (const p of Object.values(byProject)) for (const k of Object.keys(ai)) ai[k] += p[k] ?? 0;
+  return { ...totals, total: SEVERITIES.reduce((n, s) => n + totals[s], 0), ai, byProject };
 }
 
 const quietly = async (fn) => {

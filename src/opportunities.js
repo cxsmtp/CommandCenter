@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { fail, text, dateOnly, httpUrl, email as cleanEmail, isoOrNull } from './db.js';
 import { deriveConnection } from './cxone/endpoints.js';
+import { cleanRates } from './value.js';
 
 export const STAGES = {
   discovery: 'Discovery',
@@ -323,6 +324,10 @@ function applyFields(opp, b) {
   if ('startDate' in b) set('startDate', dateOnly(b.startDate));
   if ('endDate' in b) set('endDate', dateOnly(b.endDate));
   if ('summary' in b) set('summary', text(b.summary, 4000));
+  if (b.valueRates && typeof b.valueRates === 'object') {
+    opp.valueRates = cleanRates(b.valueRates);
+    changed.push('value rates');
+  }
   if ('povResult' in b && ['', 'successful', 'unsuccessful'].includes(b.povResult)) set('povResult', b.povResult);
   if (b.discovery && typeof b.discovery === 'object') {
     const d = { ...(opp.discovery ?? {}) };

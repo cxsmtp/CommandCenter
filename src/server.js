@@ -20,6 +20,8 @@ import { flowView } from './flow.js';
 import { Updater, RESTART_CODE } from './updates.js';
 import { Audit } from './audit.js';
 import { zip } from './zip.js';
+import { AiActions } from './ai-actions.js';
+import { valueOf, ratesFor, cleanRates, totalValue, VALUE_DEFAULTS } from './value.js';
 import { X509Certificate } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { criteriaForecast, creditsForecast, activityForecast, portfolioForecast } from './forecast.js';
@@ -55,6 +57,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const fullSettings = () => db.read('settings', {});
   const firstAdmin = users.ensureAdmin();
   const audit = new Audit(db);
+  const ai = new AiActions({ db });
+  const orgRates = () => ratesFor(db.read('settings', {}).valueRates ?? {});
+  const valueFor = (opp, live = opp.tenant ? monitor.live(opp.id) : null) => (live?.summary ? valueOf({ credits: monitor.snapshot(opp.id)?.credits, summary: live.summary, backlog: monitor.snapshot(opp.id)?.findings?.ai ?? null, ledger: ai.ledger(opp.id), rates: ratesFor(db.read('settings', {}).valueRates ?? {}, opp.valueRates ?? {}) }) : null);
   const updater = new Updater({ dataDir, currentVersion: VERSION, ...(updaterOptions ?? {}) });
   users.sessionMs = (settings().security.sessionHours || 12) * 3600e3;
   const restartServer = (actor, why) => {
@@ -164,6 +169,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       muted,
       mute: opp.mute,
       nextTask,
+      value: live?.summary ? valueFor(opp, live) : null,
+      creditPool: opp.tenant ? ai.pool(opp) : null,
       forecast: {
         criteria: ['pov', 'completed'].includes(opp.stage) ? criteriaForecast(opp, now) : null,
         credits: live?.summary ? creditsForecast(live.summary, monitor.history(opp.id), now) : null,
@@ -205,6 +212,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       creditsUsed30d: live.some((r) => r.live.summary.credits?.used30d != null) ? sum((s) => s.credits?.used30d) : null,
       criteriaMet: rows.reduce((n, r) => n + r.progress.met, 0),
       criteriaTotal: rows.reduce((n, r) => n + r.progress.total, 0),
+      value: totalValue(rows.map((r) => r.value).filter(Boolean), orgRates().currency),
     };
     const since = Date.parse(q.get('since') ?? '') || 0;
     const events = list
@@ -385,7 +393,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
 
     // Settings
-    if (route === 'GET /settings') return send(res, 200, { settings: settings(), smtp: mailer.settings, roles: { matrix: fullSettings().roles ?? DEFAULT_MATRIX, permissions: PERMISSIONS, labels: Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.label])) } });
+    if (route === 'GET /settings') return send(res, 200, { valueRates: orgRates(), valueDefaults: VALUE_DEFAULTS, settings: settings(), smtp: mailer.settings, roles: { matrix: fullSettings().roles ?? DEFAULT_MATRIX, permissions: PERMISSIONS, labels: Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.label])) } });
     if (route === 'PUT /settings') {
       need(user, 'settings.manage');
       const b = await readBody(req);
@@ -418,6 +426,14 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
       audit.record(user, 'settings', `Sent a test email to ${to}`);
       return send(res, 200, { ok: true, to });
+    }
+    if (route === 'PUT /settings/value') {
+      need(user, 'settings.manage');
+      const all = fullSettings();
+      all.valueRates = cleanRates(await readBody(req));
+      db.write('settings', all);
+      audit.record(user, 'settings', 'Changed the value rates (minutes to triage and fix, hourly rate, credit price, currency)', { rates: all.valueRates });
+      return send(res, 200, { rates: orgRates() });
     }
     if (route === 'PUT /settings/roles') {
       need(user, 'roles.manage');
@@ -655,6 +671,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
       if (!sub && m === 'DELETE') {
         opps.remove(user, id, s);
+        ai.forget(id);
         monitor.forget(id);
         return send(res, 200, { ok: true });
       }
@@ -733,6 +750,64 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (KINDS.has(sub) && parts[3] && m === 'DELETE') {
         opps.removeItem(user, id, sub, parts[3], s);
         return done();
+      }
+      // ——— AI actions and credits ———
+      if (sub === 'ai') {
+        const opp = viewOpp(user, id);
+        const raw = opps.get(id);
+        const canEdit = opps.canEdit(user, raw, s);
+        const canRun = canEdit && users.can(user, 'ai.run', s);
+        const canAllocate = users.can(user, 'credits.allocate', s) && (user.role === 'admin' || users.isBelow(user, raw.ownerId));
+        const state = () => ({ pool: ai.pool(raw), ledger: [...ai.ledger(id)].reverse().slice(0, 200).map(({ alternateIds, ...e }) => e), value: valueFor(raw), rates: ratesFor(db.read('settings', {}).valueRates ?? {}, raw.valueRates ?? {}), ownRates: raw.valueRates ?? {}, orgRates: orgRates(), canRun, canAllocate, canEditRates: canEdit, hasTenant: Boolean(raw.tenant), ai: monitor.snapshot(id)?.ai ?? null, backlog: monitor.snapshot(id)?.findings?.ai ?? null });
+        const loaded = async (force = false) => {
+          if (!raw.tenant) throw fail(400, 'Connect a Checkmarx One tenant first.');
+          const projects = monitor.snapshot(id)?.projects?.list ?? [];
+          if (!projects.length) throw fail(409, 'The tenant has not been read yet, or has no projects: refresh it first.');
+          return ai.findings(raw, opps.connection(id), projects, { force });
+        };
+        const tenantLeft = async () => {
+          try {
+            const info = await new CxClient(opps.connection(id)).request('/api/credits/info', { retries: 1 });
+            return Number.isFinite(Number(info?.available)) ? Number(info.available) : null;
+          } catch {
+            return null;
+          }
+        };
+        if (!parts[3] && m === 'GET') return send(res, 200, state());
+        if (parts[3] === 'pool' && m === 'PUT') {
+          if (!canAllocate) throw fail(403, 'Only a manager of this POV’s SE may set its credit pool (Set the credit pool of POVs in their team).');
+          const b = await readBody(req);
+          const size = b.size === null || b.size === '' ? null : Math.trunc(Number(b.size));
+          if (size !== null && !(size >= 0 && size <= 1_000_000)) throw fail(400, 'The pool is a number of credits.');
+          opps.mutate({ ...user, role: 'admin' }, id, s, (o) => {
+            o.creditPool = size === null ? null : { size, by: user.name, at: new Date().toISOString() };
+            (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: size === null ? 'Removed the credit pool' : `Set the credit pool to ${size} credits` });
+          });
+          audit.record(user, 'credits', `${raw.customer}: credit pool ${size === null ? 'removed' : `set to ${size}`}`, { oppId: id });
+          notify({ id });
+          return send(res, 200, state());
+        }
+        if (parts[3] === 'findings' && m === 'POST') {
+          const b = await readBody(req);
+          const l = await loaded(Boolean(b.force));
+          return send(res, 200, { ...state(), loaded: { readAt: l.readAt, projects: l.projects, errors: l.errors, total: l.findings.length } });
+        }
+        if ((parts[3] === 'plan' || parts[3] === 'run') && m === 'POST') {
+          if (!canRun) throw fail(403, 'Your role may not run AI actions on this POV.');
+          const b = await readBody(req);
+          const l = await loaded();
+          const plan = ai.plan(raw, l, { action: b.action, projectIds: b.projectIds ?? [], severities: b.severities ?? [], tenantAvailable: await tenantLeft() });
+          const { selected, ...shown } = plan;
+          if (parts[3] === 'plan') return send(res, 200, { plan: shown });
+          if (!b.confirm || Number(b.credits) !== plan.credits) throw fail(409, `Confirm the run: it costs ${plan.credits} credits.`);
+          const result = await ai.run(raw, opps.connection(id), plan, user);
+          const what = plan.action === 'triage' ? 'AI Triage' : 'AI Remediation';
+          audit.record(user, 'credits', `${raw.customer}: ${what} on ${result.sent} finding${result.sent === 1 ? '' : 's'} (${plan.severities.join(', ').toLowerCase()}), ${result.charged} credits`, { oppId: id, failed: result.failed, jobs: result.jobs });
+          opps.mutate({ ...user, role: 'admin' }, id, s, (o) => (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Ran ${what} on ${result.sent} finding${result.sent === 1 ? '' : 's'}: ${result.charged} credits${result.failed ? `, ${result.failed} failed` : ''}` }));
+          monitor.refresh(id, { force: true }).catch(() => {});
+          notify({ id });
+          return send(res, 200, { result, ...state() });
+        }
       }
       if (sub === 'results' && m === 'GET' && url.searchParams.get('final')) {
         const opp = viewOpp(user, id);
@@ -860,6 +935,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       generatedAt: new Date().toISOString(),
       summary: opp.summary ?? '',
       progress: progressOf(opp),
+      value: valueFor(raw),
       platform: platformView(opp, catalog),
       flow: flowView(opp, catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null),
       criteria,

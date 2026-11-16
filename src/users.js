@@ -21,6 +21,8 @@ export const PERMISSIONS = {
   'opps.edit.team': 'Edit the opportunities of people below them',
   'opps.reassign': 'Reassign an opportunity to someone else below them',
   'tenant.logs': 'Download scan logs and troubleshooting bundles',
+  'ai.run': 'Run AI Triage and AI Remediation on a POV tenant (within its credit pool)',
+  'credits.allocate': 'Set the credit pool of POVs in their team',
   'mail.send': 'Send email from CommandCenter',
   'users.manage': 'Add and edit people below them',
   'catalog.manage': 'Edit the capability catalogue and its Checkmarx One mapping',
@@ -29,10 +31,10 @@ export const PERMISSIONS = {
 };
 
 export const DEFAULT_MATRIX = {
-  vp: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'mail.send', 'users.manage', 'catalog.manage'],
-  leader: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'mail.send', 'users.manage', 'catalog.manage'],
-  team_lead: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'mail.send', 'users.manage'],
-  associate: ['opps.create', 'tenant.logs', 'mail.send'],
+  vp: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage'],
+  leader: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage'],
+  team_lead: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage'],
+  associate: ['opps.create', 'tenant.logs', 'ai.run', 'mail.send'],
 };
 
 const SESSION_MS = 12 * 3600e3;

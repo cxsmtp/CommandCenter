@@ -330,3 +330,63 @@ test('a criterion demonstrated by the SE, with a short video that plays in the r
   assert.match(page.body, /data:video\/mp4;base64,/, 'the video travels inside the page');
   assert.match(page.body, /controlsList/);
 });
+
+test('mass AI triage and remediation, under the POV’s credit pool, never twice', async () => {
+  const P = `/api/opportunities/${ids.alpha}/ai`;
+  // An earlier test narrowed the associate role; give it back what this needs.
+  const { DEFAULT_MATRIX } = await import('../src/users.js');
+  await call('admin', '/api/settings/roles', { method: 'PUT', body: { matrix: DEFAULT_MATRIX } });
+  // Bring the tenant's read up to date, then load its findings live.
+  await call('se1', `/api/opportunities/${ids.alpha}/refresh`, { method: 'POST' });
+  await until(async () => !(await call('se1', `/api/opportunities/${ids.alpha}`)).body.row.live.refreshing);
+  const loaded = (await call('se1', `${P}/findings`, { method: 'POST', body: { force: true } })).body;
+  assert.ok(loaded.loaded?.total > 0, JSON.stringify(loaded).slice(0, 300));
+  // No pool yet: a plan says so, and nothing can run.
+  const np = await call('se1', `${P}/plan`, { method: 'POST', body: { action: 'triage', severities: ['HIGH'] } });
+  const noPool = np.body.plan;
+  assert.ok(noPool, JSON.stringify(np));
+  assert.equal(noPool.ok, false);
+  assert.match(noPool.blockers.join(' '), /No credit pool/);
+  // An associate may not set the pool; their team lead may.
+  assert.equal((await call('se1', `${P}/pool`, { method: 'PUT', body: { size: 40 } })).status, 403);
+  assert.equal((await call('tl', `${P}/pool`, { method: 'PUT', body: { size: 200 } })).body.pool.left, 200);
+  const plan = (await call('se1', `${P}/plan`, { method: 'POST', body: { action: 'triage', severities: ['CRITICAL', 'HIGH'] } })).body.plan;
+  assert.ok(plan.findings > 0);
+  assert.equal(plan.credits, plan.findings);
+  // A run must be confirmed with its cost.
+  assert.equal((await call('se1', `${P}/run`, { method: 'POST', body: { action: 'triage', severities: ['CRITICAL', 'HIGH'] } })).status, 409);
+  assert.equal(plan.ok, true, plan.blockers.join(' | '));
+  {
+    const ran = (await call('se1', `${P}/run`, { method: 'POST', body: { action: 'triage', severities: ['CRITICAL', 'HIGH'], confirm: true, credits: plan.credits } })).body;
+    assert.equal(ran.result.sent, plan.findings);
+    assert.equal(ran.result.charged, plan.credits);
+    assert.equal(ran.pool.spent, plan.credits);
+    assert.ok(ran.ledger[0].jobId.startsWith('tri-'));
+    // The same findings are not sent again.
+    const again = (await call('se1', `${P}/plan`, { method: 'POST', body: { action: 'triage', severities: ['CRITICAL', 'HIGH'] } })).body.plan;
+    assert.equal(again.findings, 0);
+    // Remediation takes the confirmed ones, 3 credits each, and stops at the pool.
+    const rem = (await call('se1', `${P}/plan`, { method: 'POST', body: { action: 'remediation', severities: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] } })).body.plan;
+    assert.equal(rem.credits, rem.findings * 3);
+    assert.ok(rem.findings > 0, 'triage confirmed some findings');
+    if (rem.credits > 200 - plan.credits) assert.match(rem.blockers.join(' '), /credit pool has/);
+    else assert.equal(rem.ok, true);
+  }
+  const st = (await call('tl', P)).body;
+  assert.ok(st.value.rates.triageMinutes > 0);
+  assert.ok(st.value.hours.total >= 0);
+});
+
+test('value: hours and money saved from the AI actions, at the rates set', async () => {
+  const { valueOf, ratesFor } = await import('../src/value.js');
+  const rates = ratesFor({ hourlyRate: 100, creditPrice: 2 }, { triageMinutes: 30 });
+  const v = valueOf({ credits: { available: 100, used: 50, total: 150, used30d: 50, actions: { triage: 20, remediation: 5 } }, summary: { fusion7d: 7 }, backlog: { toVerify: 10, confirmed: 4 }, rates });
+  // 20 × 30 min + 5 × 120 min = 20 h; at 100 an hour = 2,000; 50 credits at 2 = 100; 20× return.
+  assert.equal(v.hours.total, 20);
+  assert.equal(v.value, 2000);
+  assert.equal(v.cost, 100);
+  assert.equal(v.roi, 20);
+  assert.equal(v.credits.fusion, 15, '50 used − 20 triage − 15 remediation');
+  assert.equal(v.backlog.credits, 22);
+  assert.equal(v.backlog.covered, true);
+});

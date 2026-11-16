@@ -47,6 +47,26 @@ export function seedTenant(name, { projects = 8, scans = 20, seed = 1 } = {}) {
 export function startMock({ tenants = {}, port = 0, rejectTenants = [] } = {}) {
   const data = new Map(Object.entries(tenants));
   const calls = [];
+  /** A scan's SAST and SCA results, made once from the project's severity counts and kept (their states change). */
+  function resultsOf(t, scanId, pid) {
+    t.results ??= new Map();
+    t.resultIndex ??= new Map();
+    if (!t.results.has(scanId)) {
+      const sev = t.sev[pid] ?? {};
+      const rows = [];
+      let n = 0;
+      for (const [severity, count] of Object.entries(sev)) {
+        for (let i = 0; i < count; i += 1) {
+          n += 1;
+          const row = { type: n % 4 === 0 ? 'sca' : 'sast', alternateId: `${scanId}-${severity[0]}${i}`, similarityId: `${pid}-${severity}-${i}`, severity, state: n % 5 === 0 ? 'CONFIRMED' : n % 7 === 0 ? 'NOT_EXPLOITABLE' : 'TO_VERIFY', data: { queryName: ['SQL_Injection', 'Reflected_XSS', 'Path_Traversal', 'Hardcoded_Password'][n % 4] }, n };
+          rows.push(row);
+          t.resultIndex.set(row.alternateId, row);
+        }
+      }
+      t.results.set(scanId, rows);
+    }
+    return t.results.get(scanId);
+  }
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     calls.push(`${req.method} ${url.pathname}`);
@@ -92,9 +112,43 @@ export function startMock({ tenants = {}, port = 0, rejectTenants = [] } = {}) {
       const scansSummaries = url.searchParams.getAll('scan-ids').map((scanId) => {
         const pid = t.scans.find((s) => s.id === scanId)?.projectId ?? scanId.replace(/-old$/, '');
         const sev = t.sev[pid] ?? {};
-        return { scanId, sastCounters: { severityCounters: Object.entries(sev).map(([severity, counter]) => ({ severity, counter })) } };
+        const rows = resultsOf(t, scanId, pid);
+        const states = (type) => Object.entries(rows.filter((r) => r.type === type).reduce((m, r) => ((m[r.state] = (m[r.state] ?? 0) + 1), m), {})).map(([state, counter]) => ({ state, counter }));
+        return { scanId, sastCounters: { severityCounters: Object.entries(sev).map(([severity, counter]) => ({ severity, counter })), stateCounters: states('sast') }, scaCounters: { severityCounters: [], stateCounters: states('sca') } };
       });
       return send(200, { scansSummaries, totalCount: scansSummaries.length });
+    }
+    if (url.pathname === '/api/results/' || url.pathname === '/api/results') {
+      const scanId = url.searchParams.get('scan-id');
+      const pid = t.scans.find((s) => s.id === scanId)?.projectId ?? String(scanId).replace(/-old$/, '');
+      const rows = resultsOf(t, scanId, pid);
+      const page = Number(url.searchParams.get('offset') ?? 0);
+      const size = Number(url.searchParams.get('limit') ?? 100);
+      return send(200, { results: rows.slice(page * size, page * size + size), totalCount: rows.length });
+    }
+    if ((url.pathname === '/api/ai-triage/triage' || url.pathname === '/api/remediation/remediate') && req.method === 'POST') {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        const body = JSON.parse(raw || '{}');
+        const ids = (body.buckets ?? []).flatMap((b) => b.resultIDs ?? []);
+        const triage = url.pathname.includes('triage');
+        if (t.credits) {
+          const cost = ids.length * (triage ? 1 : 3);
+          if (t.credits.info.available < cost) return send(402, { message: 'Not enough credits' });
+          t.credits.info.available -= cost;
+          t.credits.info.used += cost;
+        }
+        // Triage settles each finding: two in three confirmed, the rest proposed not exploitable.
+        for (const id of ids) {
+          const row = t.resultIndex?.get(id);
+          if (!row) continue;
+          if (triage) row.state = row.n % 3 === 0 ? 'PROPOSED_NOT_EXPLOITABLE' : 'CONFIRMED';
+        }
+        t.aiCalls = (t.aiCalls ?? 0) + 1;
+        return send(200, triage ? { published: true, triageID: `tri-${t.aiCalls}` } : { published: true, remediationJobId: `rem-${t.aiCalls}` });
+      });
+      return;
     }
     const realm = url.pathname.match(/^\/auth\/admin\/realms\/([^/]+)\/(users|events)$/);
     if (realm) {
