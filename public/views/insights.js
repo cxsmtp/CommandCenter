@@ -19,6 +19,8 @@ export async function renderInsights(main, { crumbs }) {
     rows.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td class="n">${g.povs}</td><td class="n">${g.running}</td><td>${bar(g.likely, g.atRisk, g.unlikely)}<div class="small muted">${g.likely} likely · ${g.atRisk} at risk · ${g.unlikely} unlikely</div></td><td class="n"><b>${fmt(g.expected)}</b></td>${rv.linked ? `<td class="n">${g.pipeline ? cur(g.pipeline) : '—'}</td>` : ''}<td class="n">${g.avgScore ?? '—'}</td><td class="n">${g.won} / ${g.lost}</td><td class="n ${g.critical ? 'bad-t' : ''}">${g.critical}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing yet.</td></tr>'
   }</tbody></table></div></section>`;
   const regions = [...new Set([...d.regions, ...d.tenantRegions])];
+  const BY = [['region', 'By region'], ['team', 'By team'], ['se', 'By SE'], ['tenant', 'By tenant region']];
+  const by = BY.some(([k]) => k === ui.by) ? ui.by : 'region';
   const rv = d.revenue;
   const cur = (n) => `${rv.currency === 'USD' ? '$' : `${rv.currency} `}${n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : fmt(n)}`;
   const revenueGroup = rv.linked
@@ -33,8 +35,6 @@ export async function renderInsights(main, { crumbs }) {
         ${bar(t.likely, t.atRisk, t.unlikely)}</div>
       <div class="ins-group g-forecast"><div class="ins-label">Forecast</div>
         <div class="ins-figs"><div><b>${fmt(t.expectedWins)}</b><span>expected wins of ${t.likely + t.atRisk + t.unlikely} POVs scored</span></div><div><b>${t.ending30}</b><span>end in 30 days</span></div><div><b>${fmt(t.ending30Expected)}</b><span>of those should win</span></div></div></div>
-      <div class="ins-group g-pipeline"><div class="ins-label">Pipeline</div>
-        <div class="ins-figs"><div><b>${t.open}</b><span>open</span></div><div><b>${t.running}</b><span>POVs running</span></div><div><b>${t.won}<small> / ${t.lost}</small></b><span>won / lost</span></div></div></div>
       ${revenueGroup}
       <div class="ins-group g-gaps"><div class="ins-label">Gaps</div>
         <div class="ins-figs"><div><b class="${t.critical ? 'bad-t' : 'ok-t'}">${t.critical}</b><span>critical gaps now</span></div></div></div>
@@ -48,11 +48,10 @@ export async function renderInsights(main, { crumbs }) {
       }</tbody></table></div></section>
     </div>
     <div class="stack" style="margin-top:16px">
-      ${rollup('By region', d.byRegion, 'the SE’s sales region')}
-      ${rollup('By team', d.byTeam, 'each team lead’s SEs')}
-      ${rollup('By SE', d.bySe)}
-      ${rollup('By tenant region', d.byTenantRegion, 'where the Checkmarx One tenant runs')}
+      <div class="seg roll-pick" role="group" aria-label="Group by">${BY.map(([k, l]) => `<button data-by="${k}" aria-pressed="${by === k}">${l}</button>`).join('')}</div>
+      ${rollup(BY.find(([k]) => k === by)[1], { region: d.byRegion, team: d.byTeam, se: d.bySe, tenant: d.byTenantRegion }[by])}
     </div>`;
+  for (const b of main.querySelectorAll('[data-by]')) b.addEventListener('click', () => ((ui.by = b.dataset.by), save(), document.dispatchEvent(new CustomEvent('cc:rerender'))));
   main.querySelector('#iRegion').addEventListener('change', (e) => {
     ui.region = e.target.value;
     save();

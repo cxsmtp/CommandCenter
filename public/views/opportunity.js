@@ -1,19 +1,18 @@
 // One opportunity, from discovery to the outcome: the micro view a manager drills into and the SE works in.
-import { $, $$, esc, fmt, api, state, can, ago, when, day, tc, toast, attempt, download, copy, openDialog, closeDialog, formData, HEALTH, sevBar, sevLegend, progressBar, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions } from '../core.js';
+import { $, $$, esc, fmt, api, state, can, ago, when, day, tc, toast, attempt, download, copy, openDialog, closeDialog, formData, HEALTH, sevBar, sevLegend, progressBar, ring, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, ask } from '../core.js';
 import { feed } from './dashboard.js';
 import { getCatalog, capabilityPicker } from './new-opportunity.js';
 
 const TABS = [
   ['overview', 'Overview'],
-  ['tenant', 'Live tenant'],
-  ['criteria', 'Success criteria'],
-  ['discovery', 'Discovery'],
-  ['sessions', 'Sessions'],
+  ['criteria', 'Criteria'],
+  ['tenant', 'Tenant'],
   ['notes', 'Notes & tasks'],
-  ['email', 'Stakeholders & email'],
-  ['report', 'Report'],
-  ['history', 'History'],
+  ['email', 'Customer'],
+  ['report', 'Results'],
 ];
+// Where the tabs that were folded into others now live.
+const MOVED = { discovery: 'email', sessions: 'notes', history: 'report' };
 let current = null; // the detail last read
 let catalog = null;
 
@@ -29,46 +28,44 @@ export async function renderOpportunity(main, id, tab, { crumbs, drawer = null }
   catalog = cat;
   const o = d.opportunity;
   const r = d.row;
-  const active = TABS.some(([k]) => k === tab) ? tab : 'overview';
+  const active = TABS.some(([k]) => k === (MOVED[tab] ?? tab)) ? MOVED[tab] ?? tab : 'overview';
   crumbs(`<a href="#/dashboard">Portfolio</a> <span class="muted">/</span> <span class="chip" style="background:${tc(r.colour)}"></span> <b>${esc(o.customer)}</b>`);
-  const stages = Object.entries(state.meta.stages).filter(([k]) => k !== 'on_hold');
-  const at = stages.findIndex(([k]) => k === o.stage);
+  const next = d.canEdit ? nextAction(d) : null;
+  const links = [o.salesforceUrl ? `<a href="${esc(o.salesforceUrl)}" target="_blank" rel="noopener noreferrer">Salesforce ↗</a>` : '', o.sharepointUrl ? `<a href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">SharePoint ↗</a>` : '', o.tenant ? `<a href="${esc(o.tenant.baseUrl)}" target="_blank" rel="noopener noreferrer">Checkmarx One ↗</a>` : ''].filter(Boolean);
   main.innerHTML = `
-    <div class="opp-head">
-      <div>
-        <h1>${esc(o.customer)} ${stageBadge(o.stage)} ${daysBadge(r)} ${r.muted ? '<span class="badge">Muted</span>' : ''}</h1>
-        <div class="meta">
-          ${o.name !== o.customer ? `<span>${esc(o.name)}</span>` : ''}
-          <span>SE <b>${esc(r.owner.name)}</b>${r.managers.length ? ` → ${r.managers.map((m) => esc(m.name)).join(' → ')}` : ''}</span>
-          ${o.startDate || o.endDate ? `<span>POV ${day(o.startDate)} – ${day(o.endDate)}</span>` : ''}
-          ${o.amount ? `<span>${esc(o.amount)}</span>` : ''}
-          ${o.salesforceUrl ? `<a href="${esc(o.salesforceUrl)}" target="_blank" rel="noopener noreferrer">Salesforce ↗</a>` : ''}${sfChip(o.salesforce)}
-          ${o.sharepointUrl ? `<a href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">SharePoint ↗</a>` : ''}
-          ${o.tenant ? `<a href="${esc(o.tenant.baseUrl)}" target="_blank" rel="noopener noreferrer">Checkmarx One ↗</a>` : ''}
+    <div class="opp-top">
+      <div class="grow">
+        <h1>${esc(o.customer)}</h1>
+        <div class="opp-line">
+          ${d.canEdit ? `<label class="stage-pick" title="Move to another stage"><span class="sr">Stage</span><select id="stagePick">${Object.entries(state.meta.stages).map(([k, l]) => `<option value="${k}" ${k === o.stage ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>` : stageBadge(o.stage)}
+          ${daysBadge(r)}${r.muted ? '<span class="badge">Muted</span>' : ''}
+          <span class="muted">${esc(r.owner.name)}${o.name !== o.customer ? ` · ${esc(o.name)}` : ''}</span>
         </div>
+        ${links.length || o.salesforce ? `<div class="opp-links">${links.join('')}${sfChip(o.salesforce)}</div>` : ''}
       </div>
-      <div class="row center">${d.canEdit ? '<button class="btn" data-act="edit">Edit details</button>' : '<span class="badge">View only</span>'}</div>
+      <div class="actions">${next ? `<button class="btn primary" data-next="${next.key}">${esc(next.label)}</button>` : ''}${d.canEdit ? '<button class="btn ghost" data-act="opp-menu" aria-label="More">•••</button>' : '<span class="badge">View only</span>'}</div>
     </div>
-    <div class="stagebar" role="group" aria-label="Stage">${stages.map(([k, label], i) => `<button data-stage="${k}" class="${i < at ? 'done' : i === at ? 'current' : ''}" ${d.canEdit ? '' : 'disabled'}>${esc(label)}</button>`).join('')}</div>
-    <div class="tabs" role="tablist">${TABS.map(([k, label]) => `<button role="tab" aria-selected="${k === active}" data-tab="${k}">${label}${k === 'criteria' && r.progress.total ? ` <span class="muted">${r.progress.percent}%</span>` : ''}${k === 'tenant' && r.live ? ` <span class="dot ${r.live.health}"></span>` : ''}</button>`).join('')}</div>
+    <div class="tabs" role="tablist">${TABS.map(([k, label]) => `<button role="tab" aria-selected="${k === active}" data-tab="${k}">${label}${k === 'criteria' && r.progress.total ? ` <span class="muted">${r.progress.met}/${r.progress.total}</span>` : ''}${k === 'tenant' && r.live ? ` <span class="dot ${r.live.health}"></span>` : ''}</button>`).join('')}</div>
     <div id="tabBody">${VIEWS[active](d)}</div>`;
 
   for (const b of $$('[data-tab]', main)) b.addEventListener('click', () => (location.hash = tabHref(b.dataset.tab)));
-  for (const b of $$('[data-stage]', main))
-    b.addEventListener('click', async () => {
-      if (b.dataset.stage === o.stage) return;
-      let outcomeReason;
-      if (b.dataset.stage === 'completed') {
-        const result = await askResult();
-        if (!result) return;
-        return save({ stage: 'completed', povResult: result }, result === 'successful' ? 'POV marked successful' : 'POV completed');
-      }
-      if (['won', 'lost'].includes(b.dataset.stage)) {
-        outcomeReason = prompt(`Why was it ${b.dataset.stage}? (optional)`);
-        if (outcomeReason === null) return;
-      }
-      await save({ stage: b.dataset.stage, outcomeReason }, `Stage: ${state.meta.stages[b.dataset.stage]}`);
-    });
+  main.querySelector('#stagePick')?.addEventListener('change', async (e) => {
+    const to = e.target.value;
+    e.target.value = o.stage; // until it is saved
+    if (to === 'completed') {
+      const result = await askResult();
+      if (!result) return;
+      return save({ stage: 'completed', povResult: result }, result === 'successful' ? 'POV marked successful' : 'POV completed');
+    }
+    let outcomeReason;
+    if (['won', 'lost'].includes(to)) {
+      outcomeReason = await ask(`Why was it ${to}?`, { input: '', placeholder: 'Optional: a line for the record', ok: 'Save' });
+      if (outcomeReason === null) return;
+    }
+    await save({ stage: to, outcomeReason }, `Stage: ${state.meta.stages[to]}`);
+  });
+  main.querySelector('[data-next]')?.addEventListener('click', () => doFix(next.key));
+  main.querySelector('[data-act="opp-menu"]')?.addEventListener('click', oppMenu);
   main.querySelector('[data-act="edit"]')?.addEventListener('click', editDetails);
   WIRES[active]?.(main, d);
   on(main, '[data-sf-log]', async (b) => {
@@ -109,43 +106,135 @@ async function item(kind, body, ok = 'Saved') {
   return r;
 }
 async function removeItem(kind, itemId, what) {
-  if (!confirm(`Remove ${what}?`)) return;
+  if (!(await ask(`Remove ${what}?`, { ok: 'Remove', danger: true }))) return;
   if (await attempt(() => api(`/opportunities/${oid()}/${kind}/${itemId}`, { method: 'DELETE' }), 'Removed')) rerender();
 }
 const ro = () => (current.canEdit ? '' : 'disabled');
 const capName = (id) => catalog.catalog.find((c) => c.id === id)?.name ?? id;
 const person = (id) => current.people[id] ?? '';
 
+// ——— What to do next: from the gaps, each with the step that fixes it ———
+const FIX = {
+  tenant: 'connect', read: 'connect', key: 'connect', criteria: 'add-caps', 'must-open': 'go-criteria', engines: 'go-criteria', asked: 'add-caps', tools: 'go-criteria',
+  overdue: 'edit', end: 'edit', salesforce: 'edit', sharepoint: 'edit', people: 'go-tenant', quiet: 'go-tenant', pool: 'go-tenant',
+  stakeholders: 'add-person', tasks: 'go-notes', result: 'result', 'sf-lost': 'open-sf', 'sf-close': 'open-sf', 'sf-past': 'open-sf', 'sf-won': 'won',
+};
+const FIX_LABEL = { connect: 'Connect', 'add-caps': 'Add', 'go-criteria': 'Open', edit: 'Edit', 'go-tenant': 'Open', 'add-person': 'Add', 'go-notes': 'Open', result: 'Record', 'open-sf': 'Salesforce ↗', won: 'Mark won' };
+/** The one thing to do now, for the button beside the name. */
+function nextAction(d) {
+  const o = d.opportunity;
+  const r = d.row;
+  if (o.povResult === 'successful' && !['won', 'lost'].includes(o.stage)) return { key: 'share', label: 'Share the results' };
+  if (o.stage === 'completed' && !o.povResult) return { key: 'result', label: 'Record the result' };
+  if (!r.progress.total) return { key: 'add-caps', label: 'Add success criteria' };
+  if (['pov', 'technical'].includes(o.stage) && !o.tenant) return { key: 'connect', label: 'Connect the tenant' };
+  if (o.stage === 'pov' && (r.daysLeft !== null && r.daysLeft <= 0 || (r.progress.must && r.progress.mustMet === r.progress.must))) return { key: 'result', label: 'Complete the POV' };
+  return { key: 'note', label: 'Add a note' };
+}
+async function doFix(key, gap = null) {
+  if (key === 'connect') return connectTenant();
+  if (key === 'add-caps') return addCapabilities();
+  if (key === 'edit') return editDetails();
+  if (key === 'add-person') return editPerson(null);
+  if (key === 'share') return (location.hash = tabHref('email', 'completion'));
+  if (key === 'won') return save({ stage: 'won' }, 'Marked won');
+  if (key === 'open-sf') return current.opportunity.salesforceUrl && open(current.opportunity.salesforceUrl, '_blank', 'noopener');
+  if (key === 'note') {
+    const text = await ask('Add a note', { input: '', placeholder: 'What happened, what was decided, what to remember', ok: 'Add note' });
+    if (text?.trim()) item('notes', { text }, 'Note added');
+    return;
+  }
+  if (key === 'result') {
+    const result = await askResult();
+    if (result) save({ stage: 'completed', povResult: result }, result === 'successful' ? 'POV marked successful' : 'POV completed');
+    return;
+  }
+  if (key.startsWith('go-')) location.hash = tabHref(key.slice(3));
+}
+async function oppMenu() {
+  const o = current.opportunity;
+  await openDialog(
+    `<div class="dbody"><h2>${esc(o.customer)}</h2><nav class="more-list">
+      <button type="button" data-m="edit"><span>Edit details</span><small class="muted">Name, dates, owner, Salesforce and SharePoint links</small></button>
+      <button type="button" data-m="note"><span>Add a note</span></button>
+      <button type="button" data-m="sf"><span>Send the status to Salesforce</span><small class="muted">Through your Email to Salesforce address</small></button>
+      <button type="button" data-m="results"><span>Open the results page</span></button>
+      <button type="button" data-m="delete" class="bad-t"><span>Delete this opportunity</span></button>
+    </nav><div class="dialog-actions"><button class="btn" data-close>Close</button></div></div>`,
+    {
+      onOpen(dl) {
+        dl.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+        for (const b of dl.querySelectorAll('[data-m]'))
+          b.addEventListener('click', () => {
+            closeDialog();
+            const m = b.dataset.m;
+            setTimeout(async () => {
+              if (m === 'edit') editDetails();
+              else if (m === 'note') doFix('note');
+              else if (m === 'results') open(`/api/opportunities/${o.id}/results`, '_blank', 'noopener');
+              else if (m === 'delete') removeOpportunity();
+              else if (m === 'sf' && (await attempt(() => api(`/opportunities/${oid()}/salesforce/log`, { method: 'POST', body: { kind: 'status' } }), 'Sent to Salesforce'))) rerender();
+            }, 60);
+          });
+      },
+    },
+  );
+}
+
+/** A first draft of the summary, written from what is known; the SE only edits it. */
+function draftSummary(d) {
+  const o = d.opportunity;
+  const r = d.row;
+  const p = r.progress;
+  const s = r.live?.summary;
+  const parts = [];
+  if (p.total) parts.push(`${p.met} of ${p.total} success criteria are completed successfully (${p.percent}%)${p.must ? `, including ${p.mustMet} of ${p.must} must-haves` : ''}.`);
+  if (s) parts.push(`In the POV tenant, ${s.scans7d} scans ran in the last 7 days across ${s.projects} projects${s.fusion7d ? `, ${s.fusion7d} of them with Fusion` : ''}${(s.origins ?? []).length ? `, from ${s.origins.slice(0, 3).map((x) => x.name).join(', ')}` : ''}.`);
+  const done = (o.criteria ?? []).filter((c) => c.status === 'met').slice(0, 4).map((c) => c.title);
+  if (done.length) parts.push(`Shown working: ${done.join(', ')}.`);
+  const open_ = (o.criteria ?? []).filter((c) => c.priority === 'must' && c.status !== 'met').slice(0, 3).map((c) => c.title);
+  if (open_.length) parts.push(`Still to show: ${open_.join(', ')}${r.daysLeft !== null && o.stage === 'pov' ? `, with ${r.daysLeft} days left` : ''}.`);
+  if (r.nextTask) parts.push(`Next: ${r.nextTask.title}${r.nextTask.due ? ` (${day(r.nextTask.due)})` : ''}.`);
+  return parts.join(' ');
+}
+
 // ——— Overview ———
 function overview(d) {
   const o = d.opportunity;
   const r = d.row;
   const s = r.live?.summary;
+  const p = r.progress;
   const openTasks = (o.tasks ?? []).filter((t) => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
-  const notes = [...(o.notes ?? [])].sort((a, b) => (b.pinned - a.pinned) || b.at.localeCompare(a.at)).slice(0, 4);
   const success = o.povResult === 'successful';
-  return `${success ? `<section class="panel success-banner"><div class="body row center"><div style="flex:1;min-width:260px"><div class="small muted" style="text-transform:uppercase;letter-spacing:.18em">The POV was successful</div><h2 style="margin-top:4px">Share the final presentation</h2><div class="small muted">${r.progress.met} of ${r.progress.total} criteria completed successfully. The deck is made from the criteria, the sessions and what Checkmarx One showed.</div></div><a class="btn" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="deck">Download presentation</button>${current.canEdit ? '<button class="btn primary" data-act="share-deck">Email it to the stakeholders</button>' : ''}</div></section>` : ''}
+  const todo = [
+    ...r.alerts.filter(() => !r.muted).map((a) => ({ level: a.level, text: a.what, fix: '', key: a.what.includes('failed') ? 'go-tenant' : '' })),
+    ...(r.gaps ?? []).filter((g) => !(g.key === 'result' && o.stage === 'completed')).map((g) => ({ level: g.level, text: g.text, fix: g.fix, key: FIX[g.key] ?? '' })),
+  ];
+  const shown = todo.filter((t) => t.level !== 'info');
+  const later = todo.filter((t) => t.level === 'info');
+  const line = (t) => `<div><span class="dot ${t.level === 'info' ? '' : t.level}"></span><span class="t">${esc(t.text)}${t.fix ? `<small>${esc(t.fix)}</small>` : ''}</span>${t.key && current.canEdit ? `<button class="btn sm" data-fix="${t.key}">${FIX_LABEL[t.key] ?? 'Open'}</button>` : ''}</div>`;
+  return `${success ? `<section class="panel success-banner"><div class="body row center"><div style="flex:1;min-width:220px"><b>The POV was successful</b><div class="small muted">${p.met} of ${p.total} criteria completed successfully. Share the final presentation with the stakeholders.</div></div><button class="btn" data-act="deck">Presentation</button>${current.canEdit ? '<button class="btn primary" data-act="share-deck">Email it</button>' : ''}</div></section>` : ''}
   ${o.stage === 'completed' && !o.povResult && current.canEdit ? '<section class="panel"><div class="body row center"><span style="flex:1">The POV is complete. Was it successful?</span><button class="btn primary" data-result="successful">Successful</button><button class="btn" data-result="unsuccessful">Not successful</button></div></section>' : ''}
   <div class="layout"><div class="stack">
-    ${r.alerts.length ? `<section class="panel"><div class="head"><h3>Needs attention</h3>${r.muted ? '<span class="badge">Muted</span>' : ''}</div><div class="body">${alertList(r.alerts, r.muted)}</div></section>` : ''}
+    <section class="panel"><div class="head"><h3>To do</h3><span class="small muted">${shown.length ? `${shown.length} thing${shown.length > 1 ? 's' : ''}` : ''}</span></div>
+      <div class="todo">${shown.map(line).join('') || '<div class="all-good">✓ Nothing needs you on this one.</div>'}</div>
+      ${later.length ? `<details class="todo-later"><summary class="small muted">${later.length} small thing${later.length > 1 ? 's' : ''} for later</summary><div class="todo">${later.map(line).join('')}</div></details>` : ''}
+    </section>
     <section class="panel"><div class="head"><h3>Success criteria</h3><a href="${tabHref('criteria')}" class="small">Open</a></div><div class="body">
-      ${r.progress.total ? progressBar(r.progress) : '<span class="muted">None yet. Add what the customer wants to see.</span>'}
-      ${r.progress.total ? `<div class="row small" style="margin-top:10px">${Object.entries(state.meta.criterionStatus).map(([k, label]) => `<span class="badge"><span class="status ${k}">${(o.criteria ?? []).filter((c) => c.status === k).length}</span> ${esc(label)}</span>`).join('')}</div>` : ''}
+      ${p.total ? `<div class="crit-sum">${ring(p, { size: 64 })}<div><b>${p.met} of ${p.total} completed</b>${p.must ? `<div class="small muted">Must-haves ${p.mustMet} of ${p.must}</div>` : ''}${r.forecast?.criteria?.label ? `<div class="small ${r.forecast.criteria.state === 'late' ? 'bad-t' : r.forecast.criteria.state === 'at-risk' ? 'warn-t' : 'muted'}">${esc(r.forecast.criteria.label)}</div>` : ''}</div></div>` : `<p class="muted" style="margin:0 0 10px">None yet. A template picks them in two clicks.</p>${current.canEdit ? '<button class="btn primary" data-fix="add-caps">Add success criteria</button>' : ''}`}
     </div></section>
-    ${s ? `<section class="panel"><div class="head"><h3>POV tenant · ${esc(o.tenant.tenant)}</h3><span class="health small"><span class="dot ${r.live.health}"></span>${esc(HEALTH[r.live.health])} · read ${ago(s.at)}</span></div><div class="body stack" style="gap:10px">
-      <div class="stats"><div class="stat"><div class="v">${fmt(s.projects)}</div><div class="l">Projects</div></div><div class="stat"><div class="v">${fmt(s.scans7d)}</div><div class="l">Scans 7d</div></div><div class="stat"><div class="v">${fmt(s.running + s.queued)}</div><div class="l">Running</div></div><div class="stat ${s.failed24h ? 'bad' : ''}"><div class="v">${fmt(s.failed24h)}</div><div class="l">Failed 24h</div></div></div>
-      ${sevBar(s.findings)}${sevLegend(s.findings, s.delta)}
-      <div class="row small">${s.fusion7d ? `<span class="badge fusion">Fusion ${s.fusion7d}</span>` : ''}${s.last7d ? `<span class="badge last">LAST ${s.last7d}</span>` : ''}${s.credits?.available != null ? `<span class="badge">Credits available ${fmt(s.credits.available)}</span>` : ''}${(s.origins ?? []).map((x) => `<span class="badge">${esc(x.name)} · ${x.count}</span>`).join('')}</div>
-    </div></section>` : !o.tenant ? `<section class="panel"><div class="head"><h3>POV tenant</h3></div><div class="body"><p class="muted" style="margin-top:0">No Checkmarx One tenant yet. When the POV starts, paste its API key: the tenant is read every ${state.overview?.intervalMinutes ?? 10} minutes.</p>${current.canEdit ? '<button class="btn primary" data-act="connect">Connect a tenant</button>' : ''}</div></section>` : ''}
-    <section class="panel"><div class="head"><h3>Summary for the customer and the report</h3></div><div class="body">
+    ${s ? `<section class="panel"><div class="head"><h3>Tenant · ${esc(o.tenant.tenant)}</h3><a href="${tabHref('tenant')}" class="small">Open</a></div><div class="body">
+      <div class="health small" style="margin-bottom:10px"><span class="dot ${r.live.health}"></span>${esc(HEALTH[r.live.health])} · read ${ago(s.at)}</div>
+      <div class="stats"><div class="stat"><div class="v">${fmt(s.scans7d)}</div><div class="l">Scans, 7 days</div></div><div class="stat ${s.failed24h ? 'bad' : ''}"><div class="v">${fmt(s.failed24h)}</div><div class="l">Failed today</div></div><div class="stat"><div class="v">${fmt(s.fusion7d)}</div><div class="l">Fusion scans</div></div></div>
+    </div></section>` : ''}
+    <section class="panel"><div class="head"><h3>Summary for the customer</h3><span class="small muted" id="sumState"></span></div><div class="body">
       <textarea id="summary" rows="4" style="width:100%" ${ro()} placeholder="Where the POV stands, in a few lines.">${esc(o.summary ?? '')}</textarea>
-      ${current.canEdit ? '<div class="row" style="margin-top:8px"><button class="btn sm" data-act="save-summary">Save summary</button></div>' : ''}
+      ${current.canEdit ? `<div class="row center" style="margin-top:8px"><button class="btn sm" data-act="draft-summary">${o.summary ? 'Write it again for me' : 'Write it for me'}</button><span class="small muted">Saved as you type. Used in the report and the emails.</span></div>` : ''}
     </div></section>
   </div><div class="stack">
-    ${sfPanel(o)}
-    <section class="panel"><div class="head"><h3>Next tasks</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${openTasks.slice(0, 6).map((t) => `<div class="row center"><span class="${t.due && t.due < new Date().toISOString().slice(0, 10) ? 'bad-t' : ''}">${esc(t.title)}</span><span class="spacer"></span><span class="small muted">${t.due ? day(t.due) : ''}</span></div>`).join('') || '<span class="muted">Nothing open.</span>'}</div></section>
-    <section class="panel"><div class="head"><h3>Latest notes</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${notes.map((n) => `<div class="item"><div class="small muted">${n.pinned ? 'Pinned · ' : ''}${esc(person(n.by))} · ${ago(n.at)}</div><div class="notes-box">${esc(n.text.length > 400 ? `${n.text.slice(0, 400)}…` : n.text)}</div></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></section>
-    <section class="panel"><div class="head"><h3>Stakeholders</h3><a href="${tabHref('email')}" class="small">Manage</a></div><div class="body list">${(o.stakeholders ?? []).map((p) => `<div><b>${esc(p.name)}</b> <span class="small muted">${esc(p.title)} · ${p.side === 'internal' ? 'internal' : 'customer'}</span>${p.email ? `<div class="small"><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ''}</div>`).join('') || '<span class="muted">None yet.</span>'}</div></section>
+    <section class="panel"><div class="head"><h3>Next tasks</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${openTasks.slice(0, 5).map((t) => `<div class="row center"><span class="${t.due && t.due < new Date().toISOString().slice(0, 10) ? 'bad-t' : ''}">${esc(t.title)}</span><span class="spacer"></span><span class="small muted">${t.due ? day(t.due) : ''}</span></div>`).join('') || '<span class="muted">Nothing open.</span>'}
+      ${current.canEdit ? '<form id="quickTask" class="quick-add"><input name="title" placeholder="Add a task…" aria-label="New task"><button class="btn sm">Add</button></form>' : ''}</div></section>
+    ${o.salesforce || o.salesforceUrl ? sfPanel(o) : ''}
   </div></div>`;
 }
 
@@ -184,28 +273,23 @@ function tenant(d) {
   const ai = t?.ai;
   const hosts = [...new Set((t?.projects ?? []).map((p) => { try { return new URL(p.repoUrl).host; } catch { return ''; } }).filter(Boolean))];
   return `
-    <div class="toolbar">
-      <span class="health"><span class="dot ${r.live.refreshing ? 'loading' : r.live.health}"></span>${esc(r.live.refreshing ? 'Reading…' : HEALTH[r.live.health])}${s ? ` · read ${ago(s.at)}` : ''}${r.live.nextAt ? ` · next ${ago(r.live.nextAt)}` : o.stage !== 'pov' ? ' · read on request (POV not running)' : ''}</span>
+    <div class="crit-top">
+      <div><span class="health"><span class="dot ${r.live.refreshing ? 'loading' : r.live.health}"></span>${esc(r.live.refreshing ? 'Reading…' : HEALTH[r.live.health])}${s ? ` · read ${ago(s.at)}` : ''}</span>
+        <div class="small muted">${esc(o.tenant.tenant)} · ${esc(o.tenant.regionLabel)}${o.tenant.keyExpiresAt ? ` · key expires ${day(o.tenant.keyExpiresAt)}` : ''}${muteUntil ? ` · alerts muted` : ''}</div></div>
       <span class="spacer"></span>
       <button class="btn" data-act="refresh">Refresh now</button>
-      ${can('tenant.logs') ? '<button class="btn" data-act="bundle" title="Every failed scan of the last 7 days, with its engine logs, in one file">Troubleshooting bundle</button>' : ''}
-      ${current.canEdit ? `<select id="mute" aria-label="Mute alerts"><option value="">${muteUntil ? (muteUntil === 'forever' ? 'Muted until unmuted' : `Muted until ${when(muteUntil)}`) : 'Alerts on'}</option><option value="off">Unmute</option><option value="1">Mute 1 hour</option><option value="8">Mute 8 hours</option><option value="24">Mute 24 hours</option><option value="168">Mute 7 days</option><option value="forever">Mute until unmuted</option></select>` : ''}
-      ${current.canEdit ? '<button class="btn ghost" data-act="connect">Replace key</button><button class="btn ghost danger" data-act="disconnect">Disconnect</button>' : ''}
+      <button class="btn ghost" data-act="tenant-tools" aria-label="More">•••</button>
     </div>
     ${r.live.error && r.live.health === 'failed' ? `<div class="panel body bad-t" style="margin-bottom:14px">Last read failed ${ago(r.live.error.at)}: ${esc(r.live.error.message)}</div>` : ''}
     ${t?.errors?.length ? `<div class="panel body small muted" style="margin-bottom:14px">Partly read: ${esc(t.errors.map((e) => `${e.part}: ${e.message}`).join(' · '))}</div>` : ''}
-    <div class="kpis">
-      <div class="kpi"><div class="label">Tenant</div><div class="value" style="font-size:16px">${esc(o.tenant.tenant)}</div><div class="sub">${esc(o.tenant.regionLabel)}${t?.identity?.user ? ` · as ${esc(t.identity.user)}` : ''}</div></div>
-      <div class="kpi ${o.tenant.keyExpiresAt && Date.parse(o.tenant.keyExpiresAt) - Date.now() < 14 * 864e5 ? 'warn' : ''}"><div class="label">Key expires</div><div class="value" style="font-size:16px">${o.tenant.keyExpiresAt ? day(o.tenant.keyExpiresAt) : 'never'}</div></div>
-      <div class="kpi"><div class="label">Projects</div><div class="value">${fmt(s?.projects)}</div><div class="sub">${s?.newProjects7d ? `+${s.newProjects7d} this week` : ''}</div></div>
-      <div class="kpi"><div class="label">Running now</div><div class="value">${fmt(s ? s.running + s.queued : null)}</div></div>
-      <div class="kpi"><div class="label">Scans 24h / 7d</div><div class="value">${fmt(s?.scans24h)} / ${fmt(s?.scans7d)}</div></div>
-      <div class="kpi ${s?.failed24h ? 'bad' : ''}"><div class="label">Failed 24h</div><div class="value">${fmt(s?.failed24h)}</div></div>
-      <div class="kpi"><div class="label">Fusion / LAST 7d</div><div class="value">${fmt(s?.fusion7d)} / ${fmt(s?.last7d)}</div></div>
-      <div class="kpi"><div class="label">Critical / High</div><div class="value">${fmt(s?.findings?.critical)} / ${fmt(s?.findings?.high)}</div></div>
+    <div class="headline headline-4">
+      <div><b>${fmt(s?.scans7d)}</b><span>scans this week</span></div>
+      <div class="${s?.failed24h ? 'bad' : ''}"><b>${fmt(s?.failed24h)}</b><span>failed today</span></div>
+      <div><b>${fmt(s ? s.running + s.queued : null)}</b><span>running now</span></div>
+      <div class="${s?.findings?.critical ? 'bad' : ''}"><b>${fmt(s?.findings?.critical)}<small class="muted"> / ${fmt(s?.findings?.high)}</small></b><span>critical / high</span></div>
     </div>
     <div class="grid3" style="margin-bottom:16px">
-      <section class="panel"><div class="head"><h3>Credits</h3><span class="small muted">GET /api/credits</span></div><div class="body">
+      <section class="panel"><div class="head"><h3>Credits</h3></div><div class="body">
         ${c ? `<div class="stats"><div class="stat"><div class="v">${fmt(c.available)}</div><div class="l">Available</div></div><div class="stat"><div class="v">${fmt(c.used)}</div><div class="l">Used</div></div><div class="stat"><div class="v">${fmt(c.total)}</div><div class="l">Total</div></div><div class="stat"><div class="v">${fmt(Math.round(c.used30d ?? 0))}</div><div class="l">Used 30 d</div></div></div>
         ${c.total ? `<div class="progress" style="margin:10px 0"><span style="width:${Math.min(100, (100 * (c.used ?? 0)) / c.total)}%"></span></div>` : ''}
         <div class="small muted">AI actions in 30 days: ${fmt(c.actions?.triage)} triage · ${fmt(c.actions?.remediation)} remediation${c.actions?.other ? ` · ${fmt(c.actions.other)} other` : ''}${c.state ? ` · enforcement ${esc(c.state)}` : ''}</div>` : '<span class="muted">This tenant does not report credits (no AI licence, or the key lacks the permission).</span>'}
@@ -216,20 +300,20 @@ function tenant(d) {
         <div><span class="small muted">Code hosts of projects</span><div class="row small">${hosts.map((h) => `<span class="badge">${esc(h)}</span>`).join('') || '<span class="muted">—</span>'}</div></div>
         <div><span class="small muted">AI settings</span><div class="row small">${ai ? `<span class="badge ${ai.fusionEnabled ? 'fusion' : ''}">Fusion ${ai.fusionEnabled === null ? 'not set' : ai.fusionEnabled ? 'on' : 'off'}</span><span class="badge ${ai.llmBased ? 'last' : ''}">LLM-based scanning ${ai.llmBased === null ? 'not set' : ai.llmBased ? 'on' : 'off'}</span>${ai.model ? `<span class="badge">Model ${esc(ai.model)}</span>` : ''}` : '<span class="muted">Not readable with this key</span>'}</div></div>
       </div></section>
-      <section class="panel"><div class="head"><h3>Activity</h3></div>${feed(t?.events ?? [], [d.row], { showOpp: false })}</section>
     </div>
-    ${peopleSection(t?.people)}
+    <details class="panel fold-panel"><summary><h3>Activity</h3><span class="small muted">${(t?.events ?? []).length} events, last 7 days</span></summary>${feed(t?.events ?? [], [d.row], { showOpp: false })}</details>
+    ${t?.people ? `<details class="panel fold-panel"><summary><h3>People</h3><span class="small muted">${t.people.users?.length ?? 0} in the tenant</span></summary>${peopleSection(t.people)}</details>` : ''}
     <div class="stack">
       ${t?.active?.length ? `<section class="panel"><div class="head"><h3>Running and queued</h3></div>${table('t-active', scanCols.slice(0, 8), t.active)}</section>` : ''}
-      <section class="panel"><div class="head"><h3>Scans · last 7 days</h3><span class="small muted">${(s?.people ?? []).map((p) => `${esc(p.name)} (${p.scans})`).join(', ')}</span></div>${table('t-scans', scanCols, t?.scans ?? [])}</section>
-      <section class="panel"><div class="head"><h3>Projects</h3><input type="search" id="projQ" placeholder="Filter projects"></div><div id="projTable">${table('t-projects', projCols, t?.projects ?? [])}</div></section>
-      ${c?.byProject?.length ? `<section class="panel"><div class="head"><h3>Credit consumption by project · 30 days</h3></div>${table('t-credits', [
+      <details class="panel fold-panel"><summary><h3>Scans</h3><span class="small muted">${(t?.scans ?? []).length} in the last 7 days${(t?.scans ?? []).length > 20 ? ' · newest 20' : ''}</span></summary>${table('t-scans', scanCols, (t?.scans ?? []).slice(0, 20))}</details>
+      <details class="panel fold-panel"><summary><h3>Projects</h3><span class="small muted">${(t?.projects ?? []).length}</span></summary><div class="body" style="padding-bottom:0"><input type="search" id="projQ" placeholder="Find a project" style="width:100%"></div><div id="projTable">${table('t-projects', projCols, t?.projects ?? [])}</div></details>
+      ${c?.byProject?.length ? `<details class="panel fold-panel"><summary><h3>Credits by project</h3><span class="small muted">last 30 days</span></summary>${table('t-credits', [
         { label: 'Project', key: (x) => x.name, html: (x) => esc(x.name) },
         { label: 'Credits', n: true, key: (x) => x.credits, html: (x) => fmt(Math.round(x.credits * 10) / 10) },
         { label: 'AI triage', n: true, key: (x) => x.triage, html: (x) => fmt(x.triage) },
         { label: 'AI remediation', n: true, key: (x) => x.remediation, html: (x) => fmt(x.remediation) },
         { label: 'Other', n: true, key: (x) => x.other, html: (x) => fmt(x.other) },
-      ], c.byProject)}</section>` : ''}
+      ], c.byProject)}</details>` : ''}
     </div>`;
 }
 
@@ -261,46 +345,91 @@ async function askResult() {
 }
 
 // ——— Success criteria ———
+const CRIT_ICON = { met: ['✓', 'ok'], in_progress: ['◐', 'warn'], not_started: ['○', 'muted'], missed: ['✕', 'bad'], na: ['–', 'muted'] };
+let critFilter = 'todo';
+/** One short line on where a criterion stands: what proves it, or what is missing. */
+function critNote(c, ev) {
+  if (c.status === 'met' && c.statusSource === 'tenant') return ['ok-t', 'Done by itself in the tenant'];
+  if (c.status === 'met' && c.proofType === 'demo') return ['ok-t', 'Shown in a demo'];
+  if (c.status === 'met') return ['ok-t', `Done${c.confirmedAt ? ` · ${ago(c.confirmedAt)}` : ''}`];
+  if (ev?.level === 'detected') return ['ok-t', 'Found in the tenant'];
+  if (c.demo) return ['', 'Demo recorded'];
+  if (ev?.level === 'mentioned') return ['muted', 'Mentioned in your notes'];
+  return ['muted', c.priority === 'must' ? 'Must have' : 'Nice to have'];
+}
 function criteria(d) {
   const o = d.opportunity;
-  const cats = new Map([...state.meta.categories, ['custom', 'Custom']]);
+  const p = d.row.progress;
+  const all = o.criteria ?? [];
+  const isDone = (c) => ['met', 'na'].includes(c.status);
+  const todo = all.filter((c) => !isDone(c));
+  const shown = critFilter === 'todo' ? todo : critFilter === 'done' ? all.filter(isDone) : all;
+  const cats = new Map([...state.meta.categories, ['custom', 'Your own']]);
   const groups = new Map();
-  for (const c of o.criteria ?? []) {
-    const k = cats.get(c.category) ?? 'Custom';
+  for (const c of shown.sort((a, b) => (a.priority === b.priority ? 0 : a.priority === 'must' ? -1 : 1))) {
+    const k = cats.get(c.category) ?? 'Your own';
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(c);
   }
-  const evLine = (c) => {
-    const ev = d.evidence[c.id];
-    if (c.status === 'met' && c.statusSource === 'tenant') return `<div class="ev ev-detected">✓ Completed in the tenant by itself: ${(c.autoEvidence?.length ? c.autoEvidence : ev?.evidence ?? []).map(esc).join(' · ')} <span class="muted">— change the status to override it</span></div>`;
-    if (!ev || ev.level === 'none') return c.statusSource === 'manual' ? '<div class="ev small muted">Status set by hand</div>' : '';
-    return `<div class="ev ev-${ev.level}">${ev.level === 'detected' ? '● Detected in the tenant' : '○ Mentioned in notes'}: ${ev.evidence.map(esc).join(' · ')}${ev.level === 'detected' && c.status !== 'met' && current.canEdit ? ` <button class="btn sm" data-met="${esc(c.id)}">Confirm met</button>` : ''}</div>`;
-  };
-  return `<div class="toolbar">
-      <div style="min-width:280px;flex:1">${progressBar(d.row.progress)}</div>
-      ${current.canEdit ? '<button class="btn primary" data-act="add-caps">Add from capabilities</button><button class="btn" data-act="add-custom">Custom criterion</button>' : ''}
+  if (!all.length) return `<div class="hero-empty"><h2>No success criteria yet</h2><p>Pick a template or the capabilities the customer wants to see. Meridian then marks each one done by itself when the tenant proves it.</p>${current.canEdit ? '<button class="btn primary" data-act="add-caps">Add success criteria</button>' : ''}</div>`;
+  return `<div class="crit-top">
+      <div class="crit-sum">${ring(p, { size: 52 })}<div><b>${p.met} of ${p.total} done</b>${p.must ? `<div class="small muted">Must-haves ${p.mustMet} of ${p.must}</div>` : ''}</div></div>
+      <span class="spacer"></span>
+      ${current.canEdit ? '<button class="btn primary" data-act="add-caps">Add</button><button class="btn" data-act="add-custom">Your own</button>' : ''}
     </div>
-    ${groups.size ? [...groups].map(([label, list]) => `<section class="panel" style="margin-bottom:14px"><div class="head"><h3>${esc(label)}</h3><span class="small muted">${list.filter((c) => c.status === 'met').length}/${list.filter((c) => c.status !== 'na').length} met</span></div><div class="body list">${list.map((c) => `
-      <div class="item crit">
-        <div>
-          <div><b>${esc(c.title)}</b> ${c.priority === 'nice' ? '<span class="badge">nice to have</span>' : '<span class="badge accent">must</span>'} ${c.due ? `<span class="badge">${day(c.due)}</span>` : ''}</div>
-          ${(() => {
-            const cap = c.capabilityId ? catalog.catalog.find((x) => x.id === c.capabilityId) : null;
-            const own = [...(c.engines ?? []).map((e) => `engine "${e}"`), ...(c.origins ?? []).map((o) => `origin "${o}"`)];
-            return `${cap ? `<div class="small muted">Checkmarx One: ${esc(cap.cxName)} ${cap.isNew ? '<span class="badge accent">New</span>' : ''}</div>` : ''}
-              ${cap?.proof || cap?.tech || own.length ? `<details class="small proof"><summary>How it is proven</summary>${cap?.proof ? `<div><b>Show the customer:</b> ${esc(cap.proof)}</div>` : ''}${cap?.tech ? `<div><b>How Meridian checks:</b> ${esc(cap.tech)}</div>` : ''}${own.length ? `<div><b>Also counted for this criterion:</b> ${esc(own.join(', '))}</div>` : ''}</details>` : ''}`;
-          })()}
-          ${evLine(c)}
-          ${demoLine(c)}
-          ${c.notes ? `<div class="small notes-box" style="margin-top:4px">${esc(c.notes)}</div>` : ''}
-          ${c.evidenceLink ? `<div class="small"><a href="${esc(c.evidenceLink)}" target="_blank" rel="noopener noreferrer">Evidence ↗</a></div>` : ''}
-          ${c.confirmedAt ? `<div class="small muted">Confirmed by ${esc(person(c.confirmedBy))} ${ago(c.confirmedAt)}</div>` : ''}
-        </div>
-        <div class="stack" style="gap:6px">
-          <select data-status="${esc(c.id)}" ${ro()} aria-label="Status">${Object.entries(state.meta.criterionStatus).map(([k, l]) => `<option value="${k}" ${c.status === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
-          ${current.canEdit ? `<div class="row"><button class="btn sm" data-edit-crit="${esc(c.id)}">Edit</button><button class="btn sm ghost danger" data-del-crit="${esc(c.id)}">Remove</button></div>` : ''}
-        </div>
-      </div>`).join('')}</div></section>`).join('') : '<div class="empty panel">No success criteria yet. Add the capabilities the customer wants to see; Meridian then looks for the evidence in the tenant and in your notes.</div>'}`;
+    <div class="seg crit-filter" role="group" aria-label="Show">${[['todo', `To do · ${todo.length}`], ['done', `Done · ${all.length - todo.length}`], ['all', 'All']].map(([k, l]) => `<button data-cf="${k}" aria-pressed="${critFilter === k}">${l}</button>`).join('')}</div>
+    ${shown.length ? [...groups].map(([label, list]) => `<div class="group-title"><h2>${esc(label)}</h2></div><div class="crit-list">${list.map((c) => {
+      const ev = d.evidence[c.id];
+      const [icon, tone] = CRIT_ICON[c.status] ?? CRIT_ICON.not_started;
+      const [nt, note] = critNote(c, ev);
+      const quick = current.canEdit && c.status !== 'met' && ev?.level === 'detected' ? `<button class="btn sm" data-met="${esc(c.id)}">Mark done</button>` : '';
+      return `<div class="crit-row" data-open-crit="${esc(c.id)}" tabindex="0" role="button" aria-label="${esc(c.title)}">
+        <span class="crit-icon ${tone}" aria-hidden="true">${icon}</span>
+        <span class="crit-t"><b>${esc(c.title)}</b><small class="${nt}">${esc(note)}</small></span>
+        ${quick}<span class="crit-go" aria-hidden="true">›</span>
+      </div>`;
+    }).join('')}</div>`).join('') : `<p class="empty-line">${critFilter === 'todo' ? '✓ Every criterion is done.' : 'Nothing here yet.'}</p>`}`;
+}
+
+/** Everything about one criterion, in its own sheet. */
+function openCriterion(c) {
+  const d = current;
+  const ev = d.evidence[c.id];
+  const cap = c.capabilityId ? catalog.catalog.find((x) => x.id === c.capabilityId) : null;
+  const statuses = Object.entries(state.meta.criterionStatus);
+  return openDialog(
+    `<div class="dbody crit-sheet">
+      <div class="row center"><h2 style="flex:1">${esc(c.title)}</h2><button class="btn" data-close>Done</button></div>
+      <div class="small muted">${c.priority === 'must' ? 'Must have' : 'Nice to have'}${cap ? ` · in Checkmarx One: ${esc(cap.cxName)}` : ''}</div>
+      <div class="status-pick" role="group" aria-label="Status">${statuses.map(([k, l]) => `<button type="button" data-set="${k}" aria-pressed="${c.status === k}" ${ro()}>${esc(l)}</button>`).join('')}</div>
+      ${c.status === 'met' && c.statusSource === 'tenant' ? `<p class="ev ev-detected" style="margin:0">✓ Marked done by itself: ${(c.autoEvidence ?? []).map(esc).join(' · ')}. Choose another status to override it.</p>` : ev && ev.level !== 'none' ? `<p class="ev ev-${ev.level}" style="margin:0">${ev.level === 'detected' ? '● Found in the tenant' : '○ Mentioned in your notes'}: ${ev.evidence.map(esc).join(' · ')}</p>` : '<p class="small muted" style="margin:0">Nothing in the tenant proves it yet.</p>'}
+      ${cap?.proof ? `<details class="small"><summary>How to show it</summary><p>${esc(cap.proof)}</p>${cap.tech ? `<p class="muted">How Meridian checks: ${esc(cap.tech)}</p>` : ''}</details>` : ''}
+      <div>${demoLine(c) || (current.canEdit ? `<button class="btn sm" data-demo="${esc(c.id)}">Record a demo</button> <span class="small muted">If you showed it yourself instead of in their tenant</span>` : '')}</div>
+      <label class="field">Notes<textarea id="critNotes" rows="3" ${ro()} placeholder="What the customer saw, what they said">${esc(c.notes ?? '')}</textarea></label>
+      ${current.canEdit ? `<div class="dialog-actions"><button type="button" class="btn ghost danger" data-del>Remove</button><span class="spacer"></span><button type="button" class="btn ghost" data-adv>More settings</button></div>` : ''}
+    </div>`,
+    {
+      onOpen(dl) {
+        const done = async (body, msg) => {
+          closeDialog();
+          await item('criteria', { ...c, ...body }, msg);
+        };
+        dl.querySelector('[data-close]').addEventListener('click', async () => {
+          const notes = dl.querySelector('#critNotes')?.value ?? '';
+          if (notes !== (c.notes ?? '')) return done({ notes }, 'Saved');
+          closeDialog();
+        });
+        for (const b of dl.querySelectorAll('[data-set]')) b.addEventListener('click', () => done({ status: b.dataset.set, notes: dl.querySelector('#critNotes').value }, state.meta.criterionStatus[b.dataset.set]));
+        dl.querySelector('[data-demo]')?.addEventListener('click', () => (closeDialog(), setTimeout(() => recordDemo(c), 60)));
+        dl.querySelector('[data-del]')?.addEventListener('click', () => (closeDialog(), setTimeout(() => removeItem('criteria', c.id, 'this success criterion'), 60)));
+        dl.querySelector('[data-adv]')?.addEventListener('click', () => (closeDialog(), setTimeout(() => editCriterion(c), 60)));
+        on(dl, '[data-watch]', (b) => {
+          const box = b.closest('.demo-box').querySelector('.demo-player');
+          box.innerHTML = `<video controls autoplay playsinline controlslist="nodownload" disablepictureinpicture src="/api/opportunities/${oid()}/criteria/${b.dataset.watch}/demo-video"></video>`;
+        });
+      },
+    },
+  );
 }
 
 // ——— Discovery ———
@@ -378,8 +507,8 @@ function email(d) {
     { label: '', html: (p) => (current.canEdit ? `<button class="btn sm" data-edit-person="${esc(p.id)}">Edit</button> <button class="btn sm ghost danger" data-del-person="${esc(p.id)}">Remove</button>` : '') },
   ];
   return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders</h3>${current.canEdit ? '<button class="btn sm" data-act="add-person">Stakeholder</button>' : ''}</div>${table('people', cols, o.stakeholders ?? [], { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
-  <div class="layout"><section class="panel"><div class="head"><h3>Write an email</h3><div class="row center">${Object.entries(state.meta.templates).map(([k, l]) => `<button class="btn sm" data-template="${k}">${esc(l)}</button>`).join('')}</div></div>
-    <form id="mailForm" class="body stack" style="gap:8px">
+  <div class="layout"><section class="panel"><div class="head"><h3>Write an email</h3></div><div class="body"><p class="small muted" style="margin:0 0 8px">Pick one: Meridian writes it from the POV, with the stakeholders filled in.</p><div class="row center">${Object.entries(state.meta.templates).map(([k, l]) => `<button class="btn sm" data-template="${k}">${esc(l)}</button>`).join('')}</div></div>
+    <form id="mailForm" class="body stack" style="gap:8px" ${wants('completion') ? '' : 'hidden'}>
       <input type="hidden" name="template">
       <label class="field">To<input name="to" placeholder="name@customer.com, …"></label>
       <label class="field">Cc<input name="cc"></label>
@@ -388,9 +517,9 @@ function email(d) {
       <label class="check"><input type="checkbox" name="attachDeck" id="attachDeck"> Attach the final presentation (.pptx)</label>
       <div class="row">
         ${can('mail.send') && current.canEdit ? `<button class="btn primary" data-mail="send" ${d.mailConfigured ? '' : 'disabled title="No email server is set up (Settings → Email)"'}>Send</button>` : ''}
-        <button class="btn" type="button" data-mail="eml" title="Opens in Outlook or your mail app, ready to send">Download .eml</button>
-        <button class="btn" type="button" data-mail="mailto">Open in mail app</button>
-        <button class="btn" type="button" data-mail="copy">Copy</button>
+        <button class="btn ghost sm" type="button" data-mail="eml" title="Opens in Outlook or your mail app, ready to send">Download .eml</button>
+        <button class="btn ghost sm" type="button" data-mail="mailto">Open in mail app</button>
+        <button class="btn ghost sm" type="button" data-mail="copy">Copy</button>
       </div>
       ${d.mailConfigured ? '' : '<p class="small muted" style="margin:0">No email server is set up, so Send is off: download the .eml or copy it into your own mail.</p>'}
     </form></section>
@@ -419,14 +548,41 @@ function history(d) {
   return `<section class="panel"><ul class="feed" style="max-height:none">${list.map((h) => `<li><span class="icon">✎</span><div><div class="t">${esc(h.what)}</div><div class="m">${esc(person(h.by))}</div></div><span class="when" title="${esc(when(h.at))}">${ago(h.at)}</span></li>`).join('') || '<li class="empty" style="display:block">No changes yet.</li>'}</ul></section>`;
 }
 
-const VIEWS = { overview, tenant, criteria, discovery, sessions, notes, email, report, history };
+const VIEWS = {
+  overview,
+  tenant,
+  criteria,
+  notes: (d) => `${notes(d)}<h2 class="sec-title">Sessions with the customer</h2>${sessions(d)}`,
+  email: (d) => `${email(d)}<details class="panel fold-panel" ${wants('discovery') ? 'open' : ''}><summary><h3>Discovery</h3><span class="small muted">goals, tools, what they want to see</span></summary><div class="body">${discovery(d)}</div></details>`,
+  report: (d) => `${report(d)}<details class="panel fold-panel"><summary><h3>Everything that happened</h3><span class="small muted">${(d.opportunity.history ?? []).length} entries</span></summary>${history(d)}</details>`,
+};
 
 // ——— Wiring ———
 const on = (root, sel, fn) => $$(sel, root).forEach((el) => el.addEventListener('click', (e) => fn(el, e)));
 
 const WIRES = {
-  overview(main) {
-    on(main, '[data-act="save-summary"]', () => save({ summary: $('#summary').value }));
+  overview(main, d) {
+    on(main, '[data-fix]', (b) => doFix(b.dataset.fix));
+    const box = $('#summary');
+    const state_ = $('#sumState');
+    let t;
+    const store = () =>
+      api(`/opportunities/${oid()}`, { method: 'PATCH', body: { summary: box.value } })
+        .then(() => (state_.textContent = 'Saved ✓'))
+        .catch((e) => (state_.textContent = `Not saved: ${e.message}`));
+    box?.addEventListener('input', () => {
+      state_.textContent = 'Saving…';
+      clearTimeout(t);
+      t = setTimeout(store, 800);
+    });
+    on(main, '[data-act="draft-summary"]', () => {
+      box.value = draftSummary(d);
+      store();
+    });
+    $('#quickTask')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (e.target.title.value.trim()) item('tasks', { title: e.target.title.value }, 'Task added');
+    });
     on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
     on(main, '[data-act="share-deck"]', () => (location.hash = tabHref('email', 'completion')));
     on(main, '[data-result]', (b) => save({ povResult: b.dataset.result }, b.dataset.result === 'successful' ? 'POV marked successful' : 'Saved'));
@@ -438,13 +594,41 @@ const WIRES = {
       if (await attempt(() => api(`/opportunities/${oid()}/refresh`, { method: 'POST' }), 'Reading the tenant…')) setTimeout(rerender, 400);
     });
     on(main, '[data-act="disconnect"]', async () => {
-      if (!confirm('Disconnect this tenant and delete its stored API key? Nothing changes in Checkmarx One.')) return;
+      if (!(await ask('Disconnect this tenant and delete its stored API key? Nothing changes in Checkmarx One.', { ok: 'Disconnect', danger: true }))) return;
       if (await attempt(() => api(`/opportunities/${oid()}/tenant`, { method: 'DELETE' }), 'Disconnected')) rerender();
     });
     on(main, '[data-act="bundle"]', () => attempt(() => download(`/opportunities/${oid()}/troubleshoot`), 'Bundle downloaded'));
     on(main, '[data-log]', (b) => {
       const [scan, engine] = b.dataset.log.split('|');
       attempt(() => download(`/opportunities/${oid()}/logs/${encodeURIComponent(scan)}/${encodeURIComponent(engine)}`), 'Log downloaded');
+    });
+    on(main, '[data-act="tenant-tools"]', () => {
+      const mu = d.opportunity.mute?.until;
+      const mute = async (until) => {
+        closeDialog();
+        if (await attempt(() => api(`/opportunities/${oid()}/mute`, { method: 'PUT', body: { until, projects: d.opportunity.mute?.projects ?? [] } }), until ? 'Alerts muted' : 'Alerts on')) rerender();
+      };
+      openDialog(
+        `<div class="dbody"><h2>Tenant</h2><nav class="more-list">
+          ${mu ? '<button type="button" data-mu="off"><span>Turn alerts back on</span></button>' : '<button type="button" data-mu="24"><span>Mute alerts for a day</span><small class="muted">Failed scans and quiet days stop showing as needing you</small></button><button type="button" data-mu="168"><span>Mute alerts for a week</span></button>'}
+          ${can('tenant.logs') ? '<button type="button" data-tt="bundle"><span>Download the troubleshooting bundle</span><small class="muted">Every failed scan of the last 7 days, with its engine logs</small></button>' : ''}
+          ${current.canEdit ? '<button type="button" data-tt="connect"><span>Replace the API key</span></button><button type="button" data-tt="disconnect" class="bad-t"><span>Disconnect the tenant</span><small class="muted">Deletes the stored key; nothing changes in Checkmarx One</small></button>' : ''}
+        </nav><div class="dialog-actions"><button class="btn" data-close>Close</button></div></div>`,
+        {
+          onOpen(dl) {
+            dl.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+            for (const b of dl.querySelectorAll('[data-mu]')) b.addEventListener('click', () => mute(b.dataset.mu === 'off' ? null : new Date(Date.now() + Number(b.dataset.mu) * 3600e3).toISOString()));
+            dl.querySelector('[data-tt="bundle"]')?.addEventListener('click', () => (closeDialog(), attempt(() => download(`/opportunities/${oid()}/troubleshoot`), 'Bundle downloaded')));
+            dl.querySelector('[data-tt="connect"]')?.addEventListener('click', () => (closeDialog(), setTimeout(connectTenant, 60)));
+            dl.querySelector('[data-tt="disconnect"]')?.addEventListener('click', async () => {
+              closeDialog();
+              await new Promise((r) => setTimeout(r, 60));
+              if (!(await ask('Disconnect this tenant and delete its stored API key? Nothing changes in Checkmarx One.', { ok: 'Disconnect', danger: true }))) return;
+              if (await attempt(() => api(`/opportunities/${oid()}/tenant`, { method: 'DELETE' }), 'Disconnected')) rerender();
+            });
+          },
+        },
+      );
     });
     $('#mute')?.addEventListener('change', async (e) => {
       const v = e.target.value;
@@ -466,27 +650,17 @@ const WIRES = {
   criteria(main, d) {
     on(main, '[data-act="add-caps"]', addCapabilities);
     on(main, '[data-act="add-custom"]', () => editCriterion(null));
-    on(main, '[data-edit-crit]', (b) => editCriterion(d.opportunity.criteria.find((c) => c.id === b.dataset.editCrit)));
-    on(main, '[data-del-crit]', (b) => removeItem('criteria', b.dataset.delCrit, 'this success criterion'));
-    on(main, '[data-demo]', (b) => recordDemo(d.opportunity.criteria.find((x) => x.id === b.dataset.demo)));
-    on(main, '[data-watch]', (b) => {
-      const box = b.closest('.demo-box').querySelector('.demo-player');
-      box.innerHTML = `<video controls autoplay playsinline controlslist="nodownload" disablepictureinpicture src="/api/opportunities/${oid()}/criteria/${b.dataset.watch}/demo-video"></video>`;
-      box.querySelector('video').addEventListener('contextmenu', (e) => e.preventDefault());
-    });
-    on(main, '[data-unvideo]', async (b) => {
-      if (!confirm('Remove the demo video?')) return;
-      if (await attempt(() => api(`/opportunities/${oid()}/criteria/${b.dataset.unvideo}/demo-video`, { method: 'DELETE' }), 'Video removed')) rerender();
-    });
-    on(main, '[data-met]', (b) => {
+    on(main, '[data-cf]', (b) => ((critFilter = b.dataset.cf), rerender()));
+    on(main, '[data-met]', (b, e) => {
+      e.stopPropagation();
       const c = d.opportunity.criteria.find((x) => x.id === b.dataset.met);
-      item('criteria', { ...c, status: 'met' }, `"${c.title}" met`);
+      item('criteria', { ...c, status: 'met' }, `"${c.title}" done`);
     });
-    for (const s of $$('[data-status]', main))
-      s.addEventListener('change', () => {
-        const c = d.opportunity.criteria.find((x) => x.id === s.dataset.status);
-        item('criteria', { ...c, status: s.value }, `${state.meta.criterionStatus[s.value]}`);
-      });
+    for (const row of $$('[data-open-crit]', main)) {
+      const go = (e) => !e.target.closest('button') && openCriterion(d.opportunity.criteria.find((x) => x.id === row.dataset.openCrit));
+      row.addEventListener('click', go);
+      row.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), go(e)));
+    }
   },
   discovery(main, d) {
     const form = $('#discForm');
@@ -544,6 +718,7 @@ const WIRES = {
       form.subject.value = m.subject ?? '';
       form.body.value = m.body ?? '';
       form.attachDeck.checked = m.template === 'completion';
+      form.hidden = false;
     };
     const load = async (template) => {
       const m = await attempt(() => api(`/opportunities/${oid()}/email/draft`, { method: 'POST', body: { template } }));
@@ -556,7 +731,7 @@ const WIRES = {
     const msg = () => formData(form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!confirm(`Send "${form.subject.value}" to ${form.to.value}?`)) return;
+      if (!(await ask(`Send "${form.subject.value}" to ${form.to.value}?`, { ok: 'Send' }))) return;
       if (await attempt(() => api(`/opportunities/${oid()}/email/send`, { method: 'POST', body: msg() }), 'Sent')) rerender();
     });
     on(main, '[data-mail="eml"]', () => attempt(() => download(`/opportunities/${oid()}/email/eml`, msg(), 'email.eml')));
@@ -584,6 +759,15 @@ const WIRES = {
     on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
   },
 };
+// The folded tabs wire both of their parts.
+{
+  const n = WIRES.notes;
+  const e = WIRES.email;
+  const r = WIRES.report;
+  WIRES.notes = (main, d) => (n?.(main, d), WIRES.sessions?.(main, d));
+  WIRES.email = (main, d) => (e?.(main, d), WIRES.discovery?.(main, d));
+  WIRES.report = (main, d) => r?.(main, d);
+}
 
 // ——— Dialogs ———
 function dialogForm(id, title, inner, onSubmit, { wide = false } = {}) {
@@ -619,9 +803,13 @@ function editDetails() {
     (b) => api(`/opportunities/${oid()}`, { method: 'PATCH', body: b }),
   ).then(() => {});
 }
+async function removeOpportunity() {
+  if (!(await ask(`Delete "${current.opportunity.customer}" with all its notes, criteria and stored key? This cannot be undone.`, { ok: 'Delete', danger: true }))) return;
+  if (await attempt(() => api(`/opportunities/${oid()}`, { method: 'DELETE' }), 'Deleted')) location.hash = '#/dashboard';
+}
 document.addEventListener('click', async (e) => {
   if (e.target.id !== 'delOpp') return;
-  if (!confirm(`Delete "${current.opportunity.customer}" with all its notes, criteria and stored key? This cannot be undone.`)) return;
+  if (!(await ask(`Delete "${current.opportunity.customer}" with all its notes, criteria and stored key? This cannot be undone.`, { ok: 'Delete', danger: true }))) return;
   if (await attempt(() => api(`/opportunities/${oid()}`, { method: 'DELETE' }), 'Deleted')) {
     closeDialog();
     location.hash = '#/dashboard';

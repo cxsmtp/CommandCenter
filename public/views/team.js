@@ -1,6 +1,6 @@
 // Teams: the reporting tree (VP → leaders → team leads → associates) with each person's work, and the people a
 // manager may add or change below them.
-import { $, esc, api, state, can, attempt, avatar, openDialog, closeDialog, formData, peopleOptions, reloadPeople, local } from '../core.js';
+import { $, esc, api, state, can, attempt, avatar, openDialog, closeDialog, formData, peopleOptions, reloadPeople, local, ask } from '../core.js';
 
 export async function renderTeam(main, { crumbs }) {
   crumbs('<h2 style="font-size:16px">Teams</h2>');
@@ -49,7 +49,7 @@ function editUser(u) {
       onOpen(d) {
         d.querySelector('[data-close]').addEventListener('click', () => closeDialog());
         d.querySelector('#delUser')?.addEventListener('click', async () => {
-          if (!confirm(`Remove ${u.name}? Their opportunities go to their manager and their reports move up.`)) return;
+          if (!(await ask(`Remove ${u.name}? Their opportunities go to their manager and their reports move up.`, { ok: 'Remove', danger: true }))) return;
           if (await attempt(() => api(`/users/${u.id}`, { method: 'DELETE' }), 'Removed')) {
             closeDialog();
             document.dispatchEvent(new CustomEvent('cc:rerender'));

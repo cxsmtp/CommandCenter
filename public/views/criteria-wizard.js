@@ -85,12 +85,17 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   const VIEWS = {
     details: () => {
       const d = w.details;
-      return `<p class="muted wz-lead">Who it is for and where it lives. Only the customer is needed now.</p>
-        <div class="row"><label class="field">Customer<input name="customer" required maxlength="160" value="${esc(d.customer ?? '')}" autofocus></label><label class="field">Opportunity name<input name="name" maxlength="160" value="${esc(d.name ?? '')}" placeholder="e.g. AppSec platform FY27"></label></div>
-        <div class="row">${can('opps.reassign') ? `<label class="field">SE (owner)<select name="ownerId">${peopleOptions(d.ownerId ?? state.session.user.id)}</select></label>` : ''}
-          <label class="field">Stage<select name="stage">${['discovery', 'technical', 'pov'].map((k) => `<option value="${k}" ${d.stage === k ? 'selected' : ''}>${esc(state.meta.stages[k])}</option>`).join('')}</select></label>
-          <label class="field">POV start<input type="date" name="startDate" value="${esc(d.startDate ?? '')}"></label><label class="field">POV end<input type="date" name="endDate" value="${esc(d.endDate ?? '')}"></label></div>
-        <div class="row"><label class="field">Salesforce opportunity link<input name="salesforceUrl" type="url" value="${esc(d.salesforceUrl ?? '')}" placeholder="https://…lightning.force.com/…"></label><label class="field">SharePoint site link<input name="sharepointUrl" type="url" value="${esc(d.sharepointUrl ?? '')}" placeholder="https://….sharepoint.com/sites/…"></label></div>`;
+      const plus = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+      return `<label class="field">Customer<input name="customer" required maxlength="160" value="${esc(d.customer ?? '')}" placeholder="e.g. Acme Bank" autofocus></label>
+        <div class="field">Where it stands<div class="status-pick" role="radiogroup">${[['discovery', 'Discovery'], ['technical', 'Technical sessions'], ['pov', 'POV running']].map(([k, l]) => `<button type="button" data-pick-stage="${k}" aria-pressed="${(d.stage ?? 'pov') === k}">${l}</button>`).join('')}</div><input type="hidden" name="stage" value="${esc(d.stage ?? 'pov')}"></div>
+        <label class="field">Salesforce opportunity link <span class="muted">(optional)</span><input name="salesforceUrl" type="url" value="${esc(d.salesforceUrl ?? '')}" placeholder="Paste it from Salesforce"></label>
+        <details class="more-details" ${d.more ? 'open' : ''}><summary class="small">More details <span class="muted">— owner, dates, SharePoint</span></summary>
+          <div class="stack" style="gap:10px;margin-top:10px">
+            <label class="field">Opportunity name<input name="name" maxlength="160" value="${esc(d.name ?? '')}" placeholder="The customer’s name if left empty"></label>
+            ${can('opps.reassign') ? `<label class="field">SE (owner)<select name="ownerId">${peopleOptions(d.ownerId ?? state.session.user.id)}</select></label>` : ''}
+            <div class="row"><label class="field">POV start<input type="date" name="startDate" value="${esc(d.startDate ?? plus(0))}"></label><label class="field">POV end<input type="date" name="endDate" value="${esc(d.endDate ?? plus(30))}"></label></div>
+            <label class="field">SharePoint site link<input name="sharepointUrl" type="url" value="${esc(d.sharepointUrl ?? '')}" placeholder="https://….sharepoint.com/sites/…"></label>
+          </div></details>`;
     },
     templates: () => `<p class="muted wz-lead">Pick one or more templates: their criteria are chosen for you, and you adjust them in the next steps. Or start empty.</p>
       <div class="wz-tpls">${tpls.templates
@@ -172,7 +177,9 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     }
     let id = opp?.id;
     if (mode === 'new') {
-      const body = { ...w.details, criteria: items, custom, templateIds };
+      const { more, ...details } = w.details;
+      if ((details.stage ?? 'pov') !== 'pov' && !w.details.more) delete details.startDate, delete details.endDate;
+      const body = { stage: 'pov', ...details, criteria: items, custom, templateIds };
       if (w.apiKey.trim()) body.apiKey = w.apiKey.trim();
       id = (await api('/opportunities', { method: 'POST', body })).opportunity.id;
     } else {
@@ -212,6 +219,13 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         w.error = '';
         draw(d);
       });
+    for (const b of f.querySelectorAll('[data-pick-stage]'))
+      b.addEventListener('click', () => {
+        keep(d);
+        w.details.stage = b.dataset.pickStage;
+        redraw();
+      });
+    f.querySelector('.more-details')?.addEventListener('toggle', (e) => (w.details.more = e.target.open));
     for (const b of f.querySelectorAll('[data-cap]'))
       b.addEventListener('click', () => {
         w.manual.set(b.dataset.cap, NEXT[prio(b.dataset.cap)]);

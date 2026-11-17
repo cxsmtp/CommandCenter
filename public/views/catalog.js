@@ -1,5 +1,5 @@
 // The capability catalogue: every Checkmarx One touch point, its name in Checkmarx One and how it is recognised.
-import { $, esc, api, can, state, attempt, openDialog, closeDialog, formData, toast } from '../core.js';
+import { $, esc, api, can, state, attempt, openDialog, closeDialog, formData, toast, ask } from '../core.js';
 import { getCatalog } from './new-opportunity.js';
 import { getTemplates, criteriaWizard } from './criteria-wizard.js';
 
@@ -18,20 +18,31 @@ export async function renderCatalog(main, { crumbs }) {
   const editable = can('catalog.manage');
   const tp = await getTemplates(true);
   const all = can('templates.manage') && state.session.user.role === 'admin' ? await api('/templates?all=1') : tp;
-  main.innerHTML = `${templatesPanel(all)}<div class="toolbar"><span class="muted">The success criteria an SE can pick, the name each has in Checkmarx One, and what in the tenant proves it was tested. Edit a mapping when Checkmarx One names something differently.</span><span class="spacer"></span>${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">Capability</button>' : ''}</div>
+  main.innerHTML = `${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Meridian recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
+  <div class="findbar"><input type="search" id="capQ" placeholder="Find a capability" aria-label="Find a capability"></div>
   ${categories
     .map(([key, label]) => {
       const list = catalog.filter((c) => c.category === key);
       if (!list.length) return '';
-      return `<section class="panel" style="margin-bottom:14px"><div class="head"><h3>${esc(label)}</h3><span class="small muted">${list.length}</span></div><div class="table-wrap"><table><thead><tr><th>Capability</th><th>In Checkmarx One</th><th>Recognised by</th>${editable ? '<th></th>' : ''}</tr></thead><tbody>${list
-        .map((c) => `<tr><td><b>${esc(c.name)}</b> ${c.isNew ? '<span class="badge accent">New</span>' : ''}${c.proof ? `<div class="small muted"><b>Show:</b> ${esc(c.proof)}</div>` : ''}</td><td>${esc(c.cxName)}${c.tech ? `<div class="small muted" style="margin-top:4px"><b>How it is checked:</b> ${esc(c.tech)}</div>` : ''}</td><td class="small">${RULES.filter(([k]) => c.detect?.[k]?.length).map(([k, l]) => `<div><span class="muted">${esc(l)}:</span> ${esc(c.detect[k].join(', '))}</div>`).join('') || '<span class="muted">Confirmed by hand</span>'}</td>${editable ? `<td><button class="btn sm" data-edit="${esc(c.id)}">Edit</button></td>` : ''}</tr>`)
-        .join('')}</tbody></table></div></section>`;
+      return `<div class="group-title cap-group"><h2>${esc(label)}</h2><span>${list.length}</span></div><div class="crit-list">${list
+        .map((c) => `<details class="cap-row" data-name="${esc(`${c.name} ${c.cxName}`.toLowerCase())}"><summary><span class="crit-t"><b>${esc(c.name)} ${c.isNew ? '<span class="badge accent">New</span>' : ''}</b><small class="muted">${esc(c.cxName && c.cxName !== c.name ? c.cxName : RULES.filter(([k]) => c.detect?.[k]?.length).map(([, l]) => l).slice(0, 1).join('') || 'Confirmed by hand')}</small></span><span class="crit-go">›</span></summary>
+          <div class="cap-more small">
+            ${c.proof ? `<p><b>Show the customer:</b> ${esc(c.proof)}</p>` : ''}
+            <p><b>Recognised in the tenant by:</b> ${RULES.filter(([k]) => c.detect?.[k]?.length).map(([k, l]) => `${esc(l)}: ${esc(c.detect[k].join(', '))}`).join(' · ') || 'nothing automatic — confirmed by hand'}</p>
+            ${c.tech ? `<p class="muted">${esc(c.tech)}</p>` : ''}
+            ${editable ? `<button class="btn sm" data-edit="${esc(c.id)}">Edit</button>` : ''}
+          </div></details>`)
+        .join('')}</div>`;
     })
     .join('')}`;
   main.querySelector('[data-act="add"]')?.addEventListener('click', () => edit(null, categories));
+  main.querySelector('#capQ')?.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    for (const r of main.querySelectorAll('.cap-row')) r.hidden = q && !r.dataset.name.includes(q);
+  });
   wireTemplates(main, all);
   main.querySelector('[data-act="reset"]')?.addEventListener('click', async () => {
-    if (!confirm('Put back the built-in catalogue? Your own capabilities and changes are lost (criteria already on opportunities stay).')) return;
+    if (!(await ask('Put back the built-in catalogue? Your own capabilities and changes are lost (criteria already on opportunities stay).', { ok: 'Restore defaults', danger: true }))) return;
     if (await attempt(() => api('/catalog/reset', { method: 'POST' }), 'Restored')) document.dispatchEvent(new CustomEvent('cc:rerender'));
   });
   for (const b of main.querySelectorAll('[data-edit]')) b.addEventListener('click', () => edit(catalog.find((c) => c.id === b.dataset.edit), categories));
@@ -55,7 +66,7 @@ function edit(c, categories) {
       onOpen(d) {
         d.querySelector('[data-close]').addEventListener('click', () => closeDialog());
         d.querySelector('#delCap')?.addEventListener('click', async () => {
-          if (!confirm(`Delete "${c.name}" from the catalogue?`)) return;
+          if (!(await ask(`Delete "${c.name}" from the catalogue?`, { ok: 'Delete', danger: true }))) return;
           if (await attempt(() => api(`/catalog/${encodeURIComponent(c.id)}`, { method: 'DELETE' }), 'Deleted')) {
             closeDialog();
             document.dispatchEvent(new CustomEvent('cc:rerender'));
@@ -106,7 +117,7 @@ function wireTemplates(main, { templates }) {
   for (const b of main.querySelectorAll('[data-tpl-del]'))
     b.addEventListener('click', async () => {
       const t = find(b.dataset.tplDel);
-      if (!confirm(t.builtIn ? `Hide “${t.name}” from everyone? You can show it again here.` : `Remove the template “${t.name}”? Criteria already added from it stay.`)) return;
+      if (!(await ask(t.builtIn ? `Hide “${t.name}” from everyone? You can show it again here.` : `Remove the template “${t.name}”? Criteria already added from it stay.`, { ok: 'Hide', danger: true }))) return;
       after(await attempt(() => api(`/templates/${encodeURIComponent(t.id)}`, { method: 'DELETE' })), t.builtIn ? 'Hidden' : 'Removed');
     });
   for (const b of main.querySelectorAll('[data-tpl-show]')) b.addEventListener('click', async () => after(await attempt(() => api(`/templates/${encodeURIComponent(b.dataset.tplShow)}/show`, { method: 'POST', body: {} })), 'Shown again'));

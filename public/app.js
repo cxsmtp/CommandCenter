@@ -1,4 +1,4 @@
-import { $, esc, api, state, can, local, toast, attempt } from './core.js';
+import { $, esc, api, state, can, local, toast, attempt, openDialog, closeDialog } from './core.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderOpportunity } from './views/opportunity.js';
 import { renderTeam } from './views/team.js';
@@ -79,6 +79,9 @@ const ICON = {
   catalog: svg('<path d="M12 3.5l8.5 4.5L12 12.5 3.5 8z"/><path d="M3.5 12L12 16.5 20.5 12M3.5 16L12 20.5 20.5 16"/>'),
   settings: svg('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  more: svg('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'),
+  refresh: svg('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
+  out: svg('<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/>'),
   insights: svg('<path d="M4 19h16"/><path d="M7 15l3.5-4 3 2.5L18 8"/><circle cx="18" cy="8" r="1.4"/>'),
 };
 const NAV = [
@@ -108,7 +111,32 @@ function shell() {
       </header>
       <main id="main"></main>
     </div>
+    <nav class="tabbar" aria-label="Main">
+      <a href="#/dashboard" ${r.view === 'dashboard' || r.view === 'opp' ? 'aria-current="page"' : ''}>${ICON.dashboard}Portfolio${attention ? `<span class="badge-n">${attention}</span>` : ''}</a>
+      <a href="#/insights" ${r.view === 'insights' ? 'aria-current="page"' : ''}>${ICON.insights}Insights</a>
+      ${can('opps.create') ? `<button type="button" class="tab-new" data-action="new-opp"><span class="ico">${ICON.plus}</span>New</button>` : '<span></span>'}
+      <a href="#/team" ${r.view === 'team' ? 'aria-current="page"' : ''}>${ICON.team}Teams</a>
+      <button type="button" data-action="more" ${['catalog', 'settings'].includes(r.view) ? 'aria-current="page"' : ''}>${ICON.more}More</button>
+    </nav>
   </div>`;
+}
+
+/** The phone's "More": everything that is not on the tab bar, and who is signed in. */
+function openMore() {
+  const u = state.session.user;
+  openDialog(
+    `<div class="dbody more-sheet"><div class="row center"><div style="flex:1"><b>${esc(u.name)}</b><div class="small muted">${esc(u.roleLabel)} · ${esc(u.email)}</div></div><button class="btn" data-close>Done</button></div>
+      <nav class="more-list">
+        <a href="#/catalog">${ICON.catalog}<span>Capabilities & templates</span></a>
+        <a href="#/settings">${ICON.settings}<span>Settings</span></a>
+        <button type="button" data-action="refresh-all">${ICON.refresh}<span>Read every POV tenant now</span></button>
+        <button type="button" data-action="signout">${ICON.out}<span>Sign out</span></button>
+      </nav></div>`,
+    { onOpen: (d) => {
+      d.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+      for (const a of d.querySelectorAll('a')) a.addEventListener('click', () => closeDialog());
+    } },
+  );
 }
 
 const crumbs = (html) => {
@@ -125,7 +153,8 @@ async function renderNow() {
   if (!state.session?.user) return;
   if (!$('#main')) shell();
   const r = route();
-  for (const a of document.querySelectorAll('.nav a[href^="#/"]')) a.toggleAttribute('aria-current', a.getAttribute('href') === `#/${r.view}` || (r.view === 'opp' && a.getAttribute('href') === '#/dashboard'));
+  for (const a of document.querySelectorAll('.nav a[href^="#/"], .tabbar a[href^="#/"]')) a.toggleAttribute('aria-current', a.getAttribute('href') === `#/${r.view}` || (r.view === 'opp' && a.getAttribute('href') === '#/dashboard'));
+  document.querySelector('.tabbar [data-action="more"]')?.toggleAttribute('aria-current', ['catalog', 'settings'].includes(r.view));
   if (r.view === 'opp') await renderOpportunity($('#main'), r.id, r.tab, { crumbs });
   else if (r.view === 'team') await renderTeam($('#main'), { crumbs });
   else if (r.view === 'catalog') await renderCatalog($('#main'), { crumbs });
@@ -185,6 +214,7 @@ document.addEventListener('click', async (e) => {
   const a = e.target.closest('[data-action]');
   const action = a?.dataset.action;
   if (action === 'menu') return $('#nav').classList.toggle('open');
+  if (action === 'more') return openMore();
   if (action === 'signout') {
     await api('/logout', { method: 'POST' }).catch(() => {});
     location.hash = '';

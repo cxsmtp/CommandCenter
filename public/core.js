@@ -91,16 +91,85 @@ export async function attempt(fn, ok) {
   }
 }
 
-/** The one dialog: `html` inside, `onOpen(el)` to wire it. Resolves when it closes. */
+// ——— Dialogs and sheets ———
+// One dialog element for forms (#dialog) and one for questions (#ask), both native <dialog> (focus stays inside,
+// Escape closes). On a phone they are full-height sheets. The phone's Back button closes the one on top instead of
+// leaving the page, and focus goes back to what opened it.
+const openStack = [];
+function track(d) {
+  const opener = document.activeElement;
+  history.pushState({ meridianSheet: openStack.length + 1 }, '');
+  openStack.push(d);
+  d.addEventListener(
+    'close',
+    () => {
+      const i = openStack.indexOf(d);
+      if (i >= 0) openStack.splice(i, 1);
+      // Closed by a button or Escape: take back the history entry we added (not when Back closed it).
+      if (!d.dataset.closedByBack && history.state?.meridianSheet) history.back();
+      delete d.dataset.closedByBack;
+      if (opener && document.contains(opener)) opener.focus?.({ preventScroll: true });
+    },
+    { once: true },
+  );
+}
+addEventListener('popstate', () => {
+  const top = openStack.at(-1);
+  if (top?.open) {
+    top.dataset.closedByBack = '1';
+    top.close('');
+  }
+});
+
+/** The form dialog: `html` inside, `onOpen(el)` to wire it. Resolves with its return value when it closes. */
 export function openDialog(html, { wide = false, onOpen } = {}) {
   const d = $('#dialog');
   d.className = `dialog${wide ? ' wide' : ''}`;
   d.innerHTML = html;
   d.showModal();
+  track(d);
   onOpen?.(d);
   return new Promise((resolve) => d.addEventListener('close', () => resolve(d.returnValue), { once: true }));
 }
 export const closeDialog = (value = '') => $('#dialog').close(value);
+
+/**
+ * The app's own question, never the browser's: `ask('Remove this note?', { ok: 'Remove', danger: true })` resolves
+ * true or false; with `input` it resolves the text typed (or null when cancelled). Focus starts on Cancel for a
+ * destructive question.
+ */
+export function ask(message, { title = '', ok = 'OK', cancel = 'Cancel', danger = false, input = null, placeholder = '', detail = '' } = {}) {
+  let d = $('#ask');
+  if (!d) {
+    d = Object.assign(document.createElement('dialog'), { id: 'ask', className: 'dialog ask' });
+    document.body.append(d);
+  }
+  d.innerHTML = `<form method="dialog" class="ask-form">
+    ${title ? `<h2>${esc(title)}</h2>` : ''}<p class="ask-msg">${esc(message)}</p>${detail ? `<p class="muted small" style="margin:0">${esc(detail)}</p>` : ''}
+    ${input !== null ? `<input name="answer" value="${esc(input)}" placeholder="${esc(placeholder)}" autocomplete="off">` : ''}
+    <div class="dialog-actions"><button value="cancel" class="btn" ${danger ? 'autofocus' : ''}>${esc(cancel)}</button><button value="ok" class="btn ${danger ? 'danger-fill' : 'primary'}" ${danger ? '' : 'autofocus'}>${esc(ok)}</button></div>
+  </form>`;
+  d.showModal();
+  track(d);
+  if (input !== null) d.querySelector('input').focus();
+  return new Promise((resolve) =>
+    d.addEventListener('close', () => {
+      const yes = d.returnValue === 'ok';
+      resolve(input !== null ? (yes ? d.querySelector('input').value : null) : yes);
+    }, { once: true }),
+  );
+}
+
+/** A button that cannot be pressed twice while its action runs. */
+export async function busy(button, fn) {
+  if (button?.disabled) return undefined;
+  if (button) button.disabled = true;
+  try {
+    return await fn();
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
 
 export function formData(form) {
   const out = {};
@@ -188,7 +257,7 @@ export function table(id, columns, rows, { rowAttrs = () => '', empty = 'None.' 
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''))) * s.dir;
   });
   return `<div class="table-wrap"><table data-table="${id}"><thead><tr>${columns.map((c, i) => `<th class="${c.n ? 'n' : ''}" ${c.key ? `data-col="${i}"` : ''}>${c.label}${s.col === i ? (s.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead><tbody>${
-    sorted.length ? sorted.map((r) => `<tr ${rowAttrs(r)}>${columns.map((c) => `<td class="${c.n ? 'n' : ''}">${c.html(r)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${columns.length}" class="muted">${empty}</td></tr>`
+    sorted.length ? sorted.map((r) => `<tr ${rowAttrs(r)}>${columns.map((c) => `<td class="${c.n ? 'n' : ''}" data-label="${esc(String(c.label).replace(/<[^>]+>/g, ''))}">${c.html(r)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${columns.length}" class="muted">${empty}</td></tr>`
   }</tbody></table></div>`;
 }
 document.addEventListener('click', (e) => {

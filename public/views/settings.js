@@ -1,5 +1,5 @@
 // Settings: your profile and look, and (by permission) the organisation, the email server and the roles.
-import { $, $$, esc, api, state, can, attempt, toast, formData, when, ago } from '../core.js';
+import { $, $$, esc, api, state, can, attempt, toast, formData, when, ago, ask } from '../core.js';
 
 const LOOKS = {
   orbit: ['Orbit — launch control', ['#03050b', '#5ce1ff', '#8b7cff']],
@@ -43,7 +43,8 @@ function profile(body, data, applyLook) {
   const mode = p.mode || data.settings.defaultMode;
   body.innerHTML = `<div class="grid2">
     <section class="panel"><div class="head"><h3>Your look</h3></div><div class="body stack">
-      <div class="looks">${Object.entries(LOOKS).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div>
+      <div class="looks">${Object.entries(LOOKS).slice(0, 4).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div>
+      <details ${Object.keys(LOOKS).indexOf(theme) >= 4 ? 'open' : ''}><summary class="small muted">More looks</summary><div class="looks" style="margin-top:10px">${Object.entries(LOOKS).slice(4).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div></details>
       <div class="row center"><span class="small muted">Mode</span><div class="seg">${['auto', 'light', 'dark'].map((m) => `<button data-mode="${m}" aria-pressed="${mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
       <span class="small muted">Portfolio opens as</span><div class="seg">${[['', 'By role'], ['cards', 'Cards'], ['table', 'Line items']].map(([v, l]) => `<button data-pview="${v}" aria-pressed="${(p.view ?? '') === v}">${l}</button>`).join('')}</div></div>
     </div></section>
@@ -186,7 +187,7 @@ async function system(body) {
     });
   for (const b of $$('[data-restore]', body))
     b.addEventListener('click', async () => {
-      if (!confirm(`Put back the data as it was at ${b.dataset.at}? Everything since then is replaced (a backup of it is taken first, so this can be undone). The server restarts.`)) return;
+      if (!(await ask(`Put back the data as it was at ${b.dataset.at}? Everything since then is replaced (a backup of it is taken first, so this can be undone). The server restarts.`, { ok: 'Restore', danger: true }))) return;
       if (await attempt(() => api('/system/restore', { method: 'POST', body: { name: b.dataset.restore } }), 'Restored — restarting')) setTimeout(() => location.reload(), 6000);
     });
   $('[data-act="check-updates"]', body).addEventListener('click', async () => (await attempt(() => api('/updates/check', { method: 'POST', body: {} }))) && again());
@@ -194,10 +195,10 @@ async function system(body) {
   $('#autoOn').addEventListener('change', saveAuto);
   $('#autoEvery').addEventListener('change', saveAuto);
   $('[data-act="install"]', body)?.addEventListener('click', async () => {
-    if (confirm(`Install ${u.available[0].version}? People see a short pause while the server restarts.`) && (await attempt(() => api('/updates/install', { method: 'POST', body: { version: u.available[0].version } }), 'Installing — restarting'))) setTimeout(() => location.reload(), 8000);
+    if ((await ask(`Install ${u.available[0].version}? People see a short pause while the server restarts.`, { ok: 'Install' })) && (await attempt(() => api('/updates/install', { method: 'POST', body: { version: u.available[0].version } }), 'Installing — restarting'))) setTimeout(() => location.reload(), 8000);
   });
   $('[data-act="rollback"]', body)?.addEventListener('click', async () => {
-    if (confirm(`Go back to ${u.previous}?`) && (await attempt(() => api('/updates/rollback', { method: 'POST', body: {} }), 'Going back — restarting'))) setTimeout(() => location.reload(), 8000);
+    if ((await ask(`Go back to ${u.previous}?`, { ok: 'Go back' })) && (await attempt(() => api('/updates/rollback', { method: 'POST', body: {} }), 'Going back — restarting'))) setTimeout(() => location.reload(), 8000);
   });
 }
 
@@ -219,7 +220,7 @@ async function sfMe(el) {
     if (await attempt(() => api('/me/salesforce', { method: 'PUT', body }), 'Saved')) sfMe(el);
   });
   $('[data-act="sf-clear"]', el)?.addEventListener('click', async () => {
-    if (confirm('Stop sending to Salesforce?') && (await attempt(() => api('/me/salesforce', { method: 'PUT', body: { address: '' } }), 'Removed'))) sfMe(el);
+    if ((await ask('Stop sending to Salesforce?', { ok: 'Stop', danger: true })) && (await attempt(() => api('/me/salesforce', { method: 'PUT', body: { address: '' } }), 'Removed'))) sfMe(el);
   });
 }
 

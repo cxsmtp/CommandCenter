@@ -1002,7 +1002,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const prev = opps.get(id).tenant;
         if (prev && prev.tenant !== connection.tenant && !b.replaceTenant) throw fail(409, `This opportunity is on tenant "${prev.tenant}"; that key is for "${connection.tenant}". Tick "connect a different tenant" to switch.`);
         await checkKey(connection);
-        const opp = opps.setTenant(user, id, b, s);
+        let opp = opps.setTenant(user, id, b, s);
+        // A tenant means the POV has started: a deal still in discovery or technical sessions moves on by itself, with
+        // today as its start and four weeks to run unless dates were set.
+        if (['discovery', 'technical'].includes(opp.stage)) {
+          const day = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+          opp = opps.update(user, id, { stage: 'pov', startDate: opp.startDate || day(0), endDate: opp.endDate || day(30) }, s);
+        }
         monitor.refresh(id, { force: true }).catch(() => {});
         return done(opp);
       }
