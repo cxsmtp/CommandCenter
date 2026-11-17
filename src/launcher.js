@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readState, writeState, RESTART_CODE } from './updates.js';
+import { probe } from './probe.js';
 import { Db } from './db.js';
 
 const BUILTIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,8 +59,7 @@ export function serverEnv(base = process.env, dataDir = DATA) {
 async function healthy(deadline) {
   while (Date.now() < deadline) {
     try {
-      const r = await fetch(`http://127.0.0.1:${PORT}/healthz`, { signal: AbortSignal.timeout(3000) });
-      if (r.ok) return true;
+      if ((await probe(PORT))?.ok) return true;
     } catch {}
     await new Promise((r) => setTimeout(r, 1000));
   }

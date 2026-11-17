@@ -65,7 +65,7 @@ This starts a made-up team (VP, leader, two team leads, four SEs) with opportuni
 
 | Variable | Default | |
 | --- | --- | --- |
-| `PORT` / `HOST` | `4310` / `127.0.0.1` (`0.0.0.0` in the container) | |
+| `PORT` / `HOST` | `4310` / `127.0.0.1` (`8443` / `0.0.0.0` in the container) | |
 | `CC_DATA_DIR` | `./data` (`/data` in the container) | Everything kept: users, opportunities, snapshots, outbox |
 | `CC_SECRET` or `CC_SECRET_FILE` | key file in the data folder | The key everything is encrypted with: a passphrase, or a file holding one (a Docker/Kubernetes secret). Keep it off the data volume and in your password vault: backups cannot be read without it. |
 | `CC_BACKUP_DIR` | none | A mounted share or second disk: every backup is copied there too |
@@ -76,7 +76,10 @@ This starts a made-up team (VP, leader, two team leads, four SEs) with opportuni
 | `CC_UPDATE_REPO` | `cxsmtp/CommandCenter` | Where releases come from |
 | `CC_ADMIN_EMAIL` / `CC_ADMIN_PASSWORD` | `admin@meridian.local` / random, printed once | The first Admin |
 | `REFRESH_MINUTES` | `10` (also under Settings → Organisation) | How often running POV tenants are read |
-| `CC_SECURE_COOKIES` | `false` | `true` when served over HTTPS |
+| `HTTPS` | `on` in the container image | `on`: Meridian serves HTTPS itself (cookies always Secure); `off`: plain http behind a reverse proxy that does HTTPS |
+| `TLS_CERT_FILE` + `TLS_KEY_FILE`, or `TLS_PFX_FILE` | none: a self-signed certificate in `<data>/tls` | Your certificate (PEM with its chain, or .pfx; `TLS_KEY_PASSPHRASE` / `TLS_PFX_PASSPHRASE`). Re-read when renewed, no restart |
+| `TLS_HOSTNAMES` | this machine | The names (and IPs) the self-signed certificate covers, e.g. `meridian.company.com,10.1.2.3` |
+| `CC_SECURE_COOKIES` | `false` | `true` when plain http sits behind an HTTPS proxy |
 | `CX_MAX_CONCURRENCY`, `CC_MAX_SCANS`, `CC_MAX_PROJECTS` | `8`, `500`, `500` | Limits per tenant read |
 
 Backups are taken and checked by Meridian itself (Settings → System & backups). They never contain the key: to restore on another server, give it the same `CC_SECRET` / `CC_SECRET_FILE`.

@@ -6,15 +6,15 @@ services:
     image: meridian:latest
     restart: unless-stopped
     ports:
-      - "4310:4310"
+      - "8443:8443"
     volumes:
       - meridian-data:/data
     environment:
       # A long random value: the key all data is encrypted with. Keep a copy in your password vault; backups cannot be
       # read without it. Without it a key file is made in /data.
       CC_SECRET: ${CC_SECRET:-}
-      # Set when Meridian is served over HTTPS (behind a reverse proxy).
-      CC_SECURE_COOKIES: ${CC_SECURE_COOKIES:-false}
+      # HTTPS on 8443 with a self-signed certificate for these names, until TLS_CERT_FILE + TLS_KEY_FILE name your own.
+      TLS_HOSTNAMES: ${TLS_HOSTNAMES:-}
       CC_ADMIN_EMAIL: ${CC_ADMIN_EMAIL:-admin@meridian.local}
       REFRESH_MINUTES: ${REFRESH_MINUTES:-10}
       # Auto-update from the private GitHub repository: a read-only token (fine-grained, Contents: read). Every push to main

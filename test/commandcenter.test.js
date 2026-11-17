@@ -430,3 +430,40 @@ test('Salesforce: a dropped report fills each POV, gaps compare it with the POV,
   assert.equal(log.status, 409);
   assert.match(log.body.error, /email server/);
 });
+
+test('HTTPS by itself: a self-signed certificate for the names asked, Secure cookies', async () => {
+  const https = await import('node:https');
+  const { X509Certificate } = await import('node:crypto');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-tls-'));
+  process.env.TLS_HOSTNAMES = 'meridian.acme.example';
+  const tlsApp = createApp({ dataDir: dir, tls: true, startBackground: false });
+  delete process.env.TLS_HOSTNAMES;
+  await new Promise((r) => tlsApp.server.listen(0, '127.0.0.1', r));
+  try {
+    const port = tlsApp.server.address().port;
+    const ask = (p, opts = {}) => new Promise((resolve, reject) => {
+      const req = https.request({ host: '127.0.0.1', port, path: p, rejectUnauthorized: false, agent: false, ...opts }, (res) => {
+        let body = '';
+        res.on('data', (c) => (body += c));
+        res.on('end', () => resolve({ res, body, cert: res.socket.getPeerCertificate?.() }));
+      });
+      req.on('error', reject);
+      if (opts.body) req.write(opts.body);
+      req.end();
+    });
+    const h = await ask('/healthz');
+    assert.equal(JSON.parse(h.body).ok, true);
+    assert.match(h.cert.subjectaltname, /DNS:meridian\.acme\.example/);
+    assert.equal(h.cert.subject.CN, 'meridian.acme.example');
+    assert.ok(fs.existsSync(path.join(dir, 'tls', 'self-signed.crt')));
+    const login = await ask('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@meridian.local', password: 'admin-password-123' }) });
+    assert.equal(login.res.statusCode, 200);
+    assert.match(login.res.headers['set-cookie'][0], /; Secure/);
+    assert.ok(tlsApp.server.tlsInfo.selfSigned);
+    assert.ok(new X509Certificate(fs.readFileSync(path.join(dir, 'tls', 'self-signed.crt'))).checkPrivateKey);
+  } finally {
+    tlsApp.server.closeAllConnections?.();
+    tlsApp.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

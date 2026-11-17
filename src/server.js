@@ -4,6 +4,8 @@
  * One dependency (nodemailer). Everything it keeps lives in the data folder (CC_DATA_DIR, /data in the container).
  */
 import http from 'node:http';
+import https from 'node:https';
+import { startMode, tlsOptions } from './tls.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +51,10 @@ const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']
 const POLLED_STAGES = new Set(['pov']);
 const DEFAULT_SETTINGS = { orgName: 'Meridian', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true };
 
-export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null, backupOptions = null, startBackground = true } = {}) {
+export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null, backupOptions = null, startBackground = true, tls = false } = {}) {
+  // HTTPS served here (src/tls.js): the given certificate, else a self-signed one; cookies are then always Secure.
+  const cert = tls ? tlsOptions(dataDir) : null;
+  if (cert) secureCookies = true;
   const db = new Db(dataDir);
   const users = new Users(db);
   const catalog = new Catalog(db);
@@ -1302,7 +1307,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     });
   }
 
-  const server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     try {
       if (url.pathname === '/healthz') return send(res, 200, { ok: true, version: VERSION, reading: monitor.load(), memoryMb: Math.round(process.memoryUsage().rss / 1048576) });
@@ -1314,7 +1319,32 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (status === 500) console.error(error);
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
-  });
+  };
+  const server = cert
+    ? https.createServer({ ...cert.options, minVersion: 'TLSv1.2' }, (req, res) => {
+        // A real certificate: browsers are told to keep to HTTPS. (Not for a self-signed one: they would ignore it.)
+        if (!cert.selfSigned) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+        return handler(req, res);
+      })
+    : http.createServer(handler);
+  if (cert) {
+    // A renewed certificate is taken without a restart.
+    let reloadTimer = null;
+    for (const f of cert.files)
+      fs.watchFile(f, { interval: 60_000, persistent: false }, () => {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => {
+          try {
+            server.setSecureContext({ ...cert.load(), minVersion: 'TLSv1.2' });
+            console.log('[https] Certificate reloaded.');
+          } catch (error) {
+            console.error(`[https] The new certificate was not taken: ${error.message}`);
+          }
+        }, 2000);
+      });
+    server.on('close', () => cert.files.forEach((f) => fs.unwatchFile(f)));
+  }
+  server.tlsInfo = cert ? { selfSigned: cert.selfSigned, description: cert.description } : null;
   // ——— Demo videos: small (≤ 25 MB) MP4 or WebM, kept in the data folder, played in the app and embedded in the results page ———
   const MAX_VIDEO = 25 * 1048576;
   const VIDEO_TYPES = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
@@ -1513,12 +1543,13 @@ async function defaultVerify(connection) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const host = process.env.HOST || '127.0.0.1';
   const port = Number(process.env.PORT) || 4310;
-  const app = createApp();
+  const app = createApp({ tls: startMode() === 'https' });
   if (app.firstAdmin) {
     console.log(`\n  First start. Sign in as ${app.firstAdmin.email} with password: ${app.firstAdmin.password}\n  (you will be asked to change it)\n`);
   }
   app.server.listen(port, host, () => {
-    console.log(`Meridian ${VERSION} on http://${host}:${port} — reading POV tenants every ${app.monitor.intervalMs / 60_000} min`);
+    if (app.server.tlsInfo) console.log(`[https] ${app.server.tlsInfo.selfSigned ? 'Self-signed certificate (browsers warn until it is trusted; set TLS_CERT_FILE and TLS_KEY_FILE for your own)' : 'Certificate'}: ${app.server.tlsInfo.description}`);
+    console.log(`Meridian ${VERSION} on ${app.server.tlsInfo ? 'https' : 'http'}://${host}:${port} — reading POV tenants every ${app.monitor.intervalMs / 60_000} min`);
     app.monitor.start();
   });
   const stop = () => app.server.close(() => process.exit(0));
