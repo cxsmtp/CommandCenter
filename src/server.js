@@ -1552,7 +1552,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`Meridian ${VERSION} on ${app.server.tlsInfo ? 'https' : 'http'}://${host}:${port} — reading POV tenants every ${app.monitor.intervalMs / 60_000} min`);
     app.monitor.start();
   });
-  const stop = () => app.server.close(() => process.exit(0));
+  // A clean stop within seconds: open live-update streams are closed rather than waited for (Podman and Docker give
+  // 10 seconds before they kill). Records are written atomically, so nothing is ever half-saved.
+  const stop = () => {
+    app.server.close(() => process.exit(0));
+    app.server.closeAllConnections?.();
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
   // The last line of defence: an unexpected error is logged; a thrown one ends the process, and the launcher starts
   // a clean one within seconds (records are written atomically, so nothing is half-saved).
   process.on('unhandledRejection', (error) => console.error('Unhandled rejection:', error));

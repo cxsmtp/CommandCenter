@@ -127,7 +127,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       stopping = true;
       if (child) child.kill(sig);
       else process.exit(0);
-      setTimeout(() => process.exit(0), 15_000).unref();
+      setTimeout(() => process.exit(0), 7_000).unref();
     });
   }
   fs.mkdirSync(DATA, { recursive: true, mode: 0o700 });
