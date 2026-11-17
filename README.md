@@ -72,12 +72,18 @@ This starts a made-up team (VP, leader, two team leads, four SEs) with opportuni
 | `CC_BACKUP_HOURS` | `6` | How often the automatic backup runs |
 | `CC_MAX_RSS_MB` | `1536` | Memory above this for 3 minutes: a clean restart |
 | `CC_PUBLIC_URL` | none | Meridian's address, so Salesforce activities link back to the POV |
+| `CC_UPDATE_TOKEN` or `CC_UPDATE_TOKEN_FILE` | none | A read-only GitHub token (fine-grained, *Contents: read* on this repository). Needed while the repository is private; sent to api.github.com only |
+| `CC_UPDATE_REPO` | `cxsmtp/CommandCenter` | Where releases come from |
 | `CC_ADMIN_EMAIL` / `CC_ADMIN_PASSWORD` | `admin@meridian.local` / random, printed once | The first Admin |
 | `REFRESH_MINUTES` | `10` (also under Settings → Organisation) | How often running POV tenants are read |
 | `CC_SECURE_COOKIES` | `false` | `true` when served over HTTPS |
 | `CX_MAX_CONCURRENCY`, `CC_MAX_SCANS`, `CC_MAX_PROJECTS` | `8`, `500`, `500` | Limits per tenant read |
 
 Backups are taken and checked by Meridian itself (Settings → System & backups). They never contain the key: to restore on another server, give it the same `CC_SECRET` / `CC_SECRET_FILE`.
+
+## Updates: every push to main, installed by itself
+
+Like the FTR command center: every push to `main` is tested and published as a release (`.github/workflows/release.yml`; the version is made from the commit count, `1.0.<n>`, so nobody bumps it by hand). Each server started by the launcher (the container image or `npm start`) checks every 15 minutes and installs a new release as soon as it finds it: the download is checked against its SHA-256 (and signature, with `CC_UPDATE_PUBKEY`), a checked backup is taken, and the server restarts into it in a few seconds. A version that does not start is rolled back by itself and never tried again; going back by hand holds that version back until a newer one comes. Auto-update is on by default; Settings → System & backups turns it off or changes how often it checks.
 
 ## Checkmarx One calls (all read-only)
 

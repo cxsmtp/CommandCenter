@@ -133,7 +133,9 @@ export function healthChecks({ db, backups, monitor, audit, updater, watchdog, v
   // Updates
   const u = updater.status();
   if (u.lastFailure) add('update', 'Updates', 'warn', `Version ${u.lastFailure.version} failed to start and was rolled back by itself.`, 'It will not be tried again automatically; check its release notes.');
-  else add('update', 'Updates', 'ok', u.updateAvailable ? `Version ${u.available[0].version} is available.` : 'Up to date.');
+  else if (u.checkError) add('update', 'Updates', 'warn', `Cannot see the releases: ${u.checkError}`, u.token ? 'Check the token can read the repository, and the network allows api.github.com.' : 'Set CC_UPDATE_TOKEN to a read-only GitHub token.');
+  else if (!u.auto.enabled) add('update', 'Updates', 'warn', `Auto-update is off${u.updateAvailable ? `; version ${u.available[0].version} is waiting` : ''}.`, 'Turn it on below to stay on the newest version.');
+  else add('update', 'Updates', 'ok', `${u.updateAvailable ? `Version ${u.available[0].version} found; installing.` : 'On the newest version.'} Checked every ${u.auto.everyMinutes} minutes.`);
 
   const rank = { bad: 0, warn: 1, ok: 2 };
   return out.sort((a, b) => rank[a.level] - rank[b.level]);

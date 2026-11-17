@@ -167,10 +167,12 @@ async function system(body) {
         ${[...h.corrections.map((c) => ({ at: c.at, text: `${c.what} — ${c.action}` })), ...h.repairs.map((r) => ({ at: r.at, text: r.from ? `${r.name} was damaged — repaired from ${r.from}` : `${r.name} was damaged — no good copy, set aside` }))].sort((a, b) => b.at.localeCompare(a.at)).map((c) => `<div><div class="small muted">${esc(when(c.at))}</div>${esc(c.text)}</div>`).join('') || '<span class="muted">Nothing needed correcting since the server started.</span>'}
       </div></section>
       <section class="panel"><div class="head"><h3>Updates</h3><button class="btn sm" data-act="check-updates">Check now</button></div><div class="body stack" style="gap:10px">
-        <div>Running <b class="mono">${esc(u.current)}</b>${u.updateAvailable ? ` · <span class="badge accent">${esc(u.available[0].version)} available</span>` : ' · up to date'}${u.lastCheck ? `<div class="small muted">Last checked ${esc(ago(u.lastCheck))}${u.checkError ? ` · ${esc(u.checkError)}` : ''}</div>` : ''}</div>
+        <div>Running <b class="mono">${esc(u.current)}</b>${u.updateAvailable ? ` · <span class="badge accent">${esc(u.available[0].version)} available</span>` : u.checkError ? ' · <span class="warn-t">could not check</span>' : ' · up to date'}${u.lastCheck ? `<div class="small muted">Last checked ${esc(ago(u.lastCheck))}${u.checkError ? ` · ${esc(u.checkError)}` : ''}</div>` : ''}</div>
         ${u.lastFailure ? `<div class="small bad-t">${esc(u.lastFailure.version)} failed to start and was rolled back by itself.</div>` : ''}
-        <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''} ${u.launched ? '' : 'disabled'}> Install new versions by itself at <select id="autoHour" ${u.launched ? '' : 'disabled'}>${Array.from({ length: 24 }, (_, i) => `<option value="${i}" ${u.auto.hour === i ? 'selected' : ''}>${String(i).padStart(2, '0')}:00</option>`).join('')}</select></label>
-        <div class="small muted">A backup is taken first; a version that does not start is rolled back by itself.${u.launched ? '' : ' Updating needs the launcher (npm start or the container image).'}</div>
+        <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''}> Keep up to date by itself — check every <select id="autoEvery">${[5, 10, 15, 30, 60, 240, 1440].map((m) => `<option value="${m}" ${u.auto.everyMinutes === m ? 'selected' : ''}>${m < 60 ? `${m} minutes` : m === 60 ? 'hour' : m === 1440 ? 'day' : `${m / 60} hours`}</option>`).join('')}</select></label>
+        <div class="small muted">Every change pushed to main is published as a release; this server installs it as soon as it sees it. A checked backup is taken first, people see a few seconds’ pause, and a version that does not start is rolled back by itself and never tried again.${u.heldBack ? ` Held back: ${esc(u.heldBack)} and older (you went back from it).` : ''}</div>
+        ${u.launched ? '' : '<div class="small warn-t">This server was not started by the launcher (npm start or the container image), so it cannot update itself.</div>'}
+        ${u.token ? '' : '<div class="small muted">For a private repository, set CC_UPDATE_TOKEN (a read-only GitHub token) on the server.</div>'}
         <div class="row">${u.updateAvailable && u.launched ? `<button class="btn primary" data-act="install">Install ${esc(u.available[0].version)}</button>` : ''}${u.previous && u.launched ? `<button class="btn ghost" data-act="rollback">Go back to ${esc(u.previous)}</button>` : ''}</div>
       </div></section>
     </div></div>`;
@@ -188,9 +190,9 @@ async function system(body) {
       if (await attempt(() => api('/system/restore', { method: 'POST', body: { name: b.dataset.restore } }), 'Restored — restarting')) setTimeout(() => location.reload(), 6000);
     });
   $('[data-act="check-updates"]', body).addEventListener('click', async () => (await attempt(() => api('/updates/check', { method: 'POST', body: {} }))) && again());
-  const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, hour: Number($('#autoHour').value) } }), 'Saved');
+  const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, everyMinutes: Number($('#autoEvery').value) } }), 'Saved');
   $('#autoOn').addEventListener('change', saveAuto);
-  $('#autoHour').addEventListener('change', saveAuto);
+  $('#autoEvery').addEventListener('change', saveAuto);
   $('[data-act="install"]', body)?.addEventListener('click', async () => {
     if (confirm(`Install ${u.available[0].version}? People see a short pause while the server restarts.`) && (await attempt(() => api('/updates/install', { method: 'POST', body: { version: u.available[0].version } }), 'Installing — restarting'))) setTimeout(() => location.reload(), 8000);
   });

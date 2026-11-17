@@ -10,13 +10,19 @@ services:
     volumes:
       - meridian-data:/data
     environment:
-      # A long random value: seals the Checkmarx One API keys and the SMTP password at rest.
-      # Without it a key file is made in /data (keep /data's backups private either way).
+      # A long random value: the key all data is encrypted with. Keep a copy in your password vault; backups cannot be
+      # read without it. Without it a key file is made in /data.
       CC_SECRET: ${CC_SECRET:-}
       # Set when Meridian is served over HTTPS (behind a reverse proxy).
       CC_SECURE_COOKIES: ${CC_SECURE_COOKIES:-false}
       CC_ADMIN_EMAIL: ${CC_ADMIN_EMAIL:-admin@meridian.local}
       REFRESH_MINUTES: ${REFRESH_MINUTES:-10}
+      # Auto-update from the private GitHub repository: a read-only token (fine-grained, Contents: read). Every push to main
+      # is published as a release and installed here within 15 minutes.
+      CC_UPDATE_TOKEN: ${CC_UPDATE_TOKEN:-}
+      # Where each backup is also copied (mount a share or a second disk there).
+      CC_BACKUP_DIR: ${CC_BACKUP_DIR:-}
+      CC_PUBLIC_URL: ${CC_PUBLIC_URL:-}
     read_only: true
     tmpfs:
       - /tmp

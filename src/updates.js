@@ -1,14 +1,19 @@
 /**
  * Updates: Meridian replaces its own code with a published release, without anyone signing in to the server.
  *
- *   check     the repository's releases (GitHub, CC_UPDATE_REPO), newest first, every 6 hours and on request
+ *   check     the repository's releases (GitHub, CC_UPDATE_REPO), newest first, every 15 minutes (an Admin can
+ *             change it, 5 to 1440) and on request. A private repository needs CC_UPDATE_TOKEN (or
+ *             CC_UPDATE_TOKEN_FILE): a read-only GitHub token, sent to api.github.com only, never to a download host
  *   install   download the release's app bundle, check it against the release's SHA256SUMS (and, when
  *             CC_UPDATE_PUBKEY is set, the Ed25519 signature of that file), back up the data folder, unpack it
  *             beside the others and ask the launcher (src/launcher.js) to restart into it
  *   verify    the launcher waits for the new version to answer /healthz; if it does not within a minute, it goes
  *             back to the version before by itself, and the failure is recorded here
  *   rollback  any time, to the version before (or the one built into the image)
- *   auto      install the newest release by itself in a quiet hour (off until an Admin turns it on)
+ *   auto      on unless an Admin turns it off: the newest release is installed as soon as it is found (every push
+ *             to main publishes one, see .github/workflows/release.yml). A version that failed to start here is never
+ *             installed by itself again, and going back by hand holds that version (and older) back until a newer
+ *             release comes
  *
  * Everything lives under <data>/app: versions/<version>/ (one folder per release), state.json (which one runs,
  * which ran before, what was tried) and <data>/backups/ (a copy of the data before each update; the last 5 kept).
@@ -24,7 +29,7 @@ import { fail } from './db.js';
 const run = promisify(execFile);
 export const RESTART_CODE = 75; // the launcher restarts the server on this exit code
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-const CHECK_EVERY_MS = 6 * 3600e3;
+const AUTO_DEFAULT = { enabled: true, everyMinutes: 15 };
 const KEEP_VERSIONS = 3;
 const HOSTS = new Set(['api.github.com', 'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'codeload.github.com']);
 
@@ -68,6 +73,7 @@ export class Updater {
   #restart;
   #timer = null;
   #busy = null;
+  #token;
   launched;
 
   /**
@@ -76,7 +82,7 @@ export class Updater {
    * @param {string} o.currentVersion  the version running now
    * @param {() => void} [o.restart]   ask the launcher for a restart (exit with RESTART_CODE)
    */
-  constructor({ dataDir, currentVersion, repo = process.env.CC_UPDATE_REPO || 'cxsmtp/CommandCenter', api = process.env.CC_UPDATE_API || 'https://api.github.com', pubkey = process.env.CC_UPDATE_PUBKEY || '', fetchFn = fetch, restart = () => setTimeout(() => process.exit(RESTART_CODE), 300), launched = process.env.CC_LAUNCHED === '1' }) {
+  constructor({ dataDir, currentVersion, repo = process.env.CC_UPDATE_REPO || 'cxsmtp/CommandCenter', api = process.env.CC_UPDATE_API || 'https://api.github.com', pubkey = process.env.CC_UPDATE_PUBKEY || '', fetchFn = fetch, token = null, restart = () => setTimeout(() => process.exit(RESTART_CODE), 300), launched = process.env.CC_LAUNCHED === '1' }) {
     this.#dataDir = dataDir;
     this.#current = currentVersion;
     this.#repo = repo;
@@ -85,6 +91,7 @@ export class Updater {
     this.#fetch = fetchFn;
     this.#restart = restart;
     this.launched = launched;
+    this.#token = tokenFrom(token);
   }
 
   get state() {
@@ -118,7 +125,10 @@ export class Updater {
       checkError: s.checkError ?? null,
       available: (s.available ?? []).map((r) => ({ ...r, newer: compareVersions(r.version, this.#current) > 0 })),
       updateAvailable: Boolean(newest && compareVersions(newest.version, this.#current) > 0),
-      auto: { enabled: false, hour: 3, ...(s.auto ?? {}) },
+      auto: autoOf(s),
+      failed: s.failed ?? [],
+      heldBack: s.heldBack ?? null,
+      token: Boolean(this.#token),
       pending: s.pending ?? null,
       lastFailure: s.lastFailure ?? null,
       busy: Boolean(this.#busy),
@@ -135,9 +145,10 @@ export class Updater {
     }
   }
 
-  setAuto({ enabled, hour }) {
-    const h = Math.trunc(Number(hour));
-    return this.#save({ auto: { enabled: Boolean(enabled), hour: h >= 0 && h < 24 ? h : 3 } }).auto;
+  setAuto({ enabled, everyMinutes }) {
+    const before = autoOf(this.state);
+    const m = Math.trunc(Number(everyMinutes));
+    return this.#save({ auto: { enabled: enabled === undefined ? before.enabled : Boolean(enabled), everyMinutes: m >= 5 && m <= 1440 ? m : before.everyMinutes } }).auto;
   }
 
   /** Only the release service's own hosts (or this machine, outside production, for tests). */
@@ -149,10 +160,20 @@ export class Updater {
   }
 
   async #get(url, { json = false, accept } = {}) {
-    const r = await this.#fetch(this.#checkUrl(url), { headers: { 'User-Agent': 'Meridian-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') }, redirect: 'follow', signal: AbortSignal.timeout(120_000) });
-    // A redirect may only land on the release service too.
-    if (r.url) this.#checkUrl(r.url);
-    if (!r.ok) throw fail(502, `The release service answered ${r.status} for ${new URL(url).pathname}.`);
+    // Redirects are followed by hand: each hop must be the release service, and the token goes to the API host only.
+    const apiHost = new URL(this.#api).host;
+    let at = this.#checkUrl(url);
+    let r;
+    for (let hop = 0; hop < 5; hop += 1) {
+      const headers = { 'User-Agent': 'Meridian-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') };
+      if (this.#token && at.host === apiHost) headers.Authorization = `Bearer ${this.#token}`;
+      r = await this.#fetch(at, { headers, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+      if (![301, 302, 303, 307, 308].includes(r.status)) break;
+      at = this.#checkUrl(new URL(r.headers.get('location'), at));
+    }
+    if (r.status === 403 && r.headers.get('x-ratelimit-remaining') === '0') throw fail(503, `GitHub’s hourly limit for servers that do not sign in is used up${this.#token ? '' : '; set CC_UPDATE_TOKEN (a read-only GitHub token) to lift it'}.`);
+    if ((r.status === 404 || r.status === 401 || r.status === 403) && !this.#token && at.host === apiHost) throw fail(502, `GitHub answered ${r.status}: the repository is private. Set CC_UPDATE_TOKEN to a read-only GitHub token (Contents: read) so this server can see its releases.`);
+    if (!r.ok) throw fail(502, `The release service answered ${r.status} for ${at.pathname}.`);
     return json ? r.json() : Buffer.from(await r.arrayBuffer());
   }
 
@@ -164,8 +185,13 @@ export class Updater {
         .filter((r) => !r.draft && !r.prerelease)
         .map((r) => {
           const version = String(r.tag_name ?? '').replace(/^v/, '');
-          const asset = (re) => (r.assets ?? []).find((a) => re.test(a.name))?.browser_download_url ?? null;
-          return { version, name: String(r.name ?? r.tag_name ?? '').slice(0, 120), notes: String(r.body ?? '').slice(0, 4000), publishedAt: r.published_at ?? null, url: r.html_url ?? null, bundle: asset(/^(meridian|commandcenter)-.*\.tar\.gz$/), sums: asset(/^SHA256SUMS$/), sig: asset(/^SHA256SUMS\.sig$/) };
+          // With a token, assets come through the API (the only way for a private repository); without, the public link.
+          const found = (re) => (r.assets ?? []).find((a) => re.test(a.name));
+          const asset = (re) => {
+            const a = found(re);
+            return a ? (this.#token && a.url ? a.url : a.browser_download_url) : null;
+          };
+          return { version, name: String(r.name ?? r.tag_name ?? '').slice(0, 120), notes: String(r.body ?? '').slice(0, 4000), publishedAt: r.published_at ?? null, url: r.html_url ?? null, bundle: asset(/^(meridian|commandcenter)-.*\.tar\.gz$/), bundleName: found(/^(meridian|commandcenter)-.*\.tar\.gz$/)?.name ?? '', sums: asset(/^SHA256SUMS$/), sig: asset(/^SHA256SUMS\.sig$/) };
         })
         .filter((r) => VERSION_RE.test(r.version) && r.bundle && r.sums)
         .sort((a, b) => compareVersions(b.version, a.version));
@@ -202,7 +228,7 @@ export class Updater {
           const ok = verifySig(null, sums, createPublicKey(this.#pubkey), Buffer.from(sig.toString('utf8').trim(), 'base64'));
           if (!ok) throw fail(400, 'The release signature does not match: not installed.');
         }
-        const name = new URL(release.bundle).pathname.split('/').pop();
+        const name = release.bundleName || new URL(release.bundle).pathname.split('/').pop();
         const line = sums.toString('utf8').split('\n').find((l) => l.trim().endsWith(name));
         const want = line?.trim().split(/\s+/)[0]?.toLowerCase();
         const got = createHash('sha256').update(bundle).digest('hex');
@@ -219,7 +245,7 @@ export class Updater {
       return { version: release.version, restarting: true };
     } catch (error) {
       this.#log({ event: 'failed', version: release.version, by, message: String(error.message).slice(0, 300) });
-      this.#save({ lastFailure: { at: new Date().toISOString(), version: release.version, message: String(error.message).slice(0, 300) } });
+      this.#save({ lastFailure: { at: new Date().toISOString(), version: release.version, message: String(error.message).slice(0, 300) }, failed: [...new Set([...(this.state.failed ?? []), release.version])].slice(-20) });
       throw error;
     }
   }
@@ -253,7 +279,8 @@ export class Updater {
     const s = this.state;
     if (!s.active) throw fail(409, 'This is the version built into the image: there is nothing to go back to.');
     const target = s.previous && fs.existsSync(path.join(this.#dataDir, 'app', 'versions', s.previous, 'src', 'server.js')) ? s.previous : null;
-    this.#save({ active: target, previous: s.active, pending: null });
+    // Going back by hand holds this version (and older ones) back from auto-update until a newer release comes.
+    this.#save({ active: target, previous: s.active, pending: null, heldBack: s.active });
     this.#log({ event: 'rollback', version: target ?? 'built-in', from: this.#current, by });
     this.#restart();
     return { version: target ?? 'built-in', restarting: true };
@@ -270,26 +297,52 @@ export class Updater {
     for (const v of versions.slice(KEEP_VERSIONS)) if (!keep.has(v)) fs.rmSync(path.join(this.#dataDir, 'app', 'versions', v), { recursive: true, force: true });
   }
 
-  /** Check every 6 hours; with auto-update on, install the newest in the chosen hour. */
-  start({ now = () => new Date() } = {}) {
-    const tick = async () => {
-      try {
-        const s = this.state;
-        if (!s.lastCheck || Date.now() - Date.parse(s.lastCheck) > CHECK_EVERY_MS) await this.check().catch(() => {});
-        const st = this.status();
-        if (this.launched && st.auto.enabled && st.updateAvailable && now().getHours() === st.auto.hour && !st.pending) {
-          const newest = st.available[0];
-          // Never retry by itself a version that already failed here.
-          if (st.lastFailure?.version !== newest.version) await this.install(newest.version, { by: 'auto-update' }).catch(() => {});
-        }
-      } catch {}
-    };
-    this.#timer = setInterval(tick, 10 * 60_000);
+  /** Check every few minutes (15 by default); with auto-update on, install the newest release as soon as it is found. */
+  start() {
+    this.#timer = setInterval(() => this.tick(), 60_000);
     this.#timer.unref();
-    setTimeout(tick, 30_000).unref();
+    setTimeout(() => this.tick(), 30_000).unref();
+  }
+
+  /** One round: check when due, and install the newest release auto-update may take. */
+  async tick() {
+    try {
+      const s = this.state;
+      // A version the launcher rolled back is remembered for good: auto-update never tries it again.
+      if (s.lastFailure?.version && !(s.failed ?? []).includes(s.lastFailure.version)) this.#save({ failed: [...(s.failed ?? []), s.lastFailure.version].slice(-20) });
+      const auto = autoOf(this.state);
+      if (!s.lastCheck || Date.now() - Date.parse(s.lastCheck) >= auto.everyMinutes * 60_000 - 5_000) await this.check().catch(() => {});
+      const st = this.status();
+      if (!this.launched || !auto.enabled || st.pending || this.#busy) return null;
+      const failed = new Set(st.failed);
+      const newest = st.available.find((r) => compareVersions(r.version, this.#current) > 0 && !failed.has(r.version) && (!st.heldBack || compareVersions(r.version, st.heldBack) > 0));
+      if (newest) return await this.install(newest.version, { by: 'auto-update' }).catch(() => null);
+    } catch {}
+    return null;
   }
 
   stop() {
     clearInterval(this.#timer);
   }
+}
+
+/** The auto-update choice: on, every 15 minutes, unless an Admin changed it (older choices, made by the hour, become this). */
+function autoOf(state) {
+  const a = state.auto ?? {};
+  if (!a.everyMinutes) return { ...AUTO_DEFAULT };
+  return { enabled: a.enabled !== false, everyMinutes: a.everyMinutes };
+}
+
+/** The GitHub token: given, or CC_UPDATE_TOKEN / UPDATE_GITHUB_TOKEN, or a file (CC_UPDATE_TOKEN_FILE). */
+function tokenFrom(given) {
+  if (given !== null && given !== undefined) return String(given).trim();
+  if (process.env.CC_UPDATE_TOKEN || process.env.UPDATE_GITHUB_TOKEN) return String(process.env.CC_UPDATE_TOKEN || process.env.UPDATE_GITHUB_TOKEN).trim();
+  if (process.env.CC_UPDATE_TOKEN_FILE) {
+    try {
+      return fs.readFileSync(process.env.CC_UPDATE_TOKEN_FILE, 'utf8').trim();
+    } catch {
+      return '';
+    }
+  }
+  return '';
 }

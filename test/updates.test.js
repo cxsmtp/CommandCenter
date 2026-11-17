@@ -12,6 +12,8 @@ import { Updater, compareVersions, readState, writeState } from '../src/updates.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let tmp, server, base;
 const files = new Map();
+const seen = [];
+let requireToken = '';
 
 /** A release bundle of this checkout, saying it is `version`, its server optionally broken. */
 function makeBundle(version, { broken = false } = {}) {
@@ -44,6 +46,11 @@ function publish(releases) {
 before(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-upd-'));
   server = http.createServer((req, res) => {
+    seen.push({ url: req.url, host: req.headers.host, auth: req.headers.authorization ?? '' });
+    if (requireToken && req.url.startsWith('/repos/') && req.headers.authorization !== `Bearer ${requireToken}`) return res.writeHead(404).end();
+    // The API's asset address answers with a redirect to the download host, as GitHub does.
+    const asset = /^\/repos\/acme\/cc\/releases\/assets\/(.+)$/.exec(req.url);
+    if (asset) return res.writeHead(302, { Location: `http://localhost:${server.address().port}/dl/${decodeURIComponent(asset[1])}` }).end();
     const body = files.get(req.url.split('?')[0]);
     if (!body) return res.writeHead(404).end();
     res.writeHead(200).end(body);
@@ -141,5 +148,55 @@ test('the launcher runs the new version, and goes back by itself from one that d
     assert.ok(st.history.some((h) => h.event === 'auto-rollback'));
   } finally {
     launcher.kill('SIGTERM');
+  }
+});
+
+test('auto-update: on by default, installs a new release as soon as it is found, never one that failed here', async () => {
+  const dataDir = fs.mkdtempSync(path.join(tmp, 'data-'));
+  publish([{ version: '1.0.5', bundle: makeBundle('1.0.5') }]);
+  let restarts = 0;
+  const u = new Updater({ dataDir, currentVersion: '1.0.0', repo: 'acme/cc', api: base, launched: true, token: '', restart: () => (restarts += 1) });
+  assert.deepEqual(u.status().auto, { enabled: true, everyMinutes: 15 });
+  const r = await u.tick();
+  assert.equal(r.version, '1.0.5');
+  assert.equal(restarts, 1);
+
+  // The launcher rolled 1.0.5 back: it is never installed by itself again.
+  writeState(dataDir, { ...readState(dataDir), active: null, pending: null, lastFailure: { version: '1.0.5', message: 'Did not start' }, lastCheck: null });
+  assert.equal(await u.tick(), null);
+  assert.deepEqual(readState(dataDir).failed, ['1.0.5']);
+
+  // Turned off: nothing installs.
+  writeState(dataDir, { ...readState(dataDir), failed: [], lastFailure: null, lastCheck: null });
+  u.setAuto({ enabled: false });
+  assert.equal(await u.tick(), null);
+  // An older choice made by the hour becomes on, every 15 minutes.
+  writeState(dataDir, { ...readState(dataDir), auto: { enabled: false, hour: 3 } });
+  assert.deepEqual(u.status().auto, { enabled: true, everyMinutes: 15 });
+});
+
+test('a private repository: the token goes to the API only, never to the download host', async () => {
+  const dataDir = fs.mkdtempSync(path.join(tmp, 'data-'));
+  const bundle = makeBundle('1.0.6');
+  publish([{ version: '1.0.6', bundle }]);
+  // GitHub lists private assets with an API address; the download is a redirect away.
+  const list = JSON.parse(files.get('/repos/acme/cc/releases').toString());
+  for (const a of list[0].assets) a.url = `${base}/repos/acme/cc/releases/assets/${encodeURIComponent(a.browser_download_url.split('/dl/')[1])}`;
+  files.set('/repos/acme/cc/releases', Buffer.from(JSON.stringify(list)));
+  requireToken = 'ghp_readonly';
+  try {
+    const anon = new Updater({ dataDir, currentVersion: '1.0.0', repo: 'acme/cc', api: base, launched: true, token: '' });
+    await assert.rejects(anon.check(), /private.*CC_UPDATE_TOKEN/);
+    seen.length = 0;
+    const u = new Updater({ dataDir, currentVersion: '1.0.0', repo: 'acme/cc', api: base, launched: true, token: 'ghp_readonly', restart: () => {} });
+    await u.check();
+    const r = await u.install('1.0.6');
+    assert.equal(r.version, '1.0.6');
+    const downloads = seen.filter((x) => x.url.startsWith('/dl/'));
+    assert.ok(downloads.length >= 2);
+    assert.ok(downloads.every((x) => !x.auth), 'no token sent to the download host');
+    assert.ok(seen.filter((x) => x.url.startsWith('/repos/')).every((x) => x.auth === 'Bearer ghp_readonly'));
+  } finally {
+    requireToken = '';
   }
 });

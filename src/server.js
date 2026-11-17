@@ -779,7 +779,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (route === 'PUT /updates/auto') {
       need(user, 'settings.manage');
       const a = updater.setAuto(await readBody(req));
-      audit.record(user, 'system', a.enabled ? `Turned on auto-update at ${String(a.hour).padStart(2, '0')}:00` : 'Turned off auto-update');
+      audit.record(user, 'system', a.enabled ? `Auto-update on: checks every ${a.everyMinutes} minutes, installs as soon as a release is found` : 'Turned off auto-update');
       return send(res, 200, updater.status());
     }
     if (route === 'POST /system/restart') {
