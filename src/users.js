@@ -26,14 +26,18 @@ export const PERMISSIONS = {
   'mail.send': 'Send email from Meridian',
   'users.manage': 'Add and edit people below them',
   'catalog.manage': 'Edit the capability catalogue and its Checkmarx One mapping',
+  'templates.manage': 'Make success criteria templates for their team (or everyone)',
   'settings.manage': 'Change server settings (email server, refresh, defaults)',
   'roles.manage': 'Change what each role may do',
 };
 
+/** The permissions there were before roles recorded which ones they had seen. */
+const OLD_PERMISSIONS = ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'settings.manage', 'roles.manage'];
+
 export const DEFAULT_MATRIX = {
-  vp: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage'],
-  leader: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage'],
-  team_lead: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage'],
+  vp: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'templates.manage'],
+  leader: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'templates.manage'],
+  team_lead: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'templates.manage'],
   associate: ['opps.create', 'tenant.logs', 'ai.run', 'mail.send'],
 };
 
@@ -146,7 +150,9 @@ export class Users {
   can(user, permission, settings) {
     if (!user) return false;
     if (user.role === 'admin') return true;
-    const matrix = settings?.roles ?? DEFAULT_MATRIX;
+    // A permission added after the roles were last saved follows the default until an Admin decides.
+    const decided = settings?.roles && (settings.rolesKnown ?? OLD_PERMISSIONS).includes(permission);
+    const matrix = decided ? settings.roles : DEFAULT_MATRIX;
     return (matrix[user.role] ?? DEFAULT_MATRIX[user.role] ?? []).includes(permission);
   }
 

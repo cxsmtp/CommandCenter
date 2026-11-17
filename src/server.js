@@ -15,6 +15,7 @@ import { Backups } from './backups.js';
 import { Watchdog, healthChecks } from './health.js';
 import { readTable, recordsOf, matchRecords, logMessage, opportunityIdOf } from './salesforce.js';
 import { SfMailbox } from './sf-mailbox.js';
+import { Templates } from './templates.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
 import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted } from './opportunities.js';
@@ -69,6 +70,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const fullSettings = () => db.read('settings', {});
   const firstAdmin = users.ensureAdmin();
   const audit = new Audit(db);
+  const templates = new Templates(db, { users, catalog });
   const ai = new AiActions({ db });
   const orgRates = () => ratesFor(db.read('settings', {}).valueRates ?? {});
   const valueFor = (opp, live = opp.tenant ? monitor.live(opp.id) : null) => (live?.summary ? valueOf({ credits: monitor.snapshot(opp.id)?.credits, summary: live.summary, backlog: monitor.snapshot(opp.id)?.findings?.ai ?? null, ledger: ai.ledger(opp.id), rates: ratesFor(db.read('settings', {}).valueRates ?? {}, opp.valueRates ?? {}) }) : null);
@@ -241,6 +243,15 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // A change anyone makes shows at once to everyone: the cached lists go.
   monitor.on('update', () => overviewCache.clear());
   monitor.on('update', (e) => e.id && rowCache.delete(e.id));
+  // Each read of a tenant: criteria it now proves are marked completed (a status set by a person is left alone).
+  monitor.on('update', (e) => {
+    if (!e.id) return;
+    const opp = opps.get(e.id);
+    if (!opp?.tenant || ['won', 'lost'].includes(opp.stage)) return;
+    const ev = evidenceOf(opp);
+    const found = (opp.criteria ?? []).filter((c) => ev[c.id]?.level === 'detected' && c.statusSource !== 'manual' && ['not_started', 'in_progress'].includes(c.status)).map((c) => ({ criterionId: c.id, evidence: ev[c.id].evidence }));
+    if (found.length && opps.autoComplete(opp.id, found).length) notify({ id: opp.id });
+  });
   function row(opp, now = Date.now(), colour = colours()[opp.id]) {
     const key = `${opp.updatedAt}|${colour}|${Math.floor(now / 60_000)}|${ai.ledger(opp.id).length}`;
     const hit = rowCache.get(opp.id);
@@ -672,6 +683,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       for (const role of Object.keys(DEFAULT_MATRIX)) matrix[role] = (Array.isArray(b.matrix?.[role]) ? b.matrix[role] : []).filter((p) => PERMISSIONS[p]);
       const all = fullSettings();
       all.roles = matrix;
+      all.rolesKnown = Object.keys(PERMISSIONS);
       db.write('settings', all);
       audit.record(user, 'settings', 'Changed what each role may do', { matrix });
       return send(res, 200, { matrix });
@@ -835,6 +847,35 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
 
     // Capability catalogue
+    // ——— Success criteria templates ———
+    if (route === 'GET /templates') return send(res, 200, { templates: templates.list(user, { includeHidden: user.role === 'admin' && url.searchParams.get('all') === '1' }), canManage: can(user, 'templates.manage') });
+    if (route === 'POST /templates') {
+      need(user, 'templates.manage');
+      const b = await readBody(req);
+      if (b.scope === 'everyone' && !['admin', 'vp', 'leader'].includes(user.role)) b.scope = 'team';
+      const tpl = templates.create(user, b);
+      audit.record(user, 'settings', `Made the success criteria template "${tpl.name}" (${tpl.scope === 'everyone' ? 'for everyone' : 'for their team'})`);
+      return send(res, 201, { template: tpl, templates: templates.list(user) });
+    }
+    if (parts[0] === 'templates' && parts[1] && !parts[2] && ['PUT', 'DELETE'].includes(m)) {
+      need(user, 'templates.manage');
+      const tid = decodeURIComponent(parts[1]);
+      if (m === 'PUT') {
+        const b = await readBody(req);
+        if (b.scope === 'everyone' && !['admin', 'vp', 'leader'].includes(user.role)) b.scope = 'team';
+        const tpl = templates.update(user, tid, b);
+        audit.record(user, 'settings', `Changed the success criteria template "${tpl.name}"`);
+      } else {
+        const name = templates.get(tid)?.name ?? tid;
+        templates.remove(user, tid);
+        audit.record(user, 'settings', `Removed the success criteria template "${name}"`);
+      }
+      return send(res, 200, { templates: templates.list(user, { includeHidden: user.role === 'admin' }) });
+    }
+    if (m === 'POST' && parts[0] === 'templates' && parts[1] && parts[2] === 'show') {
+      templates.unhide(user, decodeURIComponent(parts[1]));
+      return send(res, 200, { templates: templates.list(user, { includeHidden: true }) });
+    }
     if (route === 'GET /catalog') return send(res, 200, { catalog: catalog.list(), categories: catalog.categories() });
     if (route === 'POST /catalog') {
       need(user, 'catalog.manage');
@@ -913,6 +954,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         await checkKey(connection);
       }
       let opp = opps.create(user, b, fullSettings());
+      if (Array.isArray(b.templateIds)) templates.used(b.templateIds.slice(0, 20).map((x) => text(x, 60)));
       if (b.apiKey) {
         opp = opps.setTenant(user, opp.id, { apiKey: b.apiKey, overrides: b.overrides }, fullSettings());
         monitor.refresh(opp.id, { force: true }).catch(() => {});
@@ -979,7 +1021,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (sub === 'criteria' && parts[3] === 'bulk' && m === 'POST') {
         const b = await readBody(req);
         for (const capabilityId of (b.capabilityIds ?? []).slice(0, 200)) opps.upsertItem(user, id, 'criteria', { capabilityId, priority: b.priority }, s);
-        for (const title of (b.custom ?? []).slice(0, 50)) if (text(title)) opps.upsertItem(user, id, 'criteria', { title, category: 'custom' }, s);
+        // From the wizard: each capability with its own priority, and criteria in the team's own words.
+        for (const it of (Array.isArray(b.items) ? b.items : []).slice(0, 200)) if (it?.capabilityId) opps.upsertItem(user, id, 'criteria', { capabilityId: text(it.capabilityId, 60), priority: it.priority === 'nice' ? 'nice' : 'must' }, s);
+        for (const c of (b.custom ?? []).slice(0, 50)) {
+          const title = typeof c === 'string' ? c : c?.title;
+          if (text(title)) opps.upsertItem(user, id, 'criteria', { title, category: 'custom', priority: c?.priority === 'must' ? 'must' : 'nice', ...(c?.engines ? { engines: c.engines } : {}) }, s);
+        }
+        if (Array.isArray(b.templateIds)) templates.used(b.templateIds.slice(0, 20).map((x) => text(x, 60)));
         return done();
       }
       // A demo session recorded against a criterion (completed by the SE's demonstration, not in the tenant)

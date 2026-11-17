@@ -386,3 +386,51 @@ body.drawer-open table[data-table="dash"] td:first-child { min-width: 0; }
 .drop { border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 28px; text-align: center; color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s; }
 .drop.over, .drop:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--ink); }
 body.sf-dragging::after { content: 'Drop the Salesforce report to bring it in'; position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 18px; display: grid; place-items: center; font-size: 20px; color: var(--ink); background: color-mix(in srgb, var(--bg) 80%, transparent); z-index: 90; pointer-events: none; }
+
+/* Success criteria wizard */
+.wz { display: flex; flex-direction: column; min-height: min(78vh, 760px); }
+.wz-top h2 { margin: 0 0 12px; }
+.wz-steps { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0 0 14px; flex-wrap: wrap; }
+.wz-steps button { display: inline-flex; align-items: center; gap: 8px; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px 5px 5px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.wz-steps button:disabled { cursor: default; opacity: .65; }
+.wz-steps span { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--panel-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.wz-steps .current button { color: var(--ink); border-color: var(--accent); }
+.wz-steps .current span { background: var(--accent); color: var(--bg); }
+.wz-steps .done button { color: var(--ink); }
+.wz-steps .done span { background: color-mix(in srgb, var(--ok) 30%, transparent); color: var(--ok); }
+.wz-body { flex: 1; overflow: auto; max-height: 58vh; padding-right: 4px; display: flex; flex-direction: column; gap: 12px; }
+.wz-lead { margin: 0; }
+.wz-foot { align-items: center; }
+.wz-count { margin-right: 6px; }
+.wz-cat { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.wz-cat-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.linkish { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0 2px; font: inherit; }
+.wz-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wz-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; transition: border-color .12s, background .12s; }
+.wz-chip small { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; opacity: .85; }
+.wz-chip:hover { border-color: var(--accent); }
+.wz-chip.must { border-color: color-mix(in srgb, var(--ok) 60%, var(--line)); background: color-mix(in srgb, var(--ok) 14%, var(--panel)); }
+.wz-chip.must small { color: var(--ok); }
+.wz-chip.nice { border-color: color-mix(in srgb, var(--warn) 60%, var(--line)); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); }
+.wz-chip.nice small { color: var(--warn); }
+.wz-chip.added { opacity: .55; cursor: default; border-style: dashed; }
+.wz-new { font-style: normal; font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
+.wz-tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.wz-tpl { position: relative; text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); font: inherit; cursor: pointer; }
+.wz-tpl:hover { border-color: var(--accent); }
+.wz-tpl.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 24px color-mix(in srgb, var(--accent) 18%, transparent); }
+.wz-tick { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font-size: 12px; color: var(--bg); }
+.wz-tpl.on .wz-tick { background: var(--accent); border-color: var(--accent); }
+.wz-tpl b { padding-right: 26px; }
+.wz-tpl-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--muted); }
+.wz-tpl-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.wz-tpl-chips i { font-style: normal; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.wz-tpl-chips i.must { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.wz-tpl.empty { justify-content: center; border-style: dashed; }
+.wz-sum { display: flex; gap: 28px; }
+.wz-sum b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+.wz-sum span { font-size: 12px; color: var(--muted); }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.tpl-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 130px; }
+.tpl-card.hidden-tpl { opacity: .6; }
+@media (max-width: 720px) { .wz-body { max-height: none; } .wz-steps button { font-size: 12px; } }

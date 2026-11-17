@@ -272,7 +272,8 @@ function criteria(d) {
   }
   const evLine = (c) => {
     const ev = d.evidence[c.id];
-    if (!ev || ev.level === 'none') return '';
+    if (c.status === 'met' && c.statusSource === 'tenant') return `<div class="ev ev-detected">✓ Completed in the tenant by itself: ${(c.autoEvidence?.length ? c.autoEvidence : ev?.evidence ?? []).map(esc).join(' · ')} <span class="muted">— change the status to override it</span></div>`;
+    if (!ev || ev.level === 'none') return c.statusSource === 'manual' ? '<div class="ev small muted">Status set by hand</div>' : '';
     return `<div class="ev ev-${ev.level}">${ev.level === 'detected' ? '● Detected in the tenant' : '○ Mentioned in notes'}: ${ev.evidence.map(esc).join(' · ')}${ev.level === 'detected' && c.status !== 'met' && current.canEdit ? ` <button class="btn sm" data-met="${esc(c.id)}">Confirm met</button>` : ''}</div>`;
   };
   return `<div class="toolbar">
@@ -641,32 +642,11 @@ function connectTenant() {
 }
 
 async function addCapabilities() {
-  const cat = await getCatalog();
-  const have = current.opportunity.criteria.map((c) => c.capabilityId).filter(Boolean);
-  return dialogForm(
-    'capsForm',
-    'Add success criteria',
-    `<p class="muted" style="margin:0">Tick the capabilities the customer wants proven. Each becomes a criterion; Meridian looks for its evidence in the tenant and in your notes.</p>
-     <label class="field" style="max-width:220px">Priority<select name="priority"><option value="must">Must have</option><option value="nice">Nice to have</option></select></label>${capabilityPicker(cat, { disabled: have })}
-     <fieldset class="item"><legend class="small muted">Not in the list? Add an engine or capability</legend>
-       <div class="row"><label class="field">Name<input name="newName" placeholder="e.g. AI Red Teaming"></label><label class="field">Group<select name="newCategory">${cat.categories.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></label></div>
-       <div class="row"><label class="field">Engine name in Checkmarx One scans<input name="newEngines" placeholder="e.g. llm-scanner"></label><label class="field">Keywords<input name="newKeywords" placeholder="e.g. red team, jailbreak"></label></div>
-       <p class="small muted" style="margin:0">${can('catalog.manage') ? 'It is added to the capability catalogue for everyone, and as a criterion here.' : 'It is added as a criterion here, with these rules; ask a manager to add it to the catalogue for everyone.'}</p>
-     </fieldset>`,
-    async (b) => {
-      if (b.newName?.trim()) {
-        if (can('catalog.manage')) {
-          const r = await api('/catalog', { method: 'POST', body: { name: b.newName, category: b.newCategory, cxName: b.newName, detect: { engines: b.newEngines, keywords: b.newKeywords } } });
-          b.capabilities = [...(b.capabilities ?? []), r.capability.id];
-          await getCatalog(true);
-        } else {
-          await api(`/opportunities/${oid()}/criteria`, { method: 'POST', body: { title: b.newName, category: b.newCategory, engines: b.newEngines, keywords: b.newKeywords, priority: b.priority } });
-        }
-      }
-      return api(`/opportunities/${oid()}/criteria/bulk`, { method: 'POST', body: { capabilityIds: (b.capabilities ?? []).filter((x) => !have.includes(x)), priority: b.priority } });
-    },
-    { wide: true },
-  );
+  const { criteriaWizard } = await import('./criteria-wizard.js');
+  if (await criteriaWizard({ mode: 'add', opp: current.opportunity })) {
+    toast('Success criteria added');
+    rerender();
+  }
 }
 
 // ——— Demonstrated by the SE ———

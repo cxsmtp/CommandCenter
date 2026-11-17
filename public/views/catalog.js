@@ -1,6 +1,7 @@
 // The capability catalogue: every Checkmarx One touch point, its name in Checkmarx One and how it is recognised.
-import { $, esc, api, can, attempt, openDialog, closeDialog, formData } from '../core.js';
+import { $, esc, api, can, state, attempt, openDialog, closeDialog, formData, toast } from '../core.js';
 import { getCatalog } from './new-opportunity.js';
+import { getTemplates, criteriaWizard } from './criteria-wizard.js';
 
 const RULES = [
   ['engines', 'Engines in completed scans', 'sast, sca, kics, containers, apisec, microengines, ai'],
@@ -15,7 +16,9 @@ export async function renderCatalog(main, { crumbs }) {
   crumbs('<h2 style="font-size:16px">Capabilities & Checkmarx One mapping</h2>');
   const { catalog, categories } = await getCatalog(true);
   const editable = can('catalog.manage');
-  main.innerHTML = `<div class="toolbar"><span class="muted">The success criteria an SE can pick, the name each has in Checkmarx One, and what in the tenant proves it was tested. Edit a mapping when Checkmarx One names something differently.</span><span class="spacer"></span>${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">Capability</button>' : ''}</div>
+  const tp = await getTemplates(true);
+  const all = can('templates.manage') && state.session.user.role === 'admin' ? await api('/templates?all=1') : tp;
+  main.innerHTML = `${templatesPanel(all)}<div class="toolbar"><span class="muted">The success criteria an SE can pick, the name each has in Checkmarx One, and what in the tenant proves it was tested. Edit a mapping when Checkmarx One names something differently.</span><span class="spacer"></span>${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">Capability</button>' : ''}</div>
   ${categories
     .map(([key, label]) => {
       const list = catalog.filter((c) => c.category === key);
@@ -26,6 +29,7 @@ export async function renderCatalog(main, { crumbs }) {
     })
     .join('')}`;
   main.querySelector('[data-act="add"]')?.addEventListener('click', () => edit(null, categories));
+  wireTemplates(main, all);
   main.querySelector('[data-act="reset"]')?.addEventListener('click', async () => {
     if (!confirm('Put back the built-in catalogue? Your own capabilities and changes are lost (criteria already on opportunities stay).')) return;
     if (await attempt(() => api('/catalog/reset', { method: 'POST' }), 'Restored')) document.dispatchEvent(new CustomEvent('cc:rerender'));
@@ -72,4 +76,38 @@ function edit(c, categories) {
       },
     },
   );
+}
+
+// ——— Success criteria templates: what SEs start a POV from ———
+function templatesPanel({ templates, canManage }) {
+  const card = (t) => {
+    const must = t.items.filter((i) => i.priority === 'must').length;
+    return `<div class="tpl-card ${t.hidden ? 'hidden-tpl' : ''}"><div class="row center" style="gap:8px"><b>${esc(t.name)}</b>${t.builtIn ? '<span class="badge">Built in</span>' : t.scope === 'everyone' ? '<span class="badge accent">Everyone</span>' : '<span class="badge">Team</span>'}${t.hidden ? '<span class="badge warn">Hidden</span>' : ''}</div>
+      <div class="small muted">${esc(t.description || '')}</div>
+      <div class="small">${must} must · ${t.items.length - must + (t.custom?.length ?? 0)} nice${t.owner ? ` · by ${esc(t.owner)}` : ''}${t.uses ? ` · used ${t.uses}×` : ''}</div>
+      ${canManage ? `<div class="row" style="margin-top:auto">${t.canEdit ? `<button class="btn sm" data-tpl-edit="${esc(t.id)}">Edit</button>` : ''}<button class="btn sm ghost" data-tpl-copy="${esc(t.id)}">Copy</button>${t.canEdit ? `<button class="btn sm ghost danger" data-tpl-del="${esc(t.id)}">Remove</button>` : ''}${t.builtIn && state.session.user.role === 'admin' ? (t.hidden ? `<button class="btn sm ghost" data-tpl-show="${esc(t.id)}">Show</button>` : `<button class="btn sm ghost" data-tpl-del="${esc(t.id)}">Hide</button>`) : ''}</div>` : ''}
+    </div>`;
+  };
+  return `<section class="panel" style="margin-bottom:18px"><div class="head"><h3>Success criteria templates</h3>${canManage ? '<button class="btn primary sm" data-act="tpl-new">New template</button>' : ''}</div>
+    <div class="body"><p class="small muted" style="margin-top:0">SEs pick one or more when they add success criteria; every criterion in them is chosen for them. ${canManage ? 'Yours are for your team, or for everyone (VPs and leaders).' : 'Managers make them for their teams.'}</p>
+    <div class="tpl-grid">${templates.map(card).join('')}</div></div></section>`;
+}
+
+function wireTemplates(main, { templates }) {
+  const find = (id) => templates.find((t) => t.id === id);
+  const after = (r, msg) => {
+    if (!r) return;
+    toast(msg);
+    document.dispatchEvent(new CustomEvent('cc:rerender'));
+  };
+  main.querySelector('[data-act="tpl-new"]')?.addEventListener('click', async () => after(await criteriaWizard({ mode: 'template' }), 'Template saved'));
+  for (const b of main.querySelectorAll('[data-tpl-edit]')) b.addEventListener('click', async () => after(await criteriaWizard({ mode: 'template', template: find(b.dataset.tplEdit) }), 'Template saved'));
+  for (const b of main.querySelectorAll('[data-tpl-copy]')) b.addEventListener('click', async () => after(await criteriaWizard({ mode: 'template', template: find(b.dataset.tplCopy), copy: true }), 'Template saved'));
+  for (const b of main.querySelectorAll('[data-tpl-del]'))
+    b.addEventListener('click', async () => {
+      const t = find(b.dataset.tplDel);
+      if (!confirm(t.builtIn ? `Hide “${t.name}” from everyone? You can show it again here.` : `Remove the template “${t.name}”? Criteria already added from it stay.`)) return;
+      after(await attempt(() => api(`/templates/${encodeURIComponent(t.id)}`, { method: 'DELETE' })), t.builtIn ? 'Hidden' : 'Removed');
+    });
+  for (const b of main.querySelectorAll('[data-tpl-show]')) b.addEventListener('click', async () => after(await attempt(() => api(`/templates/${encodeURIComponent(b.dataset.tplShow)}/show`, { method: 'POST', body: {} })), 'Shown again'));
 }

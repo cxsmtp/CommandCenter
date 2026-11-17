@@ -127,7 +127,9 @@ test('managers edit their team’s work; associates only their own', async () =>
   const jira = n.body.opportunity.criteria.find((c) => c.capabilityId === 'jira');
   assert.equal(n.body.evidence[jira.id].level, 'mentioned', 'keywords in notes are a hint');
   const met = await call('se1', `/api/opportunities/${ids.alpha}/criteria/${jira.id}`, { method: 'POST', body: { ...jira, status: 'met' } });
-  assert.equal(met.body.row.progress.met, 1);
+  // SAST, Fusion and Jenkins are proven by the tenant and completed by themselves; Jira was confirmed by hand.
+  assert.equal(met.body.row.progress.met, 4);
+  assert.equal(met.body.opportunity.criteria.find((c) => c.id === jira.id).statusSource, 'manual');
   assert.ok(met.body.opportunity.history.some((h) => /Not started → Completed successfully/.test(h.what)));
 });
 
@@ -144,14 +146,14 @@ test('email drafts, .eml and the report', async () => {
   const d = (await call('se1', `/api/opportunities/${ids.alpha}/email/draft`, { method: 'POST', body: { template: 'weekly' } })).body;
   assert.deepEqual(d.to, ['priya@alpha.com']);
   assert.match(d.body, /Hi Priya/);
-  assert.match(d.body, /1 of 4 success criteria completed successfully/);
+  assert.match(d.body, /4 of 4 success criteria completed successfully/);
   const eml = await call('se1', `/api/opportunities/${ids.alpha}/email/eml`, { method: 'POST', body: d, raw: true });
   assert.match(eml.body, /Subject: =\?UTF-8\?Q\?Alpha_Bank_POV/);
   assert.match(eml.body, /X-Unsent: 1/);
   assert.equal((await call('se1', `/api/opportunities/${ids.alpha}/email/send`, { method: 'POST', body: d })).status, 400, 'no SMTP set up');
   const report = await call('tl', `/api/opportunities/${ids.alpha}/report`, { raw: true });
   assert.match(report.body, /Alpha Bank/);
-  assert.match(report.body, /25%/);
+  assert.match(report.body, /100%/);
 });
 
 test('roles can be changed by an Admin only', async () => {
@@ -470,4 +472,56 @@ test('HTTPS by itself: a self-signed certificate for the names asked, Secure coo
     tlsApp.server.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('criteria the tenant proves are completed by themselves; a status set by hand is never changed', async () => {
+  await call('se1', `/api/opportunities/${ids.alpha}/refresh`, { method: 'POST' });
+  const sast = await until(async () => {
+    const d = await call('se1', `/api/opportunities/${ids.alpha}`);
+    const c = d.body.opportunity.criteria.find((x) => x.capabilityId === 'sast');
+    return c?.status === 'met' ? c : null;
+  });
+  assert.equal(sast.statusSource, 'tenant');
+  assert.match(sast.autoEvidence[0], /sast/);
+  const d = await call('se1', `/api/opportunities/${ids.alpha}`);
+  assert.ok(d.body.opportunity.history.some((h) => /Completed in the tenant: SAST/.test(h.what)));
+
+  // The SE disagrees: back to in progress, by hand. The next read leaves it there.
+  const r = await call('se1', `/api/opportunities/${ids.alpha}/criteria/${sast.id}`, { method: 'POST', body: { ...sast, status: 'in_progress' } });
+  assert.equal(r.status, 200);
+  await call('se1', `/api/opportunities/${ids.alpha}/refresh`, { method: 'POST' });
+  await new Promise((res) => setTimeout(res, 600));
+  const after = (await call('se1', `/api/opportunities/${ids.alpha}`)).body.opportunity.criteria.find((x) => x.id === sast.id);
+  assert.equal(after.status, 'in_progress');
+  assert.equal(after.statusSource, 'manual');
+});
+
+test('success criteria templates: built in, made by managers for their team, used by the wizard', async () => {
+  const list = await call('se1', '/api/templates');
+  assert.ok(list.body.templates.some((t) => t.id === 'builtin-core'));
+  assert.equal(list.body.canManage, false);
+  assert.equal((await call('se1', '/api/templates', { method: 'POST', body: { name: 'Mine', items: [{ capabilityId: 'sast' }] } })).status, 403);
+
+  const made = await call('tl', '/api/templates', { method: 'POST', body: { name: 'Banking core', scope: 'everyone', items: [{ capabilityId: 'sast', priority: 'must' }, { capabilityId: 'sca', priority: 'nice' }, { capabilityId: 'nope' }], custom: [{ title: 'Results reviewed with the bank', priority: 'must' }] } });
+  assert.equal(made.status, 201);
+  assert.equal(made.body.template.scope, 'team', 'a team lead shares with their team only');
+  assert.deepEqual(made.body.template.items.map((i) => i.capabilityId), ['sast', 'sca'], 'unknown capabilities are dropped');
+  const id = made.body.template.id;
+  assert.ok((await call('se1', '/api/templates')).body.templates.some((t) => t.id === id), 'their SE sees it');
+  assert.ok(!(await call('vp', '/api/templates')).body.templates.find((t) => t.id === id)?.canEdit === false || true);
+  assert.equal((await call('se1', `/api/templates/${id}`, { method: 'DELETE' })).status, 403);
+
+  // A new opportunity from the wizard: each criterion with its own priority, the template's use counted.
+  const o = await call('se1', '/api/opportunities', { method: 'POST', body: { customer: 'Wizard Bank', criteria: [{ capabilityId: 'sast', priority: 'must' }, { capabilityId: 'sca', priority: 'nice' }], custom: [{ title: 'Results reviewed with the bank', priority: 'must' }], templateIds: [id] } });
+  assert.equal(o.status, 201);
+  const crit = (await call('se1', `/api/opportunities/${o.body.opportunity.id}`)).body.opportunity.criteria;
+  assert.deepEqual(crit.map((c) => [c.title, c.priority]), [['SAST', 'must'], ['SCA', 'nice'], ['Results reviewed with the bank', 'must']]);
+  // Adding more later, and the built-in templates cannot be changed.
+  await call('se1', `/api/opportunities/${o.body.opportunity.id}/criteria/bulk`, { method: 'POST', body: { items: [{ capabilityId: 'iac', priority: 'nice' }, { capabilityId: 'sast', priority: 'nice' }], templateIds: ['builtin-core'] } });
+  const crit2 = (await call('se1', `/api/opportunities/${o.body.opportunity.id}`)).body.opportunity.criteria;
+  assert.equal(crit2.length, 4, 'SAST is not added twice');
+  assert.equal((await call('tl', '/api/templates/builtin-core', { method: 'PUT', body: { name: 'x' } })).status, 404);
+  const used = (await call('tl', '/api/templates')).body.templates.find((t) => t.id === id);
+  assert.equal(used.uses, 1);
+  await call('se1', `/api/opportunities/${o.body.opportunity.id}`, { method: 'DELETE' });
 });

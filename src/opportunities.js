@@ -113,6 +113,9 @@ export class Opportunities {
     opp.name ||= opp.customer;
     log(opp, actor, `Created the opportunity (${STAGES[opp.stage]})`);
     for (const id of strList(body.capabilities, 200, 60)) this.#addCriterion(opp, { capabilityId: id }, actor);
+    // From the wizard: each capability with its own priority, and criteria in the team's own words.
+    for (const it of Array.isArray(body.criteria) ? body.criteria.slice(0, 200) : []) if (it?.capabilityId && this.#catalog.get(it.capabilityId)) this.#addCriterion(opp, { capabilityId: text(it.capabilityId, 60), priority: it.priority === 'nice' ? 'nice' : 'must' }, actor);
+    for (const c of Array.isArray(body.custom) ? body.custom.slice(0, 50) : []) if (text(c?.title)) this.#addCriterion(opp, { title: c.title, category: 'custom', priority: c.priority === 'must' ? 'must' : 'nice' }, actor);
     const all = this.#all();
     all.push(opp);
     this.#save(all);
@@ -180,6 +183,32 @@ export class Opportunities {
     }
     this.#save(all);
     return out;
+  }
+
+  /**
+   * Criteria the tenant proves (completed scans with the engine, the pipeline, the AI actions…) are marked completed by
+   * themselves, unless a person has set their status. Returns what was completed.
+   * @param {Array<{ criterionId: string, evidence: string[] }>} found
+   */
+  autoComplete(id, found) {
+    if (!found.length) return [];
+    const all = this.#all();
+    const opp = all.find((o) => o.id === id);
+    if (!opp || ['won', 'lost'].includes(opp.stage)) return [];
+    const now = new Date().toISOString();
+    const done = [];
+    for (const { criterionId, evidence } of found) {
+      const c = (opp.criteria ?? []).find((x) => x.id === criterionId);
+      if (!c || c.statusSource === 'manual' || !['not_started', 'in_progress'].includes(c.status)) continue;
+      Object.assign(c, { status: 'met', statusSource: 'tenant', proofType: 'tenant', confirmedBy: '', confirmedAt: now, autoEvidence: evidence.slice(0, 5) });
+      (opp.history ??= []).push({ at: now, by: '', byName: 'Meridian', what: text(`Completed in the tenant: ${c.title} — ${evidence[0] ?? ''}`, 400) });
+      done.push(c.title);
+    }
+    if (!done.length) return [];
+    if (opp.history.length > HISTORY) opp.history = opp.history.slice(-HISTORY);
+    opp.updatedAt = now;
+    this.#save(all);
+    return done;
   }
 
   remove(actor, id, settings) {
@@ -314,6 +343,11 @@ const CLEANERS = {
       // How it was completed: in the customer's tenant, or demonstrated by the SE (their own environment).
       proofType: status === 'met' && (c.proofType ?? existing?.proofType) === 'demo' ? 'demo' : 'tenant',
       demo: cleanDemo(c.demo ?? existing?.demo ?? null, existing?.demo ?? null),
+      // Who set the status: 'tenant' (completed by itself from the tenant's evidence) or 'manual' (a person). Once a
+      // person sets it, Meridian never changes it again.
+      // (Only autoComplete() sets 'tenant'; whatever a request sends for these fields is ignored.)
+      statusSource: existing && status !== existing.status ? 'manual' : existing?.statusSource ?? '',
+      autoEvidence: existing?.statusSource === 'tenant' && status === existing.status ? existing.autoEvidence ?? [] : [],
     };
   },
 };
