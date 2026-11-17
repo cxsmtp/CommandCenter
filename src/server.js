@@ -5,6 +5,7 @@
  */
 import http from 'node:http';
 import https from 'node:https';
+import net from 'node:net';
 import { startMode, tlsOptions } from './tls.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -1320,13 +1321,14 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
   };
-  const server = cert
+  const tlsServer = cert
     ? https.createServer({ ...cert.options, minVersion: 'TLSv1.2' }, (req, res) => {
         // A real certificate: browsers are told to keep to HTTPS. (Not for a self-signed one: they would ignore it.)
         if (!cert.selfSigned) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
         return handler(req, res);
       })
-    : http.createServer(handler);
+    : null;
+  const server = cert ? sharedPort(tlsServer) : http.createServer(handler);
   if (cert) {
     // A renewed certificate is taken without a restart.
     let reloadTimer = null;
@@ -1335,7 +1337,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         clearTimeout(reloadTimer);
         reloadTimer = setTimeout(() => {
           try {
-            server.setSecureContext({ ...cert.load(), minVersion: 'TLSv1.2' });
+            tlsServer.setSecureContext({ ...cert.load(), minVersion: 'TLSv1.2' });
             console.log('[https] Certificate reloaded.');
           } catch (error) {
             console.error(`[https] The new certificate was not taken: ${error.message}`);
@@ -1512,6 +1514,36 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     clearInterval(hourly);
   });
   return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit, backups: backupStore, watchdog };
+}
+
+/**
+ * HTTPS and plain http on one port: a browser given "172.35.0.128:8443" without https:// is sent to the https address
+ * instead of getting an empty answer. The first byte tells them apart (a TLS handshake starts with 0x16).
+ */
+function sharedPort(tlsServer) {
+  const redirect = http.createServer((req, res) => {
+    const host = String(req.headers.host ?? '').replace(/[^\w.:[\]-]/g, '');
+    if (!host) return res.writeHead(400).end();
+    res.writeHead(301, { Location: `https://${host}${req.url.startsWith('/') ? req.url : '/'}`, 'Cache-Control': 'no-store' }).end();
+  });
+  const front = net.createServer({ pauseOnConnect: true }, (sock) => {
+    sock.on('error', () => sock.destroy());
+    sock.setTimeout(30_000, () => sock.destroy());
+    sock.once('readable', () => {
+      const first = sock.read(1);
+      if (!first) return sock.destroy();
+      sock.unshift(first);
+      sock.setTimeout(0);
+      (first[0] === 0x16 ? tlsServer : redirect).emit('connection', sock);
+    });
+    sock.resume();
+    sock.pause();
+  });
+  front.closeAllConnections = () => {
+    tlsServer.closeAllConnections?.();
+    redirect.closeAllConnections?.();
+  };
+  return front;
 }
 
 /** An email server error, said so it can be fixed. */

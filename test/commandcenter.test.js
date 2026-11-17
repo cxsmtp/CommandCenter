@@ -460,6 +460,10 @@ test('HTTPS by itself: a self-signed certificate for the names asked, Secure coo
     assert.equal(login.res.statusCode, 200);
     assert.match(login.res.headers['set-cookie'][0], /; Secure/);
     assert.ok(tlsApp.server.tlsInfo.selfSigned);
+    // Plain http on the same port (an address typed without https://) is sent to https.
+    const plain = await fetch(`http://127.0.0.1:${port}/dashboard?x=1`, { redirect: 'manual' });
+    assert.equal(plain.status, 301);
+    assert.equal(plain.headers.get('location'), `https://127.0.0.1:${port}/dashboard?x=1`);
     assert.ok(new X509Certificate(fs.readFileSync(path.join(dir, 'tls', 'self-signed.crt'))).checkPrivateKey);
   } finally {
     tlsApp.server.closeAllConnections?.();
