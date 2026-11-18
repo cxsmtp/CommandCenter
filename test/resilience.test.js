@@ -84,3 +84,27 @@ test('encrypted videos can be read from any byte, for seeking', async () => {
   assert.deepEqual(await read(4095, 4999), plain.subarray(4095));
   assert.deepEqual(v.decrypt(fs.readFileSync(file)), plain);
 });
+
+test('a password can be reset from the server console when nobody can sign in', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { createApp } = await import('../src/server.js');
+  const dir = tmp();
+  process.env.CC_ADMIN_PASSWORD = 'admin-password-123';
+  const app = createApp({ dataDir: dir, startBackground: false });
+  app.server.close();
+  const out = execFileSync(process.execPath, ['src/reset-password.js', 'Admin@Meridian.local'], { env: { ...process.env, CC_DATA_DIR: dir }, encoding: 'utf8' });
+  const pw = /password for admin@meridian\.local:\s+(\S+)/.exec(out)?.[1];
+  assert.ok(pw, out);
+  // A server started afterwards (the restart) takes it; the person must choose their own.
+  const again = createApp({ dataDir: dir, startBackground: false });
+  await new Promise((r) => again.server.listen(0, '127.0.0.1', r));
+  try {
+    const r = await fetch(`http://127.0.0.1:${again.server.address().port}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@meridian.local', password: pw }) });
+    assert.equal(r.status, 200);
+    assert.equal((await r.json()).user.mustChangePassword, true);
+    assert.ok(again.audit.list({ limit: 5 }).some((e) => /reset from the server console/.test(e.what)));
+  } finally {
+    again.server.close();
+  }
+  assert.throws(() => execFileSync(process.execPath, ['src/reset-password.js', 'nobody@x.com'], { env: { ...process.env, CC_DATA_DIR: dir }, stdio: 'pipe' }));
+});
