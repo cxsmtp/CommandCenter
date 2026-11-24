@@ -6,6 +6,7 @@
  * It is drawn with pptxgenjs and, when an Admin uploaded the team's WIP template (.pptx), poured into that template:
  * its masters, layouts, backgrounds and closing slide are kept, its own slides are dropped.
  */
+import { toolIcon } from './tool-icons.js';
 import PptxGenJS from 'pptxgenjs';
 import JSZip from 'jszip';
 import { SESSION_TYPES } from './opportunities.js';
@@ -237,8 +238,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
         x += w + 0.18;
       }
     };
-    row(1.6, 'Insights', '6B34FD', [['Unified dashboard & reporting', 'analytics'], ['Cloud Insights', null]]);
-    row(2.14, 'Posture', '6B34FD', [['Application Security Posture Management (ASPM)', 'risk-orchestration'], ['Policy management', 'policy']]);
+    row(1.6, 'Insights', '6B34FD', [['Unified dashboard & reporting', 'analytics'], ['Cloud Insights', 'cloud-insights']]);
+    row(2.14, 'Posture', '6B34FD', [['Application Risk Management (ASPM)', 'arm'], ['Risk Orchestration', 'risk-orchestration'], ['Policy management', 'policy']]);
     row(2.68, 'Agentic AI', ORANGE, [['Developer Assist', 'dev-assist'], ['Triage Assist', 'ai-triage'], ['Remediation Assist', 'ai-remediation'], ['Checkmarx MCP', 'mcp']], { band: '2A1A5E' });
     // The engines, in their families
     const blocks = [
@@ -300,10 +301,17 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       names.slice(0, 10).forEach((nm, k) => {
         const on = picked.includes(nm);
         const y = 3.32 + k * 0.33;
+        // Each tool with its logo (or a lettered tile): white on the orange pill when in use, muted otherwise.
+        const icon = toolIcon(nm, on);
+        const tx = icon ? 0.46 : 0.2;
         if (on) {
           s.addShape(pptx.ShapeType.roundRect, { x: x + 0.1, y, w: cw - 0.2, h: 0.28, rectRadius: 0.14, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
-          s.addText(`✓  ${nm}`, { x: x + 0.2, y, w: cw - 0.35, h: 0.28, fontFace: FONT, fontSize: 9.5, bold: true, color: WHITE, margin: 0, valign: 'middle', fit: 'shrink' });
-        } else s.addText(nm, { x: x + 0.2, y, w: cw - 0.35, h: 0.28, fontFace: FONT, fontSize: 9.5, color: '7D7396', margin: 0, valign: 'middle' });
+        }
+        if (icon) s.addImage({ data: icon, x: x + 0.2, y: y + 0.05, w: 0.18, h: 0.18 });
+        // One line always: a long name gets a smaller size (about 0.55 em a character, bold).
+        const tw = cw - tx - 0.15;
+        const size = Math.max(7, Math.min(9.5, (tw * 72) / (nm.length * (on ? 0.56 : 0.5))));
+        s.addText(nm, { x: x + tx, y, w: tw, h: 0.28, fontFace: FONT, fontSize: Math.round(size * 2) / 2, bold: on, color: on ? WHITE : '7D7396', margin: 0, valign: 'middle' });
       });
     });
   }
@@ -939,7 +947,8 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
   // Drop media nothing points to any more (the template's screenshots).
   const used = new Set();
   for (const name of Object.keys(zip.files).filter((n) => n.endsWith('.rels'))) for (const m of (await zip.file(name).async('string')).matchAll(/Target="([^"]+)"/g)) used.add(m[1].split('/').pop());
-  for (const name of Object.keys(zip.files)) if (/^ppt\/media\//.test(name) && !used.has(name.split('/').pop())) zip.remove(name);
+  // (Files only: removing the folder entry a pptxgenjs file carries would take every picture with it.)
+  for (const name of Object.keys(zip.files)) if (/^ppt\/media\/[^/]+$/.test(name) && !used.has(name.split('/').pop())) zip.remove(name);
   // Nothing of the template's history travels: revisions, authors, comment authors, who made or last saved it.
   for (const name of Object.keys(zip.files)) if (/^ppt\/(changesInfos\/|revisionInfo\.xml|authors\.xml|commentAuthors\.xml)/.test(name)) zip.remove(name);
   zip.file('ppt/_rels/presentation.xml.rels', (await zip.file('ppt/_rels/presentation.xml.rels').async('string')).replace(/<Relationship\b[^>]*Target="(?:changesInfos\/[^"]*|revisionInfo\.xml|authors\.xml|commentAuthors\.xml)"[^>]*\/>/g, ''));
@@ -1074,5 +1083,5 @@ export const COMPONENT_LABELS = {
   sca: ['SCA'], containers: ['Container Security'], malicious: ['Malicious Packages'], scorecard: ['Repository Health'], sbom: ['SCA'],
   aisc: ['AI Supply Chain'], 'mcp-scanner': ['AI Supply Chain'], 'llm-scanner': ['AI Supply Chain'], 'skills-scanner': ['AI Supply Chain'],
   dast: ['DAST'], 'dast-ai': ['DAST'], 'dev-assist': ['Developer Assist Agent', 'Developer Assist'], 'ai-triage': ['Triage Agent'], 'ai-remediation': ['Remediation Agent'],
-  'risk-orchestration': ['Application Security Posture Management'], analytics: ['Unified dashboard & reporting'], policy: ['Application Security Posture Management'], mcp: ['Developer Assist Agent'],
+  'risk-orchestration': ['Application Security Posture Management'], arm: ['Application Security Posture Management'], 'cloud-insights': ['Cloud Insights'], analytics: ['Unified dashboard & reporting'], policy: ['Application Security Posture Management'], mcp: ['Developer Assist Agent'],
 };

@@ -37,6 +37,8 @@ export const PILLARS = [
     category: 'aspm',
     rows: [
       ['risk-orchestration', '', 'RO'],
+      ['arm', '', 'ARM'],
+      ['cloud-insights', '', 'CI'],
       ['analytics', '', 'AR'],
       ['policy', '', 'PM'],
       ['mcp', '', 'MCP'],
@@ -54,7 +56,7 @@ const LABELS = {
   aisc: 'AI Inventory', 'mcp-scanner': 'MCP Scanner', 'llm-scanner': 'LLM Scanner', 'skills-scanner': 'Skills Scanner',
   'dast-ai': 'DAST for AI', dast: 'DAST',
   'dev-assist': 'Developer Assist', 'ai-triage': 'Triage Assist', 'ai-remediation': 'Remediation Assist',
-  'risk-orchestration': 'Risk Orchestration', analytics: 'Analytics & Reporting', policy: 'Policy Management', mcp: 'Checkmarx MCP',
+  'risk-orchestration': 'Risk Orchestration', arm: 'Application Risk Management', 'cloud-insights': 'Cloud Insights', analytics: 'Analytics & Reporting', policy: 'Policy Management', mcp: 'Checkmarx MCP',
 };
 
 /** done (met) · progress (in progress) · planned (not started) · missed (not met); not applicable is left off. */

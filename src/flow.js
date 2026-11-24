@@ -28,7 +28,7 @@ const FIXED = {
   commit: ['aisc', 'llm-scanner', 'mcp-scanner', 'skills-scanner', 'ai-triage', 'ai-remediation'],
   build: ['iac', 'apisec', 'sbom'],
   run: ['containers', 'dast-ai', 'dast'],
-  govern: ['risk-orchestration', 'analytics', 'policy'],
+  govern: ['risk-orchestration', 'arm', 'cloud-insights', 'analytics', 'policy'],
 };
 const GROUP_STAGE = { code: 'build', supply: 'build', aisc: 'commit', runtime: 'run', agents: 'code', aspm: 'govern' };
 const SKIP_TOOLS = new Set(['portal', 'api', 'break-build']); // shown through their engines or not a tool of the customer's

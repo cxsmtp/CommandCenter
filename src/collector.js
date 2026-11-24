@@ -250,6 +250,42 @@ async function credits(client, projectNames) {
   };
 }
 
+/**
+ * What the tenant shows of ASPM, read the way the Checkmarx One portal reads it (from a browser recording of the ASPM
+ * pages). Each part is null when the tenant does not answer it (not licensed, an older release, no permission):
+ *   applications  GET /api/applications: applications, with their criticality, rules and projects
+ *   armScores     GET /api/risk-management/summary: Application Risk Management, a risk score per application
+ *   risks         GET /api/risks: Risk Orchestration, the unified list of risks across engines
+ *   cloud         GET /api/cnas/accounts: Cloud Insights, the cloud accounts connected and when they were last scanned
+ *   dast          GET /api/dast/scans/environments: DAST environments and their last scans (DAST scans are not always
+ *                 in /api/scans). Its answer carries each environment's login settings: never kept, only counts and dates.
+ * No names are kept: only counts, scores and dates.
+ */
+export async function aspm(client) {
+  // Each part on its own: a page this tenant lacks, or one that fails, leaves the others standing.
+  const soft = (fn) => fn().catch(() => null);
+  const [apps, arm, risks, cloud, dast] = await Promise.all([
+    soft(() => client.request('/api/applications', { query: { limit: 100, offset: 0 }, retries: 1 })),
+    soft(() => client.request('/api/risk-management/summary', { retries: 1 })),
+    soft(() => client.request('/api/risks', { query: { limit: 1, offset: 0 }, retries: 1 })),
+    soft(() => client.request('/api/cnas/accounts', { query: { limit: 100, offset: 0 }, retries: 1 })),
+    soft(() => client.request('/api/dast/scans/environments', { query: { from: 1, to: 100 }, retries: 1 })),
+  ]);
+  const envs = Array.isArray(dast?.environments) ? dast.environments : null;
+  const dastScans = envs?.map((e) => Date.parse(e?.lastScanTime)).filter(Number.isFinite).sort((a, b) => b - a) ?? [];
+  const list = Array.isArray(apps?.applications) ? apps.applications : Array.isArray(apps) ? apps : null;
+  const scored = Array.isArray(arm?.summary) ? arm.summary.filter((a) => Number.isFinite(Number(a?.riskScore))) : null;
+  const accounts = Array.isArray(cloud?.data) ? cloud.data : null;
+  const last = accounts?.map((a) => Date.parse(a?.lastScanDate)).filter(Number.isFinite).sort((a, b) => b - a)[0];
+  return {
+    applications: list ? { total: n0(apps?.totalCount) ?? list.length, withRules: list.filter((a) => a?.rules?.length).length, projects: new Set(list.flatMap((a) => a?.projectIds ?? [])).size } : null,
+    armScores: scored ? { scored: scored.length, top: scored.length ? Math.max(...scored.map((a) => Number(a.riskScore))) : null, highOrAbove: scored.filter((a) => /critical|high/i.test(a?.riskSeverity ?? '')).length } : null,
+    risks: risks?.metaData ? { total: n0(risks.metaData.totalResults) ?? 0 } : null,
+    dast: envs ? { environments: n0(dast?.totalItems) ?? envs.length, scanned: dastScans.length, lastScanAt: dastScans[0] ? new Date(dastScans[0]).toISOString() : null } : null,
+    cloud: accounts ? { accounts: n0(cloud?.total) ?? accounts.length, lastScanAt: last ? new Date(last).toISOString() : null } : null,
+  };
+}
+
 /** The tenant's AI settings (GET /api/configuration/tenant): Fusion on, LLM-based scanning on, the model. */
 async function tenantAi(client) {
   const body = await quietly(() => client.request('/api/configuration/tenant', { retries: 1 }));
@@ -396,11 +432,11 @@ export async function collect(connection, { client = new CxClient(connection), n
     part('running', () => activeScans(client), []),
   ]);
   const names = new Map(projects.list.map((p) => [p.id, p.name]));
-  // The slow parts (credits, AI settings, IAM people) every hour; in between, the last read's are kept.
+  // The slow parts (credits, AI settings, IAM people, ASPM) every hour; in between, the last read's are kept.
   const keep = !slow && previous;
-  const [creditInfo, ai, people] = keep
-    ? [previous.credits ?? null, previous.ai ?? null, previous.people ?? null]
-    : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null)]);
+  const [creditInfo, ai, people, aspmInfo] = keep
+    ? [previous.credits ?? null, previous.ai ?? null, previous.people ?? null, previous.aspm ?? null]
+    : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null), part('aspm', () => aspm(client), null)]);
   const findings = projects.list.length ? await part('findings', () => latestFindings(client, projects.list.map((p) => p.id)), null) : { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, byProject: {} };
   // Nothing at all could be read (a rejected key, an unreachable tenant): the read failed.
   if (['projects', 'scans', 'running'].every((name) => errors.some((e) => e.part === name))) {
@@ -408,7 +444,7 @@ export async function collect(connection, { client = new CxClient(connection), n
   }
   const recent = scans.filter((s) => timeOf(s.createdAt) >= timeOf(since)).slice(0, MAX_SCANS);
   const older = scans.length > recent.length ? scans.filter((s) => timeOf(s.createdAt) < timeOf(since)) : [];
-  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans: recent, older, active, findings, credits: creditInfo, ai, people, errors };
+  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans: recent, older, active, findings, credits: creditInfo, ai, people, aspm: aspmInfo, errors };
 }
 
 /**
@@ -446,6 +482,7 @@ export function summarize(snapshot, previous = null, now = Date.now()) {
     engines: [...new Set(scans.filter((x) => /completed|partial/i.test(x.status)).flatMap((x) => x.engines))],
     credits: snapshot.credits ? { available: snapshot.credits.available, total: snapshot.credits.total, used: snapshot.credits.used, used30d: snapshot.credits.used30d, actions: snapshot.credits.actions, state: snapshot.credits.state } : null,
     ai: snapshot.ai ?? null,
+    aspm: snapshot.aspm ?? null,
     users: (() => {
       const p = peopleActivity(snapshot, now);
       return { iamRead: p.iamRead, eventsKnown: p.eventsKnown, total: p.total, active: p.active, quiet: p.quiet, inactive: p.inactive, top: p.users.slice(0, 3).map((u) => ({ name: u.name || u.email || u.username, status: u.status })) };

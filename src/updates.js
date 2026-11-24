@@ -169,7 +169,9 @@ export class Updater {
     for (let hop = 0; hop < 5; hop += 1) {
       const headers = { 'User-Agent': 'Meridian-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') };
       if (this.#token && at.host === apiHost) headers.Authorization = `Bearer ${this.#token}`;
-      r = await this.#fetch(at, { headers, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+      // A dropped connection (a reused one the far side had just closed) is tried once more before it counts.
+      const once = () => this.#fetch(at, { headers, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+      r = await once().catch((e) => (e?.name === 'TimeoutError' ? Promise.reject(e) : new Promise((ok) => setTimeout(ok, 500)).then(once)));
       // The server's clock against GitHub's: sign-ins, certificates and the audit trail rely on it.
       const theirs = Date.parse(r.headers?.get?.('date') ?? '');
       if (Number.isFinite(theirs)) this.clockSkewMs = Date.now() - theirs;
