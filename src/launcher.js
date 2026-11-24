@@ -29,6 +29,9 @@ let child = null;
 let stopping = false;
 let crashes = 0;
 let quickCrashes = 0;
+let trialUntil = 0; // a version just installed is on trial for 2 minutes after it first answers
+const TRIAL_MS = 120_000;
+const DAY_MS = 86_400_000;
 export const QUICK_CRASHES = 3;
 const log = (...a) => console.log(`[launcher ${new Date().toISOString()}]`, ...a);
 
@@ -98,8 +101,9 @@ function start() {
       const s = readState(DATA);
       if (ok) {
         writeState(DATA, { ...s, pending: null, history: [...(s.history ?? []), { at: new Date().toISOString(), event: 'started', version: s.active }].slice(-50) });
-        log(`Version ${s.active} is up.`);
+        log(`Version ${s.active} is up; on trial for 2 minutes.`);
       quickCrashes = 0;
+      trialUntil = Date.now() + TRIAL_MS;
       } else {
         rollback(s, 'no answer on /healthz within 60 s');
         child.kill('SIGTERM');
@@ -129,7 +133,16 @@ function start() {
     crashes = Date.now() - started > 5 * 60_000 ? 1 : crashes + 1;
     quickCrashes = Date.now() - started < 60_000 ? quickCrashes + 1 : 0;
     const now = readState(DATA);
-    if (quickCrashes >= QUICK_CRASHES && now.active) {
+    // A crash during a new version's trial: back to the version before, at once.
+    if (trialUntil && Date.now() < trialUntil && now.active) {
+      trialUntil = 0;
+      rollback(now, `stopped within 2 minutes of being installed (${signal ?? `code ${code}`})`);
+      return start();
+    }
+    // Crashing on every start: back too, but only for a version installed in the last day (later, the cause is more
+    // likely the data, and older code would not help).
+    const installedAt = Date.parse([...(now.history ?? [])].reverse().find((h) => h.version === now.active && ['started', 'install'].includes(h.event))?.at ?? '') || 0;
+    if (quickCrashes >= QUICK_CRASHES && now.active && Date.now() - installedAt < DAY_MS) {
       quickCrashes = 0;
       rollback(now, `stopped within a minute of starting ${QUICK_CRASHES} times in a row (${signal ?? `code ${code}`})`);
       return start();

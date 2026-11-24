@@ -18,6 +18,7 @@
  * Everything lives under <data>/app: versions/<version>/ (one folder per release), state.json (which one runs,
  * which ran before, what was tried) and <data>/backups/ (a copy of the data before each update; the last 5 kept).
  */
+import { nodeSatisfies } from './stability.js';
 import fs from 'node:fs';
 import { Backups } from './backups.js';
 import path from 'node:path';
@@ -237,6 +238,7 @@ export class Updater {
       }
       const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
       if (pkg.version !== release.version) throw fail(400, `The bundle says it is ${pkg.version}, not ${release.version}: not installed.`);
+      if (!nodeSatisfies(pkg.engines?.node)) throw fail(409, `Version ${release.version} needs Node.js ${pkg.engines.node}; this server runs ${process.versions.node}. Update the container image (podman pull), then it installs.`);
       const backup = this.backup(`before-${release.version}`);
       this.#save({ previous: this.state.active ?? null, active: release.version, pending: { version: release.version, from: this.#current, startedAt: new Date().toISOString(), by, backup } });
       this.#log({ event: 'install', version: release.version, from: this.#current, by, backup });

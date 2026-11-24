@@ -209,7 +209,27 @@ export class Mailer {
     await this.#transport().verify();
     const all = this.#db.read('settings', {});
     all.smtp = { ...(all.smtp ?? {}), testedAt: new Date().toISOString() };
+    // These settings work: kept as the last good ones, to go back to if a later change does not.
+    all.smtpLastGood = { ...all.smtp };
     this.#db.write('settings', all);
+  }
+
+  /**
+   * After a change: check the new settings; if they fail and others worked before, put those back.
+   * Returns { ok } or { ok: false, restored, error }.
+   */
+  async checkOrRevert() {
+    try {
+      await this.verify();
+      return { ok: true };
+    } catch (error) {
+      const all = this.#db.read('settings', {});
+      const good = all.smtpLastGood;
+      if (!good || (good.host === all.smtp?.host && good.user === all.smtp?.user && good.pass === all.smtp?.pass && good.port === all.smtp?.port)) return { ok: false, restored: false, error };
+      all.smtp = { ...good };
+      this.#db.write('settings', all);
+      return { ok: false, restored: true, error, to: `${good.host}:${good.port}` };
+    }
   }
 
   async test(to) {

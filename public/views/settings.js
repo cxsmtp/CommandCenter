@@ -117,7 +117,11 @@ function email(body, data) {
     e.preventDefault();
     const b = formData(e.target);
     if (!b.pass) delete b.pass;
-    await attempt(() => api('/settings/smtp', { method: 'PUT', body: b }), 'Saved');
+    const r = await attempt(() => api('/settings/smtp', { method: 'PUT', body: b }));
+    if (!r) return;
+    if (r.verified) toast('Saved, and the email server accepted the sign-in');
+    else if (r.restored) toast(`These settings did not work (${r.error}). The last working ones were put back, so email keeps going.`, { bad: true });
+    else toast(`Saved, but the email server did not accept them: ${r.error}`, { bad: true });
   });
   $('#smtpTest').addEventListener('click', async () => {
     const r = await attempt(() => api('/settings/smtp/test', { method: 'POST', body: {} }));

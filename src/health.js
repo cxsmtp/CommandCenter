@@ -81,7 +81,7 @@ export class Watchdog {
 }
 
 /** The checks, worst first: { key, label, level: ok | warn | bad, text, fix }. */
-export function healthChecks({ db, backups, monitor, audit, updater, watchdog, version }) {
+export function healthChecks({ db, backups, monitor, audit, updater, watchdog, version, certValidTo = null }) {
   const out = [];
   const add = (key, label, level, text, fix = '') => out.push({ key, label, level, text, fix });
 
@@ -129,6 +129,12 @@ export function healthChecks({ db, backups, monitor, audit, updater, watchdog, v
   const mem = Math.round(process.memoryUsage().rss / 1048576);
   const recent = watchdog.corrections.filter((c) => Date.now() - Date.parse(c.at) < 86_400_000);
   add('server', 'Server', recent.length ? 'warn' : 'ok', `Version ${version} · ${mem} MB · longest pause ${watchdog.maxLoopMs} ms${recent.length ? ` · corrected ${recent.length}× today: ${recent[0].what} (${recent[0].action})` : ''}.`);
+
+  // The HTTPS certificate (one of your own; the self-signed one renews itself)
+  if (certValidTo) {
+    const days = Math.floor((Date.parse(certValidTo) - Date.now()) / 86_400_000);
+    add('cert', 'HTTPS certificate', days < 7 ? 'bad' : days < 30 ? 'warn' : 'ok', days < 0 ? `The certificate expired ${-days} days ago: browsers refuse the site.` : `The certificate is valid for ${days} more days (until ${new Date(certValidTo).toISOString().slice(0, 10)}).`, days < 30 ? 'Replace TLS_CERT_FILE and TLS_KEY_FILE with a renewed certificate, then restart.' : '');
+  }
 
   // Updates
   const u = updater.status();

@@ -221,3 +221,45 @@ test('a changed encryption key never wipes the accounts: Meridian refuses to sta
     else process.env.CC_SECRET = saved;
   }
 });
+
+test('one server per data folder, crash leftovers cleared, Node.js checked, Admins emailed about trouble and recovery', async () => {
+  const { lockDataDir, preflight, nodeSatisfies, AdminAlerts } = await import('../src/stability.js');
+  const dir = tmp();
+  // Another live server holds the folder: refused. A dead one's lock is taken over.
+  fs.writeFileSync(path.join(dir, 'instance.lock'), JSON.stringify({ pid: process.ppid, host: (await import('node:os')).hostname(), at: Date.now() }));
+  assert.throws(() => lockDataDir(dir), (e) => e.code === 'STATE' && /Another Meridian/.test(e.message));
+  fs.writeFileSync(path.join(dir, 'instance.lock'), JSON.stringify({ pid: 999999, host: (await import('node:os')).hostname(), at: Date.now() }));
+  const release = lockDataDir(dir);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'instance.lock'), 'utf8')).pid, process.pid);
+  release();
+  assert.ok(!fs.existsSync(path.join(dir, 'instance.lock')));
+  // Half-saved files from a crash (older than 10 minutes) go; fresh ones stay.
+  const old = path.join(dir, 'users.json.123.abc123.tmp');
+  fs.writeFileSync(old, 'x');
+  fs.utimesSync(old, new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+  fs.writeFileSync(path.join(dir, 'fresh.json.1.aa.tmp'), 'x');
+  const notes = preflight(dir);
+  assert.ok(!fs.existsSync(old) && fs.existsSync(path.join(dir, 'fresh.json.1.aa.tmp')));
+  assert.ok(notes.some((n) => /half-saved/.test(n)));
+  assert.equal(nodeSatisfies('>=20', '22.1.0'), true);
+  assert.equal(nodeSatisfies('>=24', '22.1.0'), false);
+  // The Admins: told once a check is bad twice in a row, told again when it works, and of self-fixes.
+  const db = new Db(tmp());
+  const sent = [];
+  let level = 'bad';
+  const corrections = [];
+  const alerts = new AdminAlerts({ db, org: 'Meridian', mailer: { configured: true, send: async (m) => sent.push(m) }, admins: () => ['ops@x.com'], checks: () => [{ key: 'backup', label: 'Backups', level, text: 'The last backup failed.', fix: 'Check the disk.' }], corrections: () => corrections });
+  await alerts.tick();
+  assert.equal(sent.length, 0, 'not on the first bad check');
+  await alerts.tick();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].body, /Needs attention — Backups[\s\S]*Check the disk/);
+  await alerts.tick();
+  assert.equal(sent.length, 1, 'told once');
+  level = 'ok';
+  await alerts.tick();
+  assert.match(sent[1].body, /Working again — Backups/);
+  corrections.unshift({ at: new Date().toISOString(), what: 'Memory high', action: 'restarted cleanly' });
+  await alerts.tick();
+  assert.match(sent[2].body, /Fixed by itself — Memory high/);
+});

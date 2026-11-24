@@ -29,6 +29,7 @@ import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector
 import { finalDeck } from './deck.js';
 import { wipDeck, checkTemplate } from './wip.js';
 import { SharePoint } from './sharepoint.js';
+import { lockDataDir, preflight, AdminAlerts } from './stability.js';
 import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
 import { predict, gaps, rollups } from './insights.js';
@@ -39,7 +40,6 @@ import { zip } from './zip.js';
 import { gzipSync } from 'node:zlib';
 import { AiActions } from './ai-actions.js';
 import { valueOf, ratesFor, cleanRates, totalValue, VALUE_DEFAULTS } from './value.js';
-import { X509Certificate } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { criteriaForecast, creditsForecast, activityForecast, portfolioForecast } from './forecast.js';
 import { resultsPage } from './results.js';
@@ -64,6 +64,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // HTTPS served here (src/tls.js): the given certificate, else a self-signed one; cookies are then always Secure.
   const cert = tls ? tlsOptions(dataDir) : null;
   if (cert) secureCookies = true;
+  // One server per data folder, and what a crash left half-written cleared, before anything is read.
+  const releaseLock = lockDataDir(dataDir);
+  for (const note of preflight(dataDir)) console.warn(`[start] ${note}`);
   const db = new Db(dataDir);
   const users = new Users(db);
   const catalog = new Catalog(db);
@@ -693,7 +696,10 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       need(user, 'settings.manage');
       const smtp = mailer.save(await readBody(req));
       audit.record(user, 'settings', `Changed the email server (${smtp.host}:${smtp.port})`);
-      return send(res, 200, { smtp });
+      // Checked straight away: settings that do not work never replace ones that did.
+      const r = smtp.host ? await mailer.checkOrRevert() : { ok: true };
+      if (r.restored) audit.record(user, 'settings', `The new email settings did not work (${scrubText(smtpHint(r.error))}); put back the last working ones (${r.to})`);
+      return send(res, 200, { smtp: mailer.settings, verified: r.ok, restored: Boolean(r.restored), error: r.ok ? undefined : smtpHint(r.error) });
     }
     if (route === 'POST /settings/smtp/test') {
       need(user, 'settings.manage');
@@ -868,7 +874,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (route === 'GET /system/health') {
       need(user, 'settings.manage');
-      return send(res, 200, { checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION }), corrections: watchdog.corrections, repairs: db.repairs, backups: backupStore.list(), offsite: backupStore.offsite, key: { source: db.vault.source, fingerprint: db.vault.fingerprint }, launched: updater.launched });
+      return send(res, 200, { checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo() }), corrections: watchdog.corrections, repairs: db.repairs, backups: backupStore.list(), offsite: backupStore.offsite, key: { source: db.vault.source, fingerprint: db.vault.fingerprint }, launched: updater.launched });
     }
     if (route === 'POST /system/backup') {
       need(user, 'settings.manage');
@@ -1665,7 +1671,16 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (url.pathname.startsWith('/api/')) logAccess(req, res, url);
     try {
-      if (url.pathname === '/healthz') return send(res, 200, { ok: true, version: VERSION, reading: monitor.load(), memoryMb: Math.round(process.memoryUsage().rss / 1048576) });
+      if (url.pathname === '/healthz') {
+        // Healthy means the data can be read and written, not only that the port answers.
+        try {
+          db.read('users', []);
+          fs.writeFileSync(path.join(dataDir, '.healthz'), String(Date.now()));
+        } catch (error) {
+          return send(res, 503, { ok: false, version: VERSION, error: `The data folder cannot be used: ${error.message}` });
+        }
+        return send(res, draining ? 503 : 200, { ok: !draining, restarting: draining || undefined, version: VERSION, reading: monitor.load(), memoryMb: Math.round(process.memoryUsage().rss / 1048576), signedIn: users.sessionCount });
+      }
       if (url.pathname.startsWith('/api/')) await api(req, res, url);
       else if (req.method === 'GET') serveStatic(req, res, url);
       else send(res, 405, { error: 'Method not allowed.' });
@@ -1804,6 +1819,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // ——— Results pages: one per POV; a final copy kept when it is marked successful ———
   const WIP_TEMPLATE = path.join(dataDir, 'templates', 'wip-template.pptx');
   const sharepoint = new SharePoint();
+  function certValidTo() {
+    try {
+      return cert && !cert.selfSigned ? new X509Certificate(cert.options.cert ?? cert.options.pfx).validTo : null;
+    } catch {
+      return null;
+    }
+  }
   const spConfig = () => {
     const c = db.read('settings', {}).sharepoint ?? null;
     return c ? { ...c, clientSecret: c.clientSecret ? db.open(c.clientSecret) : '' } : null;
@@ -1898,7 +1920,20 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   if (startBackground) watchdog.start();
   if (startBackground) sfMailbox.start();
 
+  // The Admins hear about trouble (and about its end) by email, without looking.
+  const alerts = new AdminAlerts({
+    db,
+    mailer,
+    org: settings().orgName,
+    checks: () => healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo() }),
+    corrections: () => watchdog.corrections,
+    admins: () => users.list().filter((u) => u.role === 'admin' && u.active !== false && u.email && !u.email.endsWith('@meridian.local')).map((u) => u.email),
+  });
+  if (startBackground) alerts.start();
+
   server.on('close', () => {
+    alerts.stop();
+    releaseLock();
     users.stop();
     updater.stop();
     backupStore.stop();
