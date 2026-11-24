@@ -971,6 +971,7 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.match(await exportSbom(sbomClient, 'scan-1', 'cyclonedx', { everyMs: 1 }), /"bomFormat": "CycloneDX"/);
   assert.deepEqual(calls, ['POST /api/sca/export/requests', 'GET /api/sca/export/requests', 'GET /api/sca/export/requests', 'GET /api/sca/export/requests/e1/download']);
   await assert.rejects(exportSbom({ request: async (p, o = {}) => (o.method === 'POST' ? { exportId: 'e2' } : { exportStatus: 'Failed' }) }, 's', 'spdx', { everyMs: 1 }), /could not make the SBOM/);
+  assert.match(evaluate(cap('llm-scanner'), tenantFacts({ scans: [{ status: 'Completed', engines: ['sast', 'aisc'] }], projects: { list: [] } })).evidence[0], /aisc engine/, 'the LLM Scanner runs as aisc');
   assert.deepEqual(evaluate(cap('scheduled-scans'), facts).evidence, ['1 scan schedule running by itself']);
   const { supplyChain } = await import('../src/collector.js');
   const asked = [];
