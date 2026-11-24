@@ -69,7 +69,14 @@ export const stateOf = (c) => (c.status === 'met' && c.proofType === 'demo' ? 'd
 export { LABELS, STATE };
 export function platformView(opp, catalog) {
   const byCap = new Map();
-  for (const c of opp.criteria ?? []) if (c.capabilityId && c.status !== 'na') byCap.set(c.capabilityId, c);
+  // A business goal's criteria point to the engine that proves them (capRef); the engine shows the furthest along.
+  const RANK = { met: 4, in_progress: 3, not_started: 2, not_met: 1 };
+  for (const c of opp.criteria ?? []) {
+    const key = c.capabilityId || c.capRef;
+    if (!key || c.status === 'na') continue;
+    const had = byCap.get(key);
+    if (!had || (RANK[c.status] ?? 0) > (RANK[had.status] ?? 0)) byCap.set(key, c);
+  }
   const placed = new Set(PILLARS.flatMap((p) => [...(p.groups ?? []).flatMap((g) => g.items), ...(p.rows ?? []).map((r) => r[0])]));
   // Capabilities added to these groups later (new engines) join their group.
   const extra = (category) => [...byCap.keys()].filter((id) => !placed.has(id) && catalog?.get(id)?.category === category);

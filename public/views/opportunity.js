@@ -553,7 +553,7 @@ const VIEWS = {
   tenant,
   criteria,
   notes: (d) => `${notes(d)}<h2 class="sec-title">Sessions with the customer</h2>${sessions(d)}`,
-  email: (d) => `${email(d)}<details class="panel fold-panel" ${wants('discovery') ? 'open' : ''}><summary><h3>Discovery</h3><span class="small muted">goals, tools, what they want to see</span></summary><div class="body">${discovery(d)}</div></details>`,
+  email: (d) => `${(d.opportunity.goals ?? []).length ? '<section class="panel talk-panel" id="talkTrack" hidden></section>' : ''}${email(d)}<details class="panel fold-panel" ${wants('discovery') ? 'open' : ''}><summary><h3>Discovery</h3><span class="small muted">goals, tools, what they want to see</span></summary><div class="body">${discovery(d)}</div></details>`,
   report: (d) => `${report(d)}<details class="panel fold-panel"><summary><h3>Everything that happened</h3><span class="small muted">${(d.opportunity.history ?? []).length} entries</span></summary>${history(d)}</details>`,
 };
 
@@ -710,6 +710,20 @@ const WIRES = {
       });
   },
   email(main, d) {
+    // What to say: the value messages and use cases behind this POV's business goals (from the SEAL library).
+    const box = $('#talkTrack');
+    if (box)
+      api(`/library/talk?goals=${encodeURIComponent(d.opportunity.goals.map((g) => g.key).join(','))}`)
+        .then(({ talk }) => {
+          if (!talk.length) return;
+          box.hidden = false;
+          box.innerHTML = `<div class="head"><h3>What to say</h3><span class="small muted">for the business goals of this POV</span></div><div class="body">${talk
+            .map((t) => `<details class="talk" ${talk.length === 1 ? 'open' : ''}><summary>${esc(t.goal.title)}${t.goal.persona ? ` <span class="small muted">· ${esc(t.goal.persona)}</span>` : ''}</summary>${t.values
+              .map((v) => `<div class="talk-one"><div class="small muted">${esc(v.persona)}</div>${v.concern ? `<blockquote>${esc(v.concern)}</blockquote>` : ''}<p><b>${esc(v.title)}.</b> ${esc(v.message)}</p>${v.proof?.length ? `<ul>${v.proof.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${v.land ? `<p class="small"><b>How to land it:</b> ${esc(v.land)}</p>` : ''}</div>`)
+              .join('')}${t.useCases.length ? `<div class="talk-one"><b>Use cases:</b> ${t.useCases.map((u) => esc(u.title)).join(' · ')}${t.useCases[0].winThemes?.length ? `<ul>${t.useCases.flatMap((u) => u.winThemes).slice(0, 4).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}</div>` : ''}</details>`)
+            .join('')}</div>`;
+        })
+        .catch(() => {});
     const form = $('#mailForm');
     const fill = (m) => {
       form.template.value = m.template ?? '';

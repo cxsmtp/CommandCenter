@@ -101,6 +101,32 @@ export function resultsPage(data, { nonce = '' } = {}) {
     ${d.summary ? `<p class="summary">${esc(d.summary)}</p>` : ''}`,
   );
   const crit = d.criteria;
+  // ——— Business goals: what the customer set out to achieve, and how far the POV took each ———
+  const byId = Object.fromEntries(crit.map((c) => [c.id, c]));
+  const goals = d.goals ?? [];
+  const goalSlides = goals.length
+    ? [
+        slide(
+          'Business goals',
+          'What we set out to prove',
+          `<div class="goals">${goals.map((g) => `<div class="goal"><div class="gh"><b>${esc(g.title)}</b><span class="gp">${g.done}/${g.total}</span></div>${g.statement ? `<p>${esc(g.statement)}</p>` : ''}<i class="bar"><i style="width:${Math.round((g.done / Math.max(1, g.total)) * 100)}%"></i></i></div>`).join('')}</div>`,
+        ),
+        ...goals
+          .filter((g) => g.key !== 'other')
+          .map((g) =>
+            slide(
+              `Business goal${g.driver ? ` · ${esc(g.driver)}` : ''}`,
+              esc(g.title),
+              `${g.statement ? `<p class="summary" style="margin-top:0">${esc(g.statement)}</p>` : ''}<table class="tbl"><thead><tr><th>Criterion</th><th>How it was tested</th><th>What it means for you</th><th>Status</th></tr></thead><tbody>${g.ids
+                .slice(0, 7)
+                .map((id) => byId[id])
+                .filter(Boolean)
+                .map((c) => `<tr><td><button class="lnk" data-e="${esc(c.id)}">${esc(c.title)}</button></td><td class="m">${esc(c.test || '—')}</td><td class="m">${esc(c.benefit || '—')}</td><td class="st s-${c.state}">${MARKS[c.state] ?? ''} ${esc(STATE_LABEL[c.state])}</td></tr>`)
+                .join('')}</tbody></table>${g.measures?.length ? `<p class="m small"><b>Success measures:</b> ${g.measures.slice(0, 4).map(esc).join(' · ')}</p>` : ''}`,
+            ),
+          ),
+      ]
+    : [];
   const critSlides = [];
   for (let i = 0; i < Math.max(1, crit.length); i += 10) {
     critSlides.push(
@@ -129,6 +155,18 @@ export function resultsPage(data, { nonce = '' } = {}) {
         </tbody></table><p class="m small">As Checkmarx One reported it on ${stamp(s.at)}.</p>`,
       )
     : '';
+  // ——— Expansion: what is proven and ready to roll out, and what comes next on the platform ———
+  const x = d.expansion;
+  const expansionSlide = x
+    ? slide(
+        'Expansion',
+        'From proof to rollout',
+        `<div class="exp"><div><div class="kick" style="position:static">Proven in this POV</div><ul class="steps small-steps">${(x.proven.length ? x.proven : ['The POV is still running: proven work appears here as criteria are completed.']).slice(0, 6).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+          <div class="figs mini">${[[x.projects, 'projects scanned'], [x.integrations.length || null, 'integrations in use'], [x.people, 'people on the platform']].filter(([v]) => v != null).map(([v, l]) => `<div><b>${gradient(String(v))}</b><span>${l}</span></div>`).join('')}</div>
+          ${x.organisation ? `<p class="m small">Rollout scope: ${esc(x.organisation)}</p>` : ''}</div>
+          <div><div class="kick" style="position:static">Next on the platform</div><ul class="next-list">${x.next.slice(0, 6).map((n) => `<li><b>${esc(n.name)}</b>${n.isNew ? ' <span class="new">New</span>' : ''}<span class="m small">${esc(n.group)}${n.goal ? ` · ${esc(n.goal)}` : ''}</span>${n.benefit ? `<span class="small">${esc(n.benefit)}</span>` : ''}</li>`).join('')}</ul></div></div>`,
+      )
+    : '';
   const slide5 = d.sessions.length ? slide('Sessions', 'How we got here', `<table class="tbl"><tbody>${d.sessions.map((x) => `<tr><td class="m" style="width:22%">${day(x.date)}</td><td>${esc(x.title)}</td><td class="m">${esc(x.type)}</td></tr>`).join('')}</tbody></table>`) : '';
   const slide6 = slide('From here', 'Next steps', `<ul class="steps">${(d.next.length ? d.next : ['Agree the rollout plan and the first teams', 'Confirm the commercial proposal', 'Schedule the onboarding']).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`);
 
@@ -139,7 +177,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
 <title>${esc(d.customer)} — Checkmarx One POV results</title>
 <style>${CSS}</style></head><body>
 <header class="bar"><div><b>${esc(d.customer)}</b> · Checkmarx One proof of value <span class="m">· prepared by ${esc(d.owner?.name ?? '')} · ${stamp(d.generatedAt)}</span></div><button class="btn" id="pdf">Download PDF</button></header>
-<main>${slide1}${flowSlide}${slide2}${critSlides.join('')}${slide4}${slide5}${slide6}${appendix}</main>
+<main>${slide1}${flowSlide}${slide2}${goalSlides.join('')}${critSlides.join('')}${slide4}${expansionSlide}${slide5}${slide6}${appendix}</main>
 <aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-label="Engine record"><button class="x" id="close" aria-label="Close">×</button><div id="rec"></div></aside>
 <div class="scrim" id="scrim"></div>
 <script${nonce ? ` nonce="${nonce}"` : ''}>
@@ -233,6 +271,14 @@ function record(c, d) {
 }
 
 const CSS = `
+.goals{display:grid;grid-template-columns:1fr 1fr;gap:${u(16)} ${u(28)}}
+.goal .gh{display:flex;justify-content:space-between;gap:${u(12)};align-items:baseline}.goal b{font-size:${u(20)}}.goal .gp{font-size:${u(18)};color:#B9B0CC}
+.goal p{margin:${u(4)} 0 ${u(8)};font-size:${u(14)};color:#B9B0CC;line-height:1.35}
+.bar{display:block;height:${u(6)};border-radius:${u(3)};background:#3A2352;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,#bf4bd6,#f2592d)}
+.exp{display:grid;grid-template-columns:1fr 1fr;gap:${u(40)}}.small-steps li{font-size:${u(16)}}
+.figs.mini{margin-top:${u(14)};grid-template-columns:repeat(3,1fr)}.figs.mini b{font-size:${u(34)}}
+.next-list{list-style:none;margin:${u(8)} 0 0;padding:0;display:grid;gap:${u(10)}}.next-list li{display:flex;flex-direction:column;gap:${u(2)};border-left:${u(3)} solid #6B34FD;padding-left:${u(10)}}
+.next-list .new{font-size:${u(11)};color:#F25928;text-transform:uppercase;letter-spacing:.06em}
 :root { --bg:#140920; --panel:#1d1030; --line:#3a2352; --ink:#fff; --dim:#b9b0cc; --violet:#6b34fd; --orange:#f25928; --magenta:#b22bcb; }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: #0b0612; color: var(--ink); font: 15px/1.45 Arial, "Helvetica Neue", Helvetica, sans-serif; }

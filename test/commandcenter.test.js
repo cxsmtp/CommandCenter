@@ -551,3 +551,115 @@ test('the audit page: every request and change, for Admins and leaders, each see
   assert.match(await csv.text(), /^seq,at,byName/);
   assert.ok((await call('vp', '/api/audit?kind=changes&q=Exported')).body.records.length >= 1);
 });
+
+// A made-up library in the SEAL format (the real one is internal and never in this repository).
+const LIB_GOALS = `# Business Goals & Success Criteria
+
+### BG-01: Find flaws before release
+
+**Static testing finds exploitable flaws before code ships.**
+
+| Criteria | Test item | Benefit |
+| --- | --- | --- |
+| Critical flaws found in the pilot apps | Scan two pilot apps and review the critical findings | Fewer flaws reach production |
+| Results in the pull request | Open a pull request and see the results on it | Developers fix in context |
+
+**Success measures**
+- Critical findings caught before release
+
+**SE context**
+
+| Field | Value |
+| --- | --- |
+| Persona | AppSec Leader |
+| GTM Value Driver | Reduce risk |
+
+**Capabilities**
+- CAP-01
+
+**Traces to**
+- VM-01
+
+---
+`;
+const LIB_VALUES = `# Value Messaging
+
+### VM-01: Catch it before it ships
+
+| Field | Value |
+| --- | --- |
+| Persona | AppSec Leader |
+
+**Their concern**
+We find flaws too late.
+
+**Value message**
+Every change is tested where developers work.
+
+**Proof points**
+- Results in the pull request
+
+**How to land it**
+Start from their last incident.
+
+---
+`;
+
+test('the SEAL library: business goals become the bank, the first call fills the POV, the report tells the story', async () => {
+  // Only those who manage the catalogue import it.
+  assert.equal((await call('se1', '/api/library/import', { method: 'POST', body: { files: [{ name: 'g.md', text: LIB_GOALS }] } })).status, 403);
+  assert.equal((await call('admin', '/api/library/import', { method: 'POST', body: { files: [{ name: 'x.md', text: '# Something else' }] } })).status, 400);
+  const imp = await call('admin', '/api/library/import', { method: 'POST', body: { files: [{ name: 'goals.md', text: LIB_GOALS }, { name: 'values.md', text: LIB_VALUES }] } });
+  assert.equal(imp.status, 200);
+  assert.deepEqual(imp.body.summary.counts.goals, 1);
+  const bank = (await call('se1', '/api/bank')).body;
+  assert.equal(bank.source, 'library');
+  assert.deepEqual(bank.goals.map((g) => g.key), ['BG-01']);
+  assert.equal(bank.entries.length, 2);
+  assert.equal(bank.entries[0].capabilityId, 'sast', 'CAP-01 is SAST in the catalogue');
+  // The library is kept encrypted, like everything else.
+  assert.ok(!fs.readdirSync(dataDir, { recursive: true }).some((f) => /library/.test(String(f)) && fs.statSync(path.join(dataDir, String(f))).isFile() && fs.readFileSync(path.join(dataDir, String(f)), 'utf8').includes('Find flaws before release')));
+  // What to say for the goal.
+  const talk = (await call('se1', '/api/library/talk?goals=BG-01')).body.talk;
+  assert.equal(talk[0].values[0].title, 'Catch it before it ships');
+
+  // A new deal at its first call, with the goal picked.
+  const o = await call('se1', '/api/opportunities', {
+    method: 'POST',
+    body: {
+      customer: 'Initech',
+      stage: 'first_call',
+      goalIds: ['BG-01'],
+      discovery: { callDate: '2026-11-20', attendees: 'Pat Doe (Head of AppSec)', painPoints: 'Flaws found in production', teamSize: '300 developers' },
+      stakeholders: [{ name: 'Pat Doe', email: 'pat@initech.example', title: 'Head of AppSec · AppSec Leader', side: 'customer' }],
+      sessions: [{ type: 'first_call', date: '2026-11-20', title: 'First call', attendees: 'Pat Doe', notes: 'Flaws found in production' }],
+      tasks: [{ title: 'Technical deep-dive', due: '2026-11-27' }],
+    },
+  });
+  assert.equal(o.status, 201, JSON.stringify(o.body));
+  const opp = o.body.opportunity;
+  assert.equal(opp.stage, 'first_call');
+  assert.deepEqual(opp.goals.map((g) => g.key), ['BG-01']);
+  assert.equal(opp.criteria.length, 2);
+  assert.ok(opp.criteria.every((c) => c.goal === 'BG-01' && c.test && c.benefit));
+  assert.equal(opp.stakeholders[0].name, 'Pat Doe');
+  assert.equal(opp.sessions[0].type, 'first_call');
+  assert.equal(opp.tasks[0].title, 'Technical deep-dive');
+  assert.equal(opp.discovery.teamSize, '300 developers');
+
+  // The report: the business goals, a slide for the goal, the expansion.
+  const html = (await call('se1', `/api/opportunities/${opp.id}/results`, { raw: true })).body;
+  assert.match(html, /What we set out to prove/);
+  assert.match(html, /Find flaws before release/);
+  assert.match(html, /Scan two pilot apps/);
+  assert.match(html, /From proof to rollout/);
+  assert.match(html, /Critical findings caught before release/);
+  const deck = await fetch(`${base}/api/opportunities/${opp.id}/deck`, { headers: { Cookie: jar.get('se1') } });
+  assert.equal(deck.status, 200);
+  assert.ok((await deck.arrayBuffer()).byteLength > 10000);
+
+  // Removing the library brings back the built-in goals.
+  assert.equal((await call('admin', '/api/library', { method: 'DELETE' })).status, 200);
+  assert.equal((await call('se1', '/api/bank')).body.source, 'built-in');
+  await call('se1', `/api/opportunities/${opp.id}`, { method: 'DELETE' });
+});

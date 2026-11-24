@@ -81,7 +81,7 @@ export function gaps(opp, row, { facts = null, people = null, catalog = null, no
   const open = (opp.criteria ?? []).filter((c) => c.status === 'not_started' && c.priority === 'must');
   if (pov && open.length && row.daysLeft !== null && row.daysLeft <= 7) add('bad', 'must-open', `${open.length} must-have${open.length > 1 ? 's' : ''} not started, ${Math.max(0, row.daysLeft)} days left: ${open.slice(0, 3).map((c) => c.title).join(', ')}${open.length > 3 ? '…' : ''}`, 'Plan a session for them, or record a demo');
   // Asked for in discovery, never made a criterion.
-  const caps = new Set((opp.criteria ?? []).map((c) => c.capabilityId).filter(Boolean));
+  const caps = new Set((opp.criteria ?? []).map((c) => c.capabilityId || c.capRef).filter(Boolean));
   const asked = (opp.discovery?.requested ?? []).filter((id) => !caps.has(id));
   if (asked.length && ['technical', 'pov'].includes(opp.stage)) add('warn', 'asked', `Asked for in discovery but not a success criterion: ${asked.slice(0, 4).map((id) => catalog?.get(id)?.name?.split(' (')[0].split(' — ')[0] ?? id).join(', ')}${asked.length > 4 ? '…' : ''}`, 'Make them success criteria, or agree they are out of scope');
   // The customer's tools, never seen in the tenant and not covered by a criterion.

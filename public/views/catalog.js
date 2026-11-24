@@ -17,8 +17,9 @@ export async function renderCatalog(main, { crumbs }) {
   const { catalog, categories } = await getCatalog(true);
   const editable = can('catalog.manage');
   const tp = await getTemplates(true);
+  const [lib, bankInfo] = await Promise.all([api('/library'), api('/bank')]);
   const all = can('templates.manage') && state.session.user.role === 'admin' ? await api('/templates?all=1') : tp;
-  main.innerHTML = `${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Meridian recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
+  main.innerHTML = `${libraryPanel(lib, bankInfo)}${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Meridian recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
   <div class="findbar"><input type="search" id="capQ" placeholder="Find a capability" aria-label="Find a capability"></div>
   ${categories
     .map(([key, label]) => {
@@ -41,6 +42,7 @@ export async function renderCatalog(main, { crumbs }) {
     for (const r of main.querySelectorAll('.cap-row')) r.hidden = q && !r.dataset.name.includes(q);
   });
   wireTemplates(main, all);
+  wireLibrary(main);
   main.querySelector('[data-act="reset"]')?.addEventListener('click', async () => {
     if (!(await ask('Put back the built-in catalogue? Your own capabilities and changes are lost (criteria already on opportunities stay).', { ok: 'Restore defaults', danger: true }))) return;
     if (await attempt(() => api('/catalog/reset', { method: 'POST' }), 'Restored')) document.dispatchEvent(new CustomEvent('cc:rerender'));
@@ -121,4 +123,53 @@ function wireTemplates(main, { templates }) {
       after(await attempt(() => api(`/templates/${encodeURIComponent(t.id)}`, { method: 'DELETE' })), t.builtIn ? 'Hidden' : 'Removed');
     });
   for (const b of main.querySelectorAll('[data-tpl-show]')) b.addEventListener('click', async () => after(await attempt(() => api(`/templates/${encodeURIComponent(b.dataset.tplShow)}/show`, { method: 'POST', body: {} })), 'Shown again'));
+}
+
+// ——— The SEAL library and the success criteria bank ———
+const KIND_LABEL = { goals: 'Business goals & success criteria', capabilities: 'Capability reference', values: 'Value messaging', valueMap: 'Value map', useCases: 'Use case cards' };
+
+function libraryPanel(lib, bankInfo) {
+  const sum = lib.summary;
+  const manage = lib.canManage;
+  const src = { library: 'from the SEAL library', imported: `imported${bankInfo.by ? ` by ${esc(bankInfo.by)}` : ''}`, 'built-in': 'built in' }[bankInfo.source];
+  return `<section class="panel" style="margin-bottom:18px"><div class="head"><h3>Business goals and the pitch</h3>${manage ? '<button class="btn primary sm" data-act="lib-import">Import SEAL files</button>' : ''}</div>
+    <div class="body"><p class="small muted" style="margin-top:0">The business goals SEs pick on the first call, each with the success criteria that prove it (criterion, how it is tested, what it means for the customer), and what to say to each persona. Kept encrypted on this server.</p>
+    <p><b>${bankInfo.goals.length}</b> business goals · <b>${bankInfo.entries.length}</b> success criteria, ${src}.</p>
+    ${sum ? `<div class="lib-files">${Object.entries(KIND_LABEL).map(([k, l]) => `<div class="${sum.counts[k] ? '' : 'muted'}"><b>${esc(l)}</b><span class="small">${sum.counts[k] ? `${sum.counts[k]} entries · ${esc(sum.files[k]?.name ?? '')}` : 'Not imported'}</span></div>`).join('')}</div>` : '<p class="small muted">No SEAL library yet: SEs see the built-in goals. Import the Markdown references (Business Goals & Success Criteria, Capability Reference, Value Messaging, Value Map, Use Case Cards) to give them the full bank and the talk track.</p>'}
+    ${manage ? `<div class="row" style="margin-top:10px;flex-wrap:wrap">${sum ? '<button class="btn sm ghost danger" data-act="lib-remove">Remove the library</button>' : ''}<button class="btn sm ghost" data-act="bank-import">Import a criteria bank (CSV or Excel)</button>${bankInfo.custom ? '<button class="btn sm ghost" data-act="bank-reset">Back to the built-in bank</button>' : ''}</div>` : ''}
+    <input type="file" id="libFiles" accept=".md,.markdown,.txt" multiple hidden><input type="file" id="bankFile" accept=".csv,.xlsx,.json" hidden></div></section>`;
+}
+
+function wireLibrary(main) {
+  const again = () => document.dispatchEvent(new CustomEvent('cc:rerender'));
+  const libIn = main.querySelector('#libFiles');
+  main.querySelector('[data-act="lib-import"]')?.addEventListener('click', () => libIn.click());
+  libIn?.addEventListener('change', async () => {
+    const files = await Promise.all([...libIn.files].map(async (f) => ({ name: f.name, text: await f.text() })));
+    if (!files.length) return;
+    const r = await attempt(() => api('/library/import', { method: 'POST', body: { files } }));
+    if (r) {
+      toast(`Imported ${r.taken.map((t) => `${t.entries} ${KIND_LABEL[t.kind]?.toLowerCase() ?? t.kind}`).join(', ')}`);
+      again();
+    }
+  });
+  main.querySelector('[data-act="lib-remove"]')?.addEventListener('click', async () => {
+    if (!(await ask('Remove the SEAL library from Meridian? Criteria already on POVs keep their wording.', { ok: 'Remove', danger: true }))) return;
+    if (await attempt(() => api('/library', { method: 'DELETE' }), 'Removed')) again();
+  });
+  const bankIn = main.querySelector('#bankFile');
+  main.querySelector('[data-act="bank-import"]')?.addEventListener('click', () => bankIn.click());
+  bankIn?.addEventListener('change', async () => {
+    const file = bankIn.files[0];
+    if (!file) return;
+    const res = await fetch('/api/bank/import', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
+    toast(`Imported ${j.taken} criteria in ${j.goals} business goals`);
+    again();
+  });
+  main.querySelector('[data-act="bank-reset"]')?.addEventListener('click', async () => {
+    if (!(await ask('Go back to the built-in criteria bank? Criteria already on POVs stay as they are.', { ok: 'Go back' }))) return;
+    if (await attempt(() => api('/bank/reset', { method: 'POST' }), 'Back to the built-in bank')) again();
+  });
 }

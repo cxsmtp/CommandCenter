@@ -281,3 +281,18 @@ body.drawer-open .pov .stage, body.drawer-open .pov .why { display: none; }
 @media (max-width: 760px) { .seg button { min-height: 44px; } .look { min-height: 44px; } }
 .stack > .field, .wz-body > .field, .dbody > .field, form > .field, .wz-body .stack > .field { flex: none; }
 .roll-pick { align-self: flex-start; }
+
+/* First call and business goals in the wizard */
+.call-person { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px; }
+@media (max-width: 720px) { .call-person { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.goal-card { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.goal-card.fits { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.goal-card.fits::after { content: 'For the people on the call'; position: absolute; top: 8px; right: 10px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); }
+.talk { margin-top: 6px; border-top: 1px dashed var(--line); padding-top: 6px; cursor: default; }
+.talk summary { cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 600; }
+.talk-one { margin-top: 8px; font-size: 13px; line-height: 1.45; }
+.talk-one blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); font-style: italic; }
+.talk-one ul { margin: 4px 0 4px 18px; padding: 0; }
+.talk-panel .talk-one + .talk-one { border-top: 1px solid var(--line); padding-top: 8px; }
+.lib-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.lib-files > div { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }

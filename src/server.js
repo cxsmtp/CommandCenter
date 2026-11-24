@@ -14,9 +14,11 @@ import { Db, fail, text, email as cleanEmail } from './db.js';
 import { Backups } from './backups.js';
 import { Trail } from './trail.js';
 import { Watchdog, healthChecks } from './health.js';
-import { readTable, recordsOf, matchRecords, logMessage, opportunityIdOf } from './salesforce.js';
+import { readTable, readCsv, recordsOf, matchRecords, logMessage, opportunityIdOf } from './salesforce.js';
 import { SfMailbox } from './sf-mailbox.js';
 import { Templates } from './templates.js';
+import { Bank } from './bank.js';
+import { Library } from './library.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
 import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted } from './opportunities.js';
@@ -61,7 +63,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const db = new Db(dataDir);
   const users = new Users(db);
   const catalog = new Catalog(db);
-  const opps = new Opportunities(db, { users, catalog });
+  const library = new Library(db);
+  const bank = new Bank(db, { catalog, library });
+  const opps = new Opportunities(db, { users, catalog, bank });
   const mailer = new Mailer(db);
   // What the page may see of the settings: never the email server's or the proxy's secrets.
   const settings = () => {
@@ -205,7 +209,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const words = wordsOf(opp);
     const out = {};
     for (const c of opp.criteria ?? []) {
-      const cap = c.capabilityId ? catalog.get(c.capabilityId) : null;
+      const cap = c.capabilityId || c.capRef ? catalog.get(c.capabilityId || c.capRef) : null;
       const own = { engines: c.engines ?? [], origins: c.origins ?? [], keywords: c.keywords ?? [] };
       const rule = { detect: cap ? { ...cap.detect, engines: [...(cap.detect.engines ?? []), ...own.engines], origins: [...(cap.detect.origins ?? []), ...own.origins], keywords: [...(cap.detect.keywords ?? []), ...own.keywords] } : own };
       out[c.id] = evaluate(rule, facts, words);
@@ -479,7 +483,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (!users.can(user, permission, fullSettings())) throw fail(403, `Your role may not do that (${PERMISSIONS[permission]}).`);
   };
   // A criterion sits in its capability's current group (catalogue groups can move).
-  const placed = (opp) => ({ ...opp, criteria: (opp.criteria ?? []).map((c) => ({ ...c, category: (c.capabilityId && catalog.get(c.capabilityId)?.category) || c.category })) });
+  const placed = (opp) => ({ ...opp, criteria: (opp.criteria ?? []).map((c) => ({ ...c, category: (c.capabilityId && catalog.get(c.capabilityId)?.category) || (c.capRef && catalog.get(c.capRef)?.category) || c.category })) });
   const viewOpp = (user, id) => {
     const opp = opps.get(id);
     if (!opp || !opps.canView(user, opp)) throw fail(404, 'No such opportunity.');
@@ -885,6 +889,56 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
 
     // Capability catalogue
+    // ——— The SEAL library: business goals, capabilities, value messages, value map, use cases ———
+    if (route === 'GET /library') {
+      const d = library.data;
+      return send(res, 200, { summary: library.summary(), canManage: can(user, 'catalog.manage'), goals: d?.goals ?? [], values: d?.values ?? [], useCases: (d?.useCases ?? []).map((u) => ({ id: u.id, title: u.title, definition: u.definition, winThemes: u.winThemes })), capabilities: (d?.capabilities ?? []).map((c) => ({ id: c.id, title: c.title, category: c.category, what: c.what, metrics: c.metrics, catalogId: c.catalogId })) });
+    }
+    if (route === 'POST /library/import') {
+      need(user, 'catalog.manage');
+      const body = JSON.parse((await readRaw(req, 8 * 1048576)).toString('utf8'));
+      const files = (Array.isArray(body.files) ? body.files : []).slice(0, 10).map((f) => ({ name: text(f.name, 200), text: String(f.text ?? '') }));
+      const taken = library.import(files, user);
+      audit.record(user, 'catalog', `Imported the SEAL library: ${taken.map((t) => `${t.title} (${t.entries})`).join(', ')}`);
+      return send(res, 200, { taken, summary: library.summary() });
+    }
+    if (route === 'DELETE /library') {
+      need(user, 'catalog.manage');
+      library.remove();
+      audit.record(user, 'catalog', 'Removed the SEAL library');
+      return send(res, 200, { summary: null });
+    }
+    if (route === 'GET /library/talk') {
+      const ids = String(url.searchParams.get('goals') ?? '').split(',').filter(Boolean).slice(0, 12);
+      return send(res, 200, { talk: library.talkTrack(ids) });
+    }
+
+    // ——— The success criteria bank ———
+    if (route === 'GET /bank') return send(res, 200, { ...bank.info(), canManage: can(user, 'catalog.manage') });
+    if (route === 'POST /bank/import') {
+      need(user, 'catalog.manage');
+      const buf = await readRaw(req, 5 * 1048576);
+      let rows;
+      const head = buf.subarray(0, 1).toString();
+      if (head === '[' || head === '{') {
+        const j = JSON.parse(buf.toString('utf8'));
+        rows = Array.isArray(j) ? j : j.entries ?? j.rows ?? [];
+      } else {
+        const table = await readTable(buf, { name: text(decodeURIComponent(req.headers['x-file-name'] ?? ''), 200), type: String(req.headers['content-type'] ?? '') });
+        const [header, ...body] = table;
+        rows = body.map((r) => Object.fromEntries((header ?? []).map((h, i) => [h, r[i] ?? ''])));
+      }
+      const r = bank.import(rows, user);
+      audit.record(user, 'catalog', `Imported the success criteria bank: ${r.taken} criteria, ${r.goals} business goals`);
+      return send(res, 200, { ...r, ...bank.info() });
+    }
+    if (route === 'POST /bank/reset') {
+      need(user, 'catalog.manage');
+      bank.reset();
+      audit.record(user, 'catalog', 'Went back to the built-in success criteria bank');
+      return send(res, 200, bank.info());
+    }
+
     // ——— Success criteria templates ———
     if (route === 'GET /templates') return send(res, 200, { templates: templates.list(user, { includeHidden: user.role === 'admin' && url.searchParams.get('all') === '1' }), canManage: can(user, 'templates.manage') });
     if (route === 'POST /templates') {
@@ -992,6 +1046,16 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         await checkKey(connection);
       }
       let opp = opps.create(user, b, fullSettings());
+      for (const g of (Array.isArray(b.goalIds) ? b.goalIds : []).slice(0, 12)) for (const e of bank.forGoal(text(g, 60))) opps.upsertItem(user, opp.id, 'criteria', { ...e, fromGoal: true, statement: e.title }, fullSettings());
+      // From the first-call wizard: who joined, the session itself and the agreed next step, saved with it.
+      for (const [kind, list] of [['stakeholders', b.stakeholders], ['sessions', b.sessions], ['tasks', b.tasks]]) {
+        for (const item of (Array.isArray(list) ? list : []).slice(0, 30)) {
+          try {
+            opps.upsertItem(user, opp.id, kind, item, fullSettings());
+          } catch {}
+        }
+      }
+      opp = opps.get(opp.id);
       if (Array.isArray(b.templateIds)) templates.used(b.templateIds.slice(0, 20).map((x) => text(x, 60)));
       if (b.apiKey) {
         opp = opps.setTenant(user, opp.id, { apiKey: b.apiKey, overrides: b.overrides }, fullSettings());
@@ -1072,6 +1136,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
           if (text(title)) opps.upsertItem(user, id, 'criteria', { title, category: 'custom', priority: c?.priority === 'must' ? 'must' : 'nice', ...(c?.engines ? { engines: c.engines } : {}) }, s);
         }
         if (Array.isArray(b.templateIds)) templates.used(b.templateIds.slice(0, 20).map((x) => text(x, 60)));
+        for (const g of (Array.isArray(b.goalIds) ? b.goalIds : []).slice(0, 12)) for (const e of bank.forGoal(text(g, 60))) opps.upsertItem(user, id, 'criteria', { ...e, fromGoal: true, statement: e.title }, s);
         return done();
       }
       // A demo session recorded against a criterion (completed by the SE's demonstration, not in the tenant)
@@ -1285,12 +1350,19 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const criteria = (opp.criteria ?? [])
       .filter((c) => c.status !== 'na')
       .map((c) => {
-        const cap = c.capabilityId ? catalog.get(c.capabilityId) : null;
+        const cap = c.capabilityId || c.capRef ? catalog.get(c.capabilityId || c.capRef) : null;
         const rule = { detect: { ...(cap?.detect ?? {}), engines: [...(cap?.detect?.engines ?? []), ...(c.engines ?? [])], origins: [...(cap?.detect?.origins ?? []), ...(c.origins ?? [])] } };
+        const b = c.capabilityId ? bank.forCapability(c.capabilityId) : null;
         return {
           id: c.id,
           capabilityId: c.capabilityId,
           title: c.title,
+          goal: c.goal || b?.goal || '',
+          statement: c.statement || b?.title || c.title,
+          test: c.test || b?.test || cap?.proof || '',
+          benefit: c.benefit || b?.benefit || '',
+          milestone: c.milestone ?? '',
+          refs: c.refs ?? '',
           group: groups[c.category] ?? 'Other',
           priority: c.priority,
           state: stateOf(c),
@@ -1325,15 +1397,59 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       platform: platformView(opp, catalog),
       flow: flowView(opp, catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null),
       criteria,
+      ...storyOf(opp, criteria, snap),
       tenant: opp.tenant ? monitor.live(opp.id).summary : null,
       sessions: [...(opp.sessions ?? [])].sort((a, b) => a.date.localeCompare(b.date)).map((x) => ({ date: x.date, title: x.title, type: SESSION_TYPES[x.type] ?? '' })),
       next: (opp.tasks ?? []).filter((t) => !t.done).map((t) => t.title).slice(0, 8),
     };
   }
 
+  /**
+   * The report's story: the POV's business goals with their criteria and progress, and the expansion — what was
+   * proven and can be rolled out, and what on the platform comes next (the closest to the proven goals first).
+   */
+  function storyOf(opp, criteria, snap) {
+    const keys = [...(opp.goals ?? []).map((g) => g.key)];
+    for (const c of criteria) if (c.goal && !keys.includes(c.goal)) keys.push(c.goal);
+    const goals = keys
+      .map((key) => {
+        const g = (opp.goals ?? []).find((x) => x.key === key) ?? bank.goal(key);
+        if (!g) return null;
+        const list = criteria.filter((c) => c.goal === key);
+        return { key, title: g.title, statement: g.statement ?? '', driver: g.driver ?? '', measures: g.measures ?? [], ids: list.map((c) => c.id), total: list.length, done: list.filter((c) => ['done', 'demo'].includes(c.state)).length };
+      })
+      .filter((g) => g && g.total);
+    const others = criteria.filter((c) => !c.goal || !goals.some((g) => g.key === c.goal));
+    if (others.length && goals.length) goals.push({ key: 'other', title: 'Further criteria', statement: 'Agreed with the team during the POV.', ids: others.map((c) => c.id), total: others.length, done: others.filter((c) => ['done', 'demo'].includes(c.state)).length });
+    const inPov = new Set(criteria.map((c) => c.capabilityId).filter(Boolean));
+    const platformCats = new Set(['code', 'supply', 'aisc', 'runtime', 'agents', 'aspm']);
+    const goalRank = (k) => (goals.some((g) => g.key === k) ? 0 : 1);
+    const next = catalog
+      .list()
+      .filter((c) => platformCats.has(c.category) && !inPov.has(c.id))
+      .map((c) => {
+        const b = bank.forCapability(c.id);
+        return { id: c.id, name: c.name, group: (catalog.categories().find(([k]) => k === c.category) ?? [, ''])[1], goal: b?.goal ? bank.goal(b.goal)?.title ?? '' : '', benefit: library.capability(c.id)?.what?.split(/(?<=\.)\s/)[0] || b?.benefit || c.proof || '', isNew: Boolean(c.isNew), rank: goalRank(b?.goal) };
+      })
+      .sort((a, b) => a.rank - b.rank || Number(b.isNew) - Number(a.isNew));
+    const live = opp.tenant ? monitor.live(opp.id).summary : null;
+    const proven = criteria.filter((c) => ['done', 'demo'].includes(c.state));
+    return {
+      goals,
+      expansion: {
+        proven: proven.map((c) => c.statement || c.title).slice(0, 12),
+        projects: live?.projects ?? null,
+        integrations: (live?.origins ?? []).map((o) => o.name),
+        people: live?.users?.total ?? null,
+        organisation: opp.discovery?.teamSize ?? '',
+        next: next.slice(0, 9),
+      },
+    };
+  }
+
   function deckOf(opp) {
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
-    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null) });
+    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null), story: resultsData(opp) });
   }
 
   /** One text file: the tenant's read, every failed scan of the last 7 days and each failed engine's log. */

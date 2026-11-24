@@ -45,7 +45,7 @@ const list = (xs) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).joi
  */
 export function flowView(opp, catalog, snapshot = null, summary = null) {
   const criteria = (opp.criteria ?? []).filter((c) => c.status !== 'na');
-  const byCap = new Map(criteria.filter((c) => c.capabilityId).map((c) => [c.capabilityId, c]));
+  const byCap = new Map(criteria.filter((c) => c.capabilityId || c.capRef).map((c) => [c.capabilityId || c.capRef, c]));
   const facts = snapshot ? tenantFacts(snapshot) : null;
   const d = opp.discovery ?? {};
   const discovered = new Set([...(d.scm ?? []), ...(d.ci ?? []), ...(d.tracking ?? []), ...(d.ide ?? [])]);

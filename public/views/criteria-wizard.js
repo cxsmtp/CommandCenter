@@ -23,7 +23,9 @@ export async function getTemplates(force = false) {
  * @returns {Promise<string|null>} the new opportunity's id (mode new), 'ok', or null when cancelled
  */
 export async function criteriaWizard({ mode, opp = null, template = null, copy = false }) {
-  const [cat, tpls] = await Promise.all([getCatalog(), getTemplates(true)]);
+  const [cat, tpls, bankInfo, lib] = await Promise.all([getCatalog(), getTemplates(true), api('/bank'), api('/library').catch(() => ({ values: [] }))]);
+  const goalsAll = bankInfo.goals;
+  const goalEntries = (key) => bankInfo.entries.filter((e) => e.goal === key);
   if (mode === 'new') await reloadPeople();
   const caps = new Map(cat.catalog.map((c) => [c.id, c]));
   const have = new Set((opp?.criteria ?? []).map((c) => c.capabilityId).filter(Boolean));
@@ -35,6 +37,9 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   const w = {
     step: 0,
     details: { stage: 'pov' },
+    // The first call: who was there, what they care about, their toolchain, and what was agreed next.
+    call: { date: new Date().toISOString().slice(0, 10), people: [{ name: '', email: '', title: '', persona: '' }], personas: new Set(), pains: '', languages: '', teamSize: '', timeline: '', nextTitle: '', nextDue: '' },
+    goals: new Set((opp?.goals ?? []).map((g) => g.key)),
     picked: new Set(),
     manual: new Map(),
     custom: template ? [...(template.custom ?? [])] : [],
@@ -50,13 +55,15 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     for (const t of tpls.templates.filter((x) => w.picked.has(x.id))) for (const i of t.items) if (m.get(i.capabilityId) !== 'must') m.set(i.capabilityId, i.priority);
     return m;
   };
+  const inGoals = () => new Set([...w.goals].flatMap((k) => goalEntries(k).map((e) => e.capabilityId)).filter(Boolean));
   const prio = (id) => (w.manual.has(id) ? w.manual.get(id) : fromTemplates().get(id) ?? 'off');
-  const chosen = () => [...caps.keys()].filter((id) => !have.has(id) && prio(id) !== 'off').map((id) => ({ capabilityId: id, priority: prio(id) }));
+  const chosen = () => [...caps.keys()].filter((id) => !have.has(id) && !inGoals().has(id) && prio(id) !== 'off').map((id) => ({ capabilityId: id, priority: prio(id) }));
   const customFromTemplates = () => tpls.templates.filter((x) => w.picked.has(x.id)).flatMap((t) => t.custom ?? []);
 
-  const steps = [
+  const stepsNow = () => [
     ...(mode === 'new' ? [['details', 'Opportunity']] : []),
-    ...(mode !== 'template' ? [['templates', 'Start from']] : []),
+    ...(mode === 'new' && ['first_call', 'discovery'].includes(w.details.stage) ? [['call', 'First call']] : []),
+    ...(mode !== 'template' ? [['goals', 'Business goals'], ['templates', 'Start from']] : []),
     ['engines', 'Engines & agents'],
     ['integrations', 'Integrations'],
     ['review', mode === 'template' ? 'Name & share' : 'Review'],
@@ -75,6 +82,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
           <div class="wz-chips">${list
             .map((c) => {
               if (have.has(c.id)) return `<span class="wz-chip added" title="Already a success criterion">${esc(c.name)}<small>added</small></span>`;
+              if (inGoals().has(c.id)) return `<span class="wz-chip added must" title="Proven by a business goal’s criteria">${esc(c.name)}<small>in a goal</small></span>`;
               const p = prio(c.id);
               return `<button type="button" class="wz-chip ${p}" data-cap="${esc(c.id)}" aria-pressed="${p !== 'off'}" title="${esc(c.cxName && c.cxName !== c.name ? `${c.cxName} — ` : '')}Click: must have → nice to have → not in this POV">${esc(c.name)}${c.isNew ? '<i class="wz-new">new</i>' : ''}${p !== 'off' ? `<small>${LABEL[p]}</small>` : ''}</button>`;
             })
@@ -87,7 +95,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const d = w.details;
       const plus = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
       return `<label class="field">Customer<input name="customer" required maxlength="160" value="${esc(d.customer ?? '')}" placeholder="e.g. Acme Bank" autofocus></label>
-        <div class="field">Where it stands<div class="status-pick" role="radiogroup">${[['discovery', 'Discovery'], ['technical', 'Technical sessions'], ['pov', 'POV running']].map(([k, l]) => `<button type="button" data-pick-stage="${k}" aria-pressed="${(d.stage ?? 'pov') === k}">${l}</button>`).join('')}</div><input type="hidden" name="stage" value="${esc(d.stage ?? 'pov')}"></div>
+        <div class="field">Where it stands<div class="status-pick" role="radiogroup">${[['first_call', 'First call'], ['discovery', 'Discovery'], ['technical', 'Technical sessions'], ['pov', 'POV running']].map(([k, l]) => `<button type="button" data-pick-stage="${k}" aria-pressed="${(d.stage ?? 'pov') === k}">${l}</button>`).join('')}</div><input type="hidden" name="stage" value="${esc(d.stage ?? 'pov')}"></div>
         <label class="field">Salesforce opportunity link <span class="muted">(optional)</span><input name="salesforceUrl" type="url" value="${esc(d.salesforceUrl ?? '')}" placeholder="Paste it from Salesforce"></label>
         <details class="more-details" ${d.more ? 'open' : ''}><summary class="small">More details <span class="muted">— owner, dates, SharePoint</span></summary>
           <div class="stack" style="gap:10px;margin-top:10px">
@@ -96,6 +104,46 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
             <div class="row"><label class="field">POV start<input type="date" name="startDate" value="${esc(d.startDate ?? plus(0))}"></label><label class="field">POV end<input type="date" name="endDate" value="${esc(d.endDate ?? plus(30))}"></label></div>
             <label class="field">SharePoint site link<input name="sharepointUrl" type="url" value="${esc(d.sharepointUrl ?? '')}" placeholder="https://….sharepoint.com/sites/…"></label>
           </div></details>`;
+    },
+    call: () => {
+      const c = w.call;
+      const personas = [...new Set(goalsAll.flatMap((g) => String(g.persona ?? '').split(/,\s*(?=[A-Z])/)).map((x) => x.trim()).filter(Boolean))];
+      const list = personas.length ? personas : ['CISO / Security Leader', 'AppSec Leader', 'Head of Engineering / Development', 'AI Engineer / AI Security Owner', 'DevSecOps / Platform Engineering'];
+      const tool = (k, label) => `<div class="field">${label}<div class="wz-chips">${cat.catalog.filter((x) => x.category === k).map((x) => `<button type="button" class="wz-chip ${prio(x.id) !== 'off' ? 'must' : ''}" data-tool="${esc(x.id)}" aria-pressed="${prio(x.id) !== 'off'}">${esc(x.name.replace(/ \(.*\)$/, '').replace(/ integration$/, ''))}</button>`).join('')}</div></div>`;
+      return `<p class="muted wz-lead">Everything from the call, once: it becomes the stakeholders, the discovery notes, the business goals and a dated next step.</p>
+        <label class="field">When was the call<input type="date" name="c_date" value="${esc(c.date)}"></label>
+        <div class="field">Who joined from the customer${c.people.map((p, i) => `<div class="call-person">
+          <input name="p_name_${i}" value="${esc(p.name)}" placeholder="Name" aria-label="Name">
+          <input name="p_email_${i}" type="email" value="${esc(p.email)}" placeholder="Email" aria-label="Email">
+          <input name="p_title_${i}" value="${esc(p.title)}" placeholder="Title, e.g. Head of AppSec" aria-label="Title">
+          <select name="p_persona_${i}" aria-label="Role in the deal"><option value="">Role in the deal…</option>${list.map((x) => `<option ${p.persona === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+        </div>`).join('')}<button type="button" class="btn sm" data-act="add-person" style="align-self:flex-start">Add someone</button></div>
+        <label class="field">What they are worried about<textarea name="c_pains" rows="3" placeholder="In their words: tool sprawl, false positives, AI-generated code, audit pressure…">${esc(c.pains)}</textarea></label>
+        ${tool('scm', 'Where their code lives')}${tool('ci', 'How they build')}${tool('ide', 'IDEs and AI coding assistants')}${tool('tracking', 'Where work is tracked')}
+        <div class="row"><label class="field">Languages<input name="c_languages" value="${esc(c.languages)}" placeholder="e.g. Java, C#, Python"></label><label class="field">Teams and applications<input name="c_teamSize" value="${esc(c.teamSize)}" placeholder="e.g. 400 developers, 120 applications"></label></div>
+        <label class="field">Timeline and buying process<input name="c_timeline" value="${esc(c.timeline)}" placeholder="e.g. decision by end of Q1, renewal of the current tool in March"></label>
+        <div class="row"><label class="field">Agreed next step<input name="c_nextTitle" value="${esc(c.nextTitle)}" placeholder="e.g. Technical deep-dive with the AppSec team"></label><label class="field">By<input type="date" name="c_nextDue" value="${esc(c.nextDue)}"></label></div>`;
+    },
+    goals: () => {
+      const mine = [...w.call.personas, ...w.call.people.map((p) => p.persona).filter(Boolean)];
+      const fits = (g) => mine.some((p) => String(g.persona ?? '').includes(p));
+      const ordered = [...goalsAll].sort((a, b) => Number(fits(b)) - Number(fits(a)));
+      const talk = (g) => {
+        const vs = (lib.values ?? []).filter((v) => (g.traces ?? []).includes(v.id) || (g.traces ?? []).includes(v.id.replace('VM-', 'VMAP-')));
+        if (!vs.length) return '';
+        return `<details class="talk" data-stop><summary>What to say</summary>${vs.map((v) => `<div class="talk-one"><div class="small muted">${esc(v.persona)}</div>${v.concern ? `<blockquote>${esc(v.concern)}</blockquote>` : ''}<p><b>${esc(v.title)}.</b> ${esc(v.message)}</p>${v.proof?.length ? `<ul>${v.proof.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${v.land ? `<p class="small"><b>How to land it:</b> ${esc(v.land)}</p>` : ''}</div>`).join('')}</details>`;
+      };
+      return `<p class="muted wz-lead">What the customer wants to achieve. Pick three to five: each brings the success criteria that prove it, with the test and the benefit written for the customer.${mine.length ? ' The goals for the people on the call come first.' : ''}</p>
+        <div class="wz-tpls">${ordered.map((g) => {
+          const on = w.goals.has(g.key);
+          const n = goalEntries(g.key).length;
+          return `<div class="wz-tpl goal-card ${on ? 'on' : ''} ${fits(g) ? 'fits' : ''}" data-goal="${esc(g.key)}" role="button" tabindex="0" aria-pressed="${on}">
+            <span class="wz-tick" aria-hidden="true">${on ? '✓' : ''}</span>
+            <b>${esc(g.title)}</b><span class="small muted">${esc(g.statement ?? '')}</span>
+            <span class="wz-tpl-meta"><span>${n} criteria${g.driver ? ` · ${esc(g.driver)}` : ''}</span><span>${esc(g.persona ?? '')}</span></span>
+            ${talk(g)}
+          </div>`;
+        }).join('')}</div>`;
     },
     templates: () => `<p class="muted wz-lead">Pick one or more templates: their criteria are chosen for you, and you adjust them in the next steps. Or start empty.</p>
       <div class="wz-tpls">${tpls.templates
@@ -139,12 +187,12 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   // ——— The dialog ———
   const title = mode === 'new' ? 'New opportunity' : mode === 'add' ? 'Add success criteria' : template && !copy ? `Change “${template.name}”` : 'New success criteria template';
   const html = () => {
-    const [key] = steps[w.step];
-    const last = w.step === steps.length - 1;
-    const count = chosen().length + customFromTemplates().length + w.custom.length;
+    const [key] = stepsNow()[w.step];
+    const last = w.step === stepsNow().length - 1;
+    const count = chosen().length + customFromTemplates().length + w.custom.length + [...w.goals].filter((k) => !(opp?.goals ?? []).some((g) => g.key === k)).reduce((n, k) => n + goalEntries(k).length, 0);
     return `<form id="wz" class="wz" novalidate>
       <div class="wz-top"><h2>${esc(title)}</h2>
-        <ol class="wz-steps">${steps.map(([, l], i) => `<li class="${i < w.step ? 'done' : i === w.step ? 'current' : ''}"><button type="button" data-goto="${i}" ${i > w.step ? 'disabled' : ''}><span>${i < w.step ? '✓' : i + 1}</span>${esc(l)}</button></li>`).join('')}</ol></div>
+        <ol class="wz-steps">${stepsNow().map(([, l], i) => `<li class="${i < w.step ? 'done' : i === w.step ? 'current' : ''}"><button type="button" data-goto="${i}" ${i > w.step ? 'disabled' : ''}><span>${i < w.step ? '✓' : i + 1}</span>${esc(l)}</button></li>`).join('')}</ol></div>
       <div class="wz-body" id="wzBody">${VIEWS[key]()}</div>
       <p class="form-error" role="alert">${esc(w.error)}</p>
       <div class="dialog-actions wz-foot"><button type="button" class="btn ghost" data-act="cancel">Cancel</button><span class="spacer"></span>
@@ -157,7 +205,12 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   const keep = (d) => {
     // Remember what was typed on this step before it is redrawn.
     const f = $('#wz', d);
-    if (steps[w.step][0] === 'details') for (const el of f.querySelectorAll('[name]')) w.details[el.name] = el.value;
+    if (stepsNow()[w.step][0] === 'details') for (const el of f.querySelectorAll('[name]')) w.details[el.name] = el.value;
+    if (stepsNow()[w.step][0] === 'call') {
+      const val = (n) => f.querySelector(`[name="${n}"]`)?.value ?? '';
+      Object.assign(w.call, { date: val('c_date'), pains: val('c_pains'), languages: val('c_languages'), teamSize: val('c_teamSize'), timeline: val('c_timeline'), nextTitle: val('c_nextTitle'), nextDue: val('c_nextDue') });
+      w.call.people = w.call.people.map((_, i) => ({ name: val(`p_name_${i}`), email: val(`p_email_${i}`), title: val(`p_title_${i}`), persona: val(`p_persona_${i}`) }));
+    }
     if ($('#wzKey', d)) w.apiKey = $('#wzKey', d).value;
     if ($('#wzSaveName', d)) w.save.name = $('#wzSaveName', d).value;
     if ($('#wzSaveScope', d)) w.save.scope = $('#wzSaveScope', d).value;
@@ -179,11 +232,30 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     if (mode === 'new') {
       const { more, ...details } = w.details;
       if ((details.stage ?? 'pov') !== 'pov' && !w.details.more) delete details.startDate, delete details.endDate;
-      const body = { stage: 'pov', ...details, criteria: items, custom, templateIds };
+      const c = w.call;
+      const withCall = stepsNow().some(([k]) => k === 'call');
+      const toolsBy = (k) => cat.catalog.filter((x) => x.category === k && prio(x.id) !== 'off').map((x) => x.id);
+      const people = withCall ? c.people.filter((p) => p.name.trim()) : [];
+      const body = {
+        stage: 'pov',
+        ...details,
+        criteria: items,
+        custom,
+        templateIds,
+        goalIds: [...w.goals],
+        ...(withCall
+          ? {
+              discovery: { callDate: c.date, attendees: people.map((p) => `${p.name}${p.title ? ` (${p.title})` : ''}`).join(', '), painPoints: c.pains, languages: c.languages, teamSize: c.teamSize, timeline: c.timeline, nextSteps: c.nextTitle, scm: toolsBy('scm'), ci: toolsBy('ci'), ide: toolsBy('ide'), tracking: toolsBy('tracking') },
+              stakeholders: people.map((p) => ({ name: p.name, email: p.email, title: [p.title, p.persona && p.persona !== p.title ? p.persona : ''].filter(Boolean).join(' · '), side: 'customer', notify: true })),
+              sessions: [{ type: 'first_call', date: c.date, title: 'First call', attendees: people.map((p) => p.name).join(', '), notes: c.pains }],
+              tasks: c.nextTitle.trim() ? [{ title: c.nextTitle, due: c.nextDue }] : [],
+            }
+          : {}),
+      };
       if (w.apiKey.trim()) body.apiKey = w.apiKey.trim();
       id = (await api('/opportunities', { method: 'POST', body })).opportunity.id;
     } else {
-      await api(`/opportunities/${id}/criteria/bulk`, { method: 'POST', body: { items, custom, templateIds } });
+      await api(`/opportunities/${id}/criteria/bulk`, { method: 'POST', body: { items, custom, templateIds, goalIds: [...w.goals].filter((k) => !(opp?.goals ?? []).some((g) => g.key === k)) } });
     }
     if (w.save.on && w.save.name.trim()) {
       await api('/templates', { method: 'POST', body: { name: w.save.name, scope: w.save.scope, items, custom } })
@@ -219,9 +291,30 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         w.error = '';
         draw(d);
       });
+    for (const card of f.querySelectorAll('[data-goal]')) {
+      const go = (e) => {
+        if (e.target.closest('[data-stop]')) return;
+        const k = card.dataset.goal;
+        w.goals.has(k) ? w.goals.delete(k) : w.goals.add(k);
+        redraw();
+      };
+      card.addEventListener('click', go);
+      card.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && !e.target.closest('[data-stop]') && (e.preventDefault(), go(e)));
+    }
+    for (const b of f.querySelectorAll('[data-tool]'))
+      b.addEventListener('click', () => {
+        w.manual.set(b.dataset.tool, prio(b.dataset.tool) === 'off' ? 'must' : 'off');
+        redraw();
+      });
+    f.querySelector('[data-act="add-person"]')?.addEventListener('click', () => {
+      keep(d);
+      w.call.people.push({ name: '', email: '', title: '', persona: '' });
+      draw(d);
+    });
     for (const b of f.querySelectorAll('[data-pick-stage]'))
       b.addEventListener('click', () => {
-        keep(d);
+        // The hidden field is what the form keeps: set it first, so the redraw does not put the old stage back.
+        f.querySelector('[name="stage"]').value = b.dataset.pickStage;
         w.details.stage = b.dataset.pickStage;
         redraw();
       });
@@ -283,13 +376,13 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       keep(d);
-      const [key] = steps[w.step];
+      const [key] = stepsNow()[w.step];
       w.error = '';
       if (key === 'details' && !String(w.details.customer ?? '').trim()) {
         w.error = 'Give the customer name.';
         return draw(d);
       }
-      if (w.step < steps.length - 1) {
+      if (w.step < stepsNow().length - 1) {
         w.step += 1;
         return draw(d);
       }

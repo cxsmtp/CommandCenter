@@ -14,6 +14,7 @@ import { cleanRates } from './value.js';
 import { changesOf } from './salesforce.js';
 
 export const STAGES = {
+  first_call: 'First call',
   discovery: 'Discovery',
   technical: 'Technical sessions',
   pov: 'POV running',
@@ -23,7 +24,7 @@ export const STAGES = {
   on_hold: 'On hold',
 };
 export const CRITERION_STATUS = { not_started: 'Not started', in_progress: 'In progress', met: 'Completed successfully', not_met: 'Not met', na: 'Not applicable' };
-export const SESSION_TYPES = { discovery: 'Discovery', technical: 'Technical session', workshop: 'Workshop', checkpoint: 'POV checkpoint', readout: 'Readout' };
+export const SESSION_TYPES = { first_call: 'First call', discovery: 'Discovery', technical: 'Technical session', workshop: 'Workshop', checkpoint: 'POV checkpoint', readout: 'Readout' };
 const HISTORY = 400;
 
 const strList = (v, n = 40, max = 120) => (Array.isArray(v) ? v : String(v ?? '').split(',')).map((x) => text(x, max)).filter(Boolean).slice(0, n);
@@ -36,7 +37,10 @@ export class Opportunities {
   /** Told of every change to an opportunity (the audit trail): ({ opp, actor, what }) => void. */
   onHistory = null;
 
-  constructor(db, { users, catalog }) {
+  #bank = null;
+
+  constructor(db, { users, catalog, bank = null }) {
+    this.#bank = bank;
     this.#db = db;
     this.#users = users;
     this.#catalog = catalog;
@@ -304,13 +308,36 @@ export class Opportunities {
   }
 
   #addCriterion(opp, item, actor = null) {
+    // A business goal's criterion keeps its own words; the capability that proves it in the tenant is its capRef.
+    if (item.goal && item.fromGoal) {
+      const ref = item.capabilityId ? this.#catalog.get(item.capabilityId) : null;
+      const same = opp.criteria.find((c) => c.goal === item.goal && c.title === item.title);
+      if (same) return same;
+      const crit = { id: randomUUID(), ...CLEANERS.criteria({ category: ref?.category ?? 'custom', ...item, capabilityId: '', capRef: ref?.id ?? '' }, actor) };
+      this.#ensureGoal(opp, crit.goal);
+      opp.criteria.push(crit);
+      if (actor) log(opp, actor, `Added success criterion "${crit.title}"`, this.onHistory);
+      return crit;
+    }
     const cap = item.capabilityId ? this.#catalog.get(item.capabilityId) : null;
     if (cap && opp.criteria.some((c) => c.capabilityId === cap.id)) return opp.criteria.find((c) => c.capabilityId === cap.id);
-    const crit = { id: randomUUID(), ...CLEANERS.criteria({ title: cap?.name, category: cap?.category ?? 'custom', ...item, capabilityId: cap?.id ?? '' }, actor) };
+    // From the bank: the business goal it serves, the criterion in the customer's words, the test and the benefit.
+    const b = cap && this.#bank ? this.#bank.forCapability(cap.id) : null;
+    const filled = b ? { goal: b.goal, statement: b.title, test: b.test, benefit: b.benefit } : {};
+    const crit = { id: randomUUID(), ...CLEANERS.criteria({ title: cap?.name, category: cap?.category ?? 'custom', ...filled, ...Object.fromEntries(Object.entries(item).filter(([, v]) => v !== '' && v !== undefined)), capabilityId: cap?.id ?? '' }, actor) };
+    if (crit.goal) this.#ensureGoal(opp, crit.goal);
     if (!crit.title) throw fail(400, 'Give the success criterion a title.');
     opp.criteria.push(crit);
     if (actor) log(opp, actor, `Added success criterion "${crit.title}"`, this.onHistory);
     return crit;
+  }
+
+  /** The POV's business goal by its key, added from the bank when it is not there yet. */
+  #ensureGoal(opp, key) {
+    opp.goals ??= [];
+    if (opp.goals.some((g) => g.key === key)) return;
+    const g = this.#bank?.goal(key);
+    if (g) opp.goals.push({ key: g.key, title: g.title, statement: g.statement ?? '', persona: g.persona ?? '', driver: g.driver ?? '', measures: g.measures ?? [] });
   }
 }
 
@@ -343,6 +370,15 @@ const CLEANERS = {
       engines: strList(c.engines, 20, 60).map((k) => k.toLowerCase()),
       origins: strList(c.origins, 20, 60).map((k) => k.toLowerCase()),
       due: dateOnly(c.due),
+      // The story for the report: the business goal it serves, the criterion in the customer's words, what is
+      // tested, what they gain, the milestone, and the customer's own tracker references.
+      goal: text(c.goal, 60),
+      statement: text(c.statement, 200),
+      test: text(c.test, 1000),
+      benefit: text(c.benefit, 600),
+      milestone: text(c.milestone, 30),
+      refs: text(c.refs, 120),
+      capRef: text(c.capRef, 60),
       confirmedBy: confirmed ? actor?.id ?? '' : status === 'met' ? existing?.confirmedBy ?? '' : '',
       confirmedAt: confirmed ? new Date().toISOString() : status === 'met' ? existing?.confirmedAt ?? null : null,
       // How it was completed: in the customer's tenant, or demonstrated by the SE (their own environment).
@@ -373,7 +409,7 @@ function cleanDemo(d, before) {
   };
 }
 
-const DISCOVERY_TEXT = ['goals', 'currentTools', 'painPoints', 'languages', 'teamSize', 'timeline', 'decisionProcess', 'competition', 'environment', 'notes', 'nextSteps'];
+const DISCOVERY_TEXT = ['goals', 'callDate', 'attendees', 'aiAssistants', 'currentTools', 'painPoints', 'languages', 'teamSize', 'timeline', 'decisionProcess', 'competition', 'environment', 'notes', 'nextSteps'];
 const DISCOVERY_LISTS = ['scm', 'ci', 'tracking', 'ide', 'requested'];
 
 /** Plain fields from a request body; returns what changed. */
@@ -399,6 +435,13 @@ function applyFields(opp, b) {
     changed.push('value rates');
   }
   if ('povResult' in b && ['', 'successful', 'unsuccessful'].includes(b.povResult)) set('povResult', b.povResult);
+  if (Array.isArray(b.goals)) {
+    opp.goals = b.goals
+      .slice(0, 12)
+      .map((g) => ({ key: text(g.key, 60) || text(g.title, 60).toLowerCase().replace(/[^a-z0-9]+/g, '-'), title: text(g.title, 160), statement: text(g.statement, 400), persona: text(g.persona, 160), driver: text(g.driver, 40), measures: (Array.isArray(g.measures) ? g.measures : []).slice(0, 12).map((m) => text(m, 400)).filter(Boolean) }))
+      .filter((g) => g.title);
+    changed.push('business goals');
+  }
   if (b.discovery && typeof b.discovery === 'object') {
     const d = { ...(opp.discovery ?? {}) };
     for (const k of DISCOVERY_TEXT) if (k in b.discovery) d[k] = text(b.discovery[k], 20000);

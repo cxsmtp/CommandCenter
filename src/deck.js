@@ -20,7 +20,7 @@ const HEAD = 'Arial';
 const BODY = 'Arial';
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
 
-export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Meridian', catalog = null, flow = null }) {
+export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Meridian', catalog = null, flow = null, story = null }) {
   const pptx = new PptxGenJS();
   pageNo = 1;
   pptx.layout = 'LAYOUT_WIDE'; // 13.33 × 7.5 in
@@ -62,6 +62,36 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   });
   if (opp.summary) answer.addText(opp.summary, { x: 0.6, y: 3.9, w: 12.1, h: 2.8, fontFace: BODY, fontSize: 15, color: INK, valign: 'top', paraSpaceAfter: 6 });
 
+  // Business goals: an overview with progress, then each goal with its criteria, tests, benefits and status
+  const goals = story?.goals ?? [];
+  const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5C518'], planned: ['Planned', '9E94B8'], missed: ['Not met', '8A8197'] };
+  if (goals.length) {
+    const ov = page('What we set out to prove', 'Business goals');
+    goals.slice(0, 8).forEach((g, i) => {
+      const x = 0.6 + (i % 2) * 6.15;
+      const y = 1.7 + Math.floor(i / 2) * 1.3;
+      ov.addText(g.title, { x, y, w: 4.9, h: 0.4, fontFace: HEAD, fontSize: 15, bold: true, color: INK });
+      ov.addText(`${g.done}/${g.total}`, { x: x + 4.9, y, w: 1.05, h: 0.4, fontFace: HEAD, fontSize: 14, color: MUTED, align: 'right' });
+      if (g.statement) ov.addText(g.statement, { x, y: y + 0.38, w: 5.95, h: 0.55, fontFace: BODY, fontSize: 10, color: MUTED, valign: 'top' });
+      ov.addShape(pptx.ShapeType.rect, { x, y: y + 0.98, w: 5.95, h: 0.07, fill: { color: LINE }, line: { color: LINE, width: 0 } });
+      if (g.done) ov.addShape(pptx.ShapeType.rect, { x, y: y + 0.98, w: (5.95 * g.done) / Math.max(1, g.total), h: 0.07, fill: { color: BRASS }, line: { color: BRASS, width: 0 } });
+    });
+    const byId = Object.fromEntries((story.criteria ?? []).map((c) => [c.id, c]));
+    for (const g of goals.filter((x) => x.key !== 'other')) {
+      const gs = page(g.title, `Business goal${g.driver ? ` · ${g.driver}` : ''}`);
+      if (g.statement) gs.addText(g.statement, { x: 0.6, y: 1.5, w: 12.1, h: 0.5, fontFace: BODY, fontSize: 13, color: MUTED, italic: true });
+      const head = ['Criterion', 'How it was tested', 'What it means for you', 'Status'].map((t) => ({ text: t.toUpperCase(), options: { color: MUTED, fontSize: 9, charSpacing: 2, fill: { color: PANEL } } }));
+      const body = g.ids.slice(0, 7).map((id) => byId[id]).filter(Boolean).map((c) => [
+        { text: c.title, options: { color: INK, fontSize: 11 } },
+        { text: String(c.test || '—').slice(0, 200), options: { color: MUTED, fontSize: 9 } },
+        { text: String(c.benefit || '—').slice(0, 200), options: { color: MUTED, fontSize: 9 } },
+        { text: (STATE[c.state] ?? ['—'])[0], options: { color: (STATE[c.state] ?? [, MUTED])[1], bold: true, fontSize: 11 } },
+      ]);
+      gs.addTable([head, ...body], { x: 0.6, y: 2.1, w: 12.1, colW: [3.4, 3.9, 3.4, 1.4], fontFace: BODY, border: { type: 'solid', color: LINE, pt: 0.5 }, valign: 'middle' });
+      if (g.measures?.length) gs.addText(`Success measures: ${g.measures.slice(0, 4).join(' · ')}`, { x: 0.6, y: 6.25, w: 12.1, h: 0.45, fontFace: BODY, fontSize: 10, color: MUTED });
+    }
+  }
+
   // 3… — Success criteria, by group, twelve to a page
   const rows = [...(opp.criteria ?? [])].sort((a, b) => String(catLabel[a.category] ?? 'zz').localeCompare(String(catLabel[b.category] ?? 'zz')));
   for (let i = 0; i < rows.length; i += 11) {
@@ -91,6 +121,27 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     shown.addTable(lines.map(([k, v]) => [{ text: k.toUpperCase(), options: { color: MUTED, fontSize: 10, charSpacing: 2 } }, { text: String(v), options: { color: INK, fontSize: 14 } }]), { x: 0.6, y: 1.7, w: 12.1, colW: [3.6, 8.5], fontFace: BODY, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: 0.6, valign: 'middle' });
     const top = (people?.users ?? []).filter((u) => u.status !== 'never' && u.status !== 'unknown').slice(0, 6);
     if (top.length) shown.addText(`Most active: ${top.map((u) => u.name || u.email || u.username).join(', ')}`, { x: 0.6, y: 6.3, w: 12.1, h: 0.4, fontFace: BODY, fontSize: 11, color: MUTED, italic: true });
+  }
+
+  // Expansion: what is proven and ready to roll out, and what comes next on the platform
+  const ex = story?.expansion;
+  if (ex) {
+    const e = page('From proof to rollout', 'Expansion');
+    e.addText('PROVEN IN THIS POV', { x: 0.6, y: 1.6, w: 5.9, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 3 });
+    e.addText((ex.proven.length ? ex.proven : ['The POV is still running: proven work appears here as criteria are completed.']).slice(0, 6).map((t) => ({ text: t, options: { bullet: { code: '25C6' }, paraSpaceAfter: 6 } })), { x: 0.6, y: 1.95, w: 5.9, h: 3.1, fontFace: BODY, fontSize: 12, color: INK, valign: 'top' });
+    const figs = [[ex.projects, 'projects scanned'], [ex.integrations.length || null, 'integrations in use'], [ex.people, 'people on the platform']].filter(([v]) => v != null);
+    figs.forEach(([v, l], i) => {
+      const x = 0.6 + i * 2.0;
+      e.addText(String(v), { x, y: 5.15, w: 1.9, h: 0.6, fontFace: HEAD, fontSize: 28, color: INK });
+      e.addText(l.toUpperCase(), { x, y: 5.75, w: 1.9, h: 0.3, fontFace: BODY, fontSize: 8, color: MUTED, charSpacing: 1 });
+    });
+    if (ex.organisation) e.addText(`Rollout scope: ${ex.organisation}`, { x: 0.6, y: 6.15, w: 5.9, h: 0.35, fontFace: BODY, fontSize: 10, color: MUTED });
+    e.addText('NEXT ON THE PLATFORM', { x: 7.0, y: 1.6, w: 5.7, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 3 });
+    ex.next.slice(0, 6).forEach((n, i) => {
+      const y = 1.95 + i * 0.75;
+      e.addShape(pptx.ShapeType.rect, { x: 7.0, y, w: 0.05, h: 0.62, fill: { color: '6B34FD' }, line: { color: '6B34FD', width: 0 } });
+      e.addText([{ text: n.name, options: { bold: true, color: INK, fontSize: 12 } }, { text: n.isNew ? '  NEW' : '', options: { color: BRASS, fontSize: 8 } }, { text: `\n${[n.group, n.goal].filter(Boolean).join(' · ')}${n.benefit ? ` — ${String(n.benefit).slice(0, 110)}` : ''}`, options: { color: MUTED, fontSize: 9 } }], { x: 7.15, y, w: 5.55, h: 0.62, fontFace: BODY, valign: 'top' });
+    });
   }
 
   // Sessions
