@@ -91,6 +91,7 @@ function organisation(body, data) {
     <label class="field">Read each running POV tenant every (minutes)<input type="number" name="refreshMinutes" min="1" max="1440" value="${esc(s.refreshMinutes)}"></label>
     <div class="row"><label class="field">Default look<select name="defaultTheme">${Object.entries(LOOKS).map(([k, [l]]) => `<option value="${k}" ${s.defaultTheme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="field">Default mode<select name="defaultMode">${['auto', 'light', 'dark'].map((m) => `<option ${s.defaultMode === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label></div>
+    <label class="field">Results presentation<select name="reportStyle"><option value="classic" ${s.reportStyle !== 'team' ? 'selected' : ''}>Classic (Meridian’s own design)</option><option value="team" ${s.reportStyle === 'team' ? 'selected' : ''}>Team template (the WIP design, in the uploaded template)</option></select></label>
     <label class="check"><input type="checkbox" name="weeklyDrafts" ${s.weeklyDrafts ? 'checked' : ''}> Every Monday, write a weekly status draft for each running POV (waiting in its Email tab, never sent by itself)</label>
     <div><button class="btn primary">Save</button></div>
   </form>`;

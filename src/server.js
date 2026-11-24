@@ -57,7 +57,7 @@ const MAX_BODY = 512 * 1024;
 const DAY = 86_400_000;
 const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']);
 const POLLED_STAGES = new Set(['pov']);
-const DEFAULT_SETTINGS = { orgName: 'Meridian', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true };
+const DEFAULT_SETTINGS = { orgName: 'Meridian', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true, reportStyle: 'classic' };
 
 export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null, backupOptions = null, startBackground = true, tls = false } = {}) {
   // HTTPS served here (src/tls.js): the given certificate, else a self-signed one; cookies are then always Secure.
@@ -660,6 +660,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (THEMES.includes(b.defaultTheme)) all.defaultTheme = b.defaultTheme;
       if (['auto', 'light', 'dark'].includes(b.defaultMode)) all.defaultMode = b.defaultMode;
       if ('weeklyDrafts' in b) all.weeklyDrafts = Boolean(b.weeklyDrafts);
+      if (['classic', 'team'].includes(b.reportStyle)) all.reportStyle = b.reportStyle;
       db.write('settings', all);
       audit.record(user, 'settings', `Changed organisation settings: ${Object.keys(b).join(', ')}`);
       monitor.setInterval(all.refreshMinutes);
@@ -1303,7 +1304,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
       if (sub === 'deck' && m === 'GET') {
         const opp = viewOpp(user, id);
-        return file(res, `${opp.customer} - POV results.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', await deckOf(opp));
+        return file(res, `${opp.customer} - POV results.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', await deckOf(opp, url.searchParams.get('style')));
       }
       // The POV work-in-progress deck, in the team's template when there is one.
       if (sub === 'wip' && m === 'GET') {
@@ -1510,7 +1511,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     };
   }
 
-  function deckOf(opp) {
+  /** The results presentation: Classic (Meridian's own design), or Team (the WIP design, in the team's template). */
+  function deckOf(opp, style = null) {
+    const chosen = ['classic', 'team'].includes(style) ? style : opp.reportStyle || settings().reportStyle || 'classic';
+    if (chosen === 'team') {
+      const tpl = fs.existsSync(WIP_TEMPLATE) ? db.vault.readFile(WIP_TEMPLATE) : null;
+      return wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: tpl, mode: 'results', live: opp.tenant ? monitor.live(opp.id) : null });
+    }
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
     return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, opp.tenant ? monitor.provingSnapshot(opp.id) : null, opp.tenant ? monitor.live(opp.id).summary : null), story: resultsData(opp) });
   }

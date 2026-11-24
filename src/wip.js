@@ -44,10 +44,12 @@ function contentOf(opp, story, { owner, catalog }) {
   return { caps, engines, people, am, se: owner };
 }
 
-export async function wipDeck(opp, { story, owner, catalog, template = null }) {
+export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null }) {
+  // The same deck, two moments: 'wip' while the POV runs, 'results' for the final readout in the team's template.
+  const results = mode === 'results';
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE';
-  pptx.title = `${opp.customer} — POV work in progress`;
+  pptx.title = `${opp.customer} — ${results ? 'POV results' : 'POV work in progress'}`;
   const templated = Boolean(template);
   const kinds = [];
   const c = contentOf(opp, story, { owner, catalog });
@@ -69,7 +71,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
   {
     const s = add('cover');
     s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: FONT, fontSize: 38, bold: true, color: WHITE, margin: 0 });
-    s.addText('CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
+    s.addText(results ? 'CxOne Platform: Proof of Value Results' : 'CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
     const who = [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean);
     s.addText(who.map((p) => ({ text: `${p.name} | ${p.title || ''}`, options: { breakLine: true } })), { x: 0.5, y: 5.2, w: 8, h: 0.75, fontFace: FONT, fontSize: 15, color: '8F7BFF', margin: 0, valign: 'top' });
     s.addText(longDay(today()), { x: 0.5, y: 6.3, w: 6, h: 0.35, fontFace: FONT, fontSize: 13, color: WHITE, margin: 0 });
@@ -89,8 +91,43 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
   };
   const bullets = (items, o = {}) => items.map((t) => ({ text: t, options: { bullet: { code: o.code ?? '25AA', indent: 14 }, breakLine: true, paraSpaceAfter: o.space ?? 6, color: o.color ?? WHITE } }));
 
+  // 2r — Results at a glance: the answer first
+  if (results) {
+    const s = add('content');
+    const p = story?.progress ?? { met: 0, total: 0, percent: 0, must: 0, mustMet: 0 };
+    const t = live?.summary ?? story?.tenant ?? null;
+    head(s, p.total && p.met === p.total ? 'Every success criterion met' : `${p.met} of ${p.total} success criteria met`, `${C} · ${longDay(opp.startDate)} – ${longDay(opp.endDate)}`, '');
+    const figs = [
+      [`${p.percent}%`, 'success criteria met', ORANGE],
+      [`${p.mustMet}/${p.must}`, 'must-haves met', VIOLET],
+      [t?.projects != null ? String(t.projects) : '—', 'projects scanned', '3CCF8E'],
+      [t?.users?.total != null ? `${(t.users.active ?? 0) + (t.users.quiet ?? 0)}/${t.users.total}` : '—', 'people active', 'F5C518'],
+    ];
+    const fw = (W - 0.45) / 4;
+    figs.forEach(([v, l, color], i) => {
+      const x = L + i * (fw + 0.15);
+      card(s, x, 1.55, fw, 1.7);
+      s.addShape(pptx.ShapeType.rect, { x: x + 0.25, y: 1.75, w: 0.4, h: 0.05, fill: { color }, line: { color, width: 0 } });
+      s.addText(v, { x: x + 0.25, y: 1.9, w: fw - 0.5, h: 0.8, fontFace: FONT, fontSize: 40, bold: true, color: WHITE, margin: 0, valign: 'middle' });
+      s.addText(l.toUpperCase(), { x: x + 0.25, y: 2.75, w: fw - 0.5, h: 0.3, fontFace: FONT, fontSize: 10, bold: true, color: MUTED, charSpacing: 2, margin: 0 });
+    });
+    label(s, 'Business goals', L, 3.55, 5);
+    const goals = (story?.goals ?? []).filter((g) => g.key !== 'other').slice(0, 5);
+    goals.forEach((g, i) => {
+      const y = 3.95 + i * 0.5;
+      const frac = g.total ? g.done / g.total : 0;
+      s.addText(g.title, { x: L, y, w: 6.2, h: 0.3, fontFace: FONT, fontSize: 11.5, color: WHITE, margin: 0, valign: 'middle', fit: 'shrink' });
+      s.addShape(pptx.ShapeType.roundRect, { x: L + 6.35, y: y + 0.08, w: 3.4, h: 0.16, rectRadius: 0.08, fill: { color: '2E1D4A' }, line: { color: '2E1D4A', width: 0 } });
+      if (frac) s.addShape(pptx.ShapeType.roundRect, { x: L + 6.35, y: y + 0.08, w: Math.max(0.16, 3.4 * frac), h: 0.16, rectRadius: 0.08, fill: { color: frac === 1 ? '3CCF8E' : ORANGE }, line: { color: frac === 1 ? '3CCF8E' : ORANGE, width: 0 } });
+      s.addText(`${g.done}/${g.total}`, { x: L + 9.9, y, w: 0.8, h: 0.3, fontFace: FONT, fontSize: 11, bold: true, color: WHITE, margin: 0, valign: 'middle' });
+    });
+    const summary = (opp.summary ?? '').trim();
+    card(s, L + 10.9, 3.55, W - 10.9, 2.95);
+    s.addText(summary || (story?.completedAt ? `POV completed on ${longDay(story.completedAt.slice(0, 10))}.` : 'The POV is still running.'), { x: L + 11.05, y: 3.7, w: W - 11.2, h: 2.65, fontFace: FONT, fontSize: 10.5, italic: !summary, color: summary ? WHITE : MUTED, margin: 0, valign: 'top', fit: 'shrink' });
+  }
+
   // 2 — Executive overview: the letter on the left, the POV at a glance on the right
-  {
+  if (!results) {
     const s = add('content');
     head(s, 'Executive Overview', 'Give your developers the skills they need to increase security and', 'reduce risk right from the start.');
     const pains = (opp.discovery?.painPoints ?? '').trim().replace(/\.$/, '');
@@ -241,7 +278,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
   // 6 — Plan and timeline
   {
     const s = add('content');
-    head(s, 'POV Plan & Timeline', 'Mapped to', `${C}’s goals`);
+    head(s, results ? 'How We Got Here' : 'POV Plan & Timeline', 'Mapped to', `${C}’s goals`);
     const plan = opp.plan ?? {};
     const scope = plan.scope?.length ? plan.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title).slice(0, 5);
     const cards = [
@@ -277,8 +314,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
     });
   }
 
-  // 7 — Environment: the people, the tenant, the touch points
-  {
+  // 7 — Environment: the people, the tenant, the touch points (the WIP deck only)
+  if (!results) {
     const s = add('content');
     head(s, 'POV Environment Details');
     const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: VIOLET }, fontSize: 10.5 } });
@@ -338,7 +375,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
       let n = 0;
       pages.forEach((page, pi) => {
         const s = add('content');
-        s.addText('Test Plan Overview', { x: L, y: 0.3, w: 9, h: 0.55, fontFace: FONT, fontSize: 26, bold: true, color: WHITE, margin: 0 });
+        s.addText(results ? 'Results by Business Goal' : 'Test Plan Overview', { x: L, y: 0.3, w: 9, h: 0.55, fontFace: FONT, fontSize: 26, bold: true, color: WHITE, margin: 0 });
         s.addText([{ text: 'Business Goals', options: { color: ORANGE } }, { text: ' and ', options: { color: WHITE } }, { text: 'Success Criteria', options: { color: ORANGE } }], { x: L, y: 0.85, w: 9, h: 0.3, fontFace: FONT, fontSize: 13, margin: 0 });
         if (pages.length > 1) s.addText(`${pi + 1} of ${pages.length}`, { x: L + W - 2, y: 0.4, w: 2, h: 0.3, fontFace: FONT, fontSize: 10, color: MUTED, align: 'right', margin: 0 });
         card(s, L, 1.4, W, 0.85, { line: VIOLET });
@@ -361,6 +398,67 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
         s.addTable([[H('Success criterion'), H('What it means for you'), H('How we measure it'), H('Result')], ...rows], { x: L, y: 2.45, w: W, colW: [2.75, 4.0, 4.08, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.36, ...page.map((id) => rowH(crit[id]))], valign: 'middle', autoPage: false, margin: [4, 8, 4, 8] });
       });
     });
+  }
+
+  // Results: what the tenant showed, from proof to rollout, next steps
+  if (results) {
+    const t = live?.summary ?? story?.tenant ?? null;
+    if (t) {
+      const s = add('content');
+      head(s, 'What Checkmarx One Showed', 'In the POV tenant, as of', longDay(new Date().toISOString().slice(0, 10)));
+      const tiles = [
+        ['Projects', t.projects ?? '—'],
+        ['Scans, last 7 days', t.scans7d ?? '—'],
+        ['Fusion scans', t.fusion7d ?? 0],
+        ['Critical + high open', t.findings ? (t.findings.critical ?? 0) + (t.findings.high ?? 0) : '—'],
+        ['AI triage actions', t.credits?.actions?.triage ?? 0],
+        ['AI remediation actions', t.credits?.actions?.remediation ?? 0],
+      ];
+      const tw = (W - 0.3) / 3;
+      tiles.forEach(([k, v], i) => {
+        const x = L + (i % 3) * (tw + 0.15);
+        const y = 1.55 + Math.floor(i / 3) * 1.45;
+        card(s, x, y, tw, 1.3);
+        s.addText(String(v), { x: x + 0.25, y: y + 0.12, w: tw - 0.5, h: 0.75, fontFace: FONT, fontSize: 34, bold: true, color: WHITE, margin: 0, valign: 'middle' });
+        s.addText(k.toUpperCase(), { x: x + 0.25, y: y + 0.88, w: tw - 0.5, h: 0.3, fontFace: FONT, fontSize: 10, bold: true, color: MUTED, charSpacing: 2, margin: 0 });
+      });
+      label(s, 'Engines used', L, 4.6, 4);
+      s.addText((t.engines ?? []).join(' · ') || '—', { x: L, y: 4.95, w: W / 2 - 0.2, h: 0.5, fontFace: FONT, fontSize: 12, color: WHITE, margin: 0, valign: 'top' });
+      label(s, 'Scans came from', L + W / 2, 4.6, 4);
+      s.addText((t.origins ?? []).map((o) => `${o.name} (${o.count})`).join(' · ') || '—', { x: L + W / 2, y: 4.95, w: W / 2, h: 0.5, fontFace: FONT, fontSize: 12, color: WHITE, margin: 0, valign: 'top' });
+    }
+    const ex = story?.expansion;
+    if (ex) {
+      const s = add('content');
+      head(s, 'From Proof to Rollout', 'What is proven, and what', 'comes next on the platform');
+      card(s, L, 1.55, 6.0, 5.2);
+      label(s, 'Proven in this POV', L + 0.25, 1.75, 5.5);
+      s.addText(bullets((ex.proven.length ? ex.proven : ['Proven work appears here as criteria are met.']).slice(0, 8), { code: '2713', space: 6 }), { x: L + 0.25, y: 2.2, w: 5.5, h: 3.2, fontFace: FONT, fontSize: 11.5, valign: 'top', margin: 0, fit: 'shrink' });
+      const figs = [[ex.projects, 'projects'], [ex.integrations.length || null, 'integrations'], [ex.people, 'people']].filter(([v]) => v != null);
+      figs.forEach(([v, l], i) => {
+        s.addText([{ text: String(v), options: { fontSize: 26, bold: true, color: WHITE, breakLine: true } }, { text: l.toUpperCase(), options: { fontSize: 9, bold: true, color: MUTED, charSpacing: 1 } }], { x: L + 0.25 + i * 1.8, y: 5.55, w: 1.7, h: 0.95, fontFace: FONT, margin: 0, valign: 'top' });
+      });
+      const nx = L + 6.3;
+      label(s, 'Next on the platform', nx, 1.6, W - 6.3);
+      ex.next.slice(0, 6).forEach((n, i) => {
+        const y = 2.05 + i * 0.78;
+        s.addShape(pptx.ShapeType.rect, { x: nx, y, w: 0.06, h: 0.62, fill: { color: VIOLET }, line: { color: VIOLET, width: 0 } });
+        s.addText([{ text: n.name, options: { bold: true, color: WHITE, fontSize: 12 } }, ...(n.isNew ? [{ text: '  NEW', options: { bold: true, color: ORANGE, fontSize: 8.5 } }] : []), { text: `\n${[n.group, n.goal].filter(Boolean).join(' · ')}${n.benefit ? ` — ${String(n.benefit).slice(0, 120)}` : ''}`, options: { color: MUTED, fontSize: 9.5 } }], { x: nx + 0.2, y, w: W - 6.5, h: 0.66, fontFace: FONT, margin: 0, valign: 'top', fit: 'shrink' });
+      });
+    }
+    {
+      const s = add('content');
+      head(s, 'Next Steps', 'Together with', C);
+      const steps = (opp.tasks ?? []).filter((x) => !x.done).map((x) => x.title);
+      const list = (steps.length ? steps : ['Agree the rollout plan and the first teams', 'Confirm the commercial proposal', 'Schedule the onboarding']).slice(0, 6);
+      list.forEach((t, i) => {
+        const y = 1.6 + i * 0.85;
+        card(s, L, y, W, 0.7);
+        s.addShape(pptx.ShapeType.ellipse, { x: L + 0.2, y: y + 0.15, w: 0.4, h: 0.4, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+        s.addText(String(i + 1), { x: L + 0.2, y: y + 0.15, w: 0.4, h: 0.4, fontFace: FONT, fontSize: 13, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
+        s.addText(t, { x: L + 0.8, y, w: W - 1.0, h: 0.7, fontFace: FONT, fontSize: 14, color: WHITE, margin: 0, valign: 'middle' });
+      });
+    }
   }
 
   // Closing, then the appendix: the notes of each meeting held

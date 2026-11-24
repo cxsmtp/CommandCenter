@@ -769,6 +769,13 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
   const rels = await z.file('ppt/_rels/presentation.xml.rels').async('string');
   for (const m of rels.matchAll(/Target="(slides\/[^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${m[1]} is in the file`);
   for (const n of Object.keys(z.files).filter((x) => /^ppt\/slides\/_rels\/.+\.rels$/.test(x))) for (const m of (await z.file(n).async('string')).matchAll(/Target="\.\.\/([^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${n} points at ${m[1]}, which exists`);
+  // The results presentation in the team's style; Classic stays the default.
+  const team = await fetch(`${base}/api/opportunities/${opp.id}/deck?style=team`, { headers: { Cookie: jar.get('se1') } });
+  assert.equal(team.status, 200);
+  const teamText = (await slideTexts(Buffer.from(await team.arrayBuffer()))).join(' | ');
+  assert.ok(teamText.includes('Proof of Value Results') && teamText.includes('Next Steps'), 'the team-style results deck');
+  const classic = await fetch(`${base}/api/opportunities/${opp.id}/deck`, { headers: { Cookie: jar.get('se1') } });
+  assert.ok(!(await slideTexts(Buffer.from(await classic.arrayBuffer()))).join(' ').includes('Proof of Value Results'), 'Classic by default');
   assert.equal((await call('admin', '/api/wip-template', { method: 'DELETE' })).status, 200);
   await call('se1', `/api/opportunities/${opp.id}`, { method: 'DELETE' });
 });
