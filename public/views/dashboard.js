@@ -39,7 +39,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
   const filters = activeFilters(owner, regions);
 
   const running = o.rows.filter((r) => r.stage === 'pov').length;
-  const summary = [`${o.rows.filter((r) => !isClosed(r)).length} open`, `${running} POV${running === 1 ? '' : 's'} running`, counts.needs ? `<span class="bad-t">${counts.needs} need${counts.needs === 1 ? 's' : ''} you</span>` : '<span class="ok-t">nothing needs you</span>'].join(' · ');
+  const summary = [`${o.rows.filter((r) => !isClosed(r)).length} open`, `${running} POV${running === 1 ? '' : 's'} running`, counts.needs ? `<span class="bad-t">${counts.needs} need${counts.needs === 1 ? 's' : ''} you</span>` : '<span class="ok-t">nothing needs you</span>', o.totals?.value?.hours ? `<span title="Time the AI actions in running tenants saved, at the value rates">AI saved ${Math.round(o.totals.value.hours)} h${o.totals.value.value ? ` (${new Intl.NumberFormat('en', { style: 'currency', currency: o.totals.value.currency || 'USD', maximumFractionDigits: 0 }).format(o.totals.value.value)})` : ''}</span>` : ''].filter(Boolean).join(' · ');
 
   main.innerHTML = `
     <div class="page-head"><div class="grow"><div class="sub" style="margin:0">${summary}</div></div>

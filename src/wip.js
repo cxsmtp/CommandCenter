@@ -101,7 +101,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       [`${p.percent}%`, 'success criteria met', ORANGE],
       [`${p.mustMet}/${p.must}`, 'must-haves met', VIOLET],
       [t?.projects != null ? String(t.projects) : '—', 'projects scanned', '3CCF8E'],
-      [t?.users?.total != null ? `${(t.users.active ?? 0) + (t.users.quiet ?? 0)}/${t.users.total}` : '—', 'people active', 'F5C518'],
+      story?.value?.hours?.total ? [`${Math.round(story.value.hours.total)} h`, 'saved by AI', 'F5C518'] : [t?.users?.total != null ? `${(t.users.active ?? 0) + (t.users.quiet ?? 0)}/${t.users.total}` : '—', 'people active', 'F5C518'],
     ];
     const fw = (W - 0.45) / 4;
     figs.forEach(([v, l, color], i) => {

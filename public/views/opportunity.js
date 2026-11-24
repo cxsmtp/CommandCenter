@@ -1,12 +1,14 @@
 // One opportunity, from discovery to the outcome: the micro view a manager drills into and the SE works in.
 import { $, $$, esc, fmt, api, state, can, ago, when, day, tc, toast, attempt, download, copy, openDialog, closeDialog, formData, HEALTH, sevBar, sevLegend, progressBar, ring, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, ask } from '../core.js';
 import { feed } from './dashboard.js';
+import { aiTab, wireAiTab } from './ai-tab.js';
 import { getCatalog, capabilityPicker } from './new-opportunity.js';
 
 const TABS = [
   ['overview', 'Overview'],
   ['criteria', 'Criteria'],
   ['tenant', 'Tenant'],
+  ['ai', 'AI & value'],
   ['notes', 'Notes & tasks'],
   ['email', 'Customer'],
   ['report', 'Results'],
@@ -631,6 +633,7 @@ function history(d) {
 const VIEWS = {
   overview,
   tenant,
+  ai: () => aiTab(),
   criteria,
   notes: (d) => `${notes(d)}<h2 class="sec-title">Sessions with the customer</h2>${sessions(d)}`,
   email: (d) => `${(d.opportunity.goals ?? []).length ? '<section class="panel talk-panel" id="talkTrack" hidden></section>' : ''}${email(d)}<details class="panel fold-panel" ${wants('discovery') ? 'open' : ''}><summary><h3>Discovery</h3><span class="small muted">goals, tools, what they want to see</span></summary><div class="body">${discovery(d)}</div></details>`,
@@ -641,6 +644,9 @@ const VIEWS = {
 const on = (root, sel, fn) => $$(sel, root).forEach((el) => el.addEventListener('click', (e) => fn(el, e)));
 
 const WIRES = {
+  ai(main) {
+    wireAiTab(main, oid(), { canEdit: current.canEdit, rerender });
+  },
   overview(main, d) {
     on(main, '[data-fix]', (b) => doFix(b.dataset.fix));
     const box = $('#summary');

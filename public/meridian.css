@@ -296,3 +296,16 @@ body.drawer-open .pov .stage, body.drawer-open .pov .why { display: none; }
 .talk-panel .talk-one + .talk-one { border-top: 1px solid var(--line); padding-top: 8px; }
 .lib-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .lib-files > div { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+
+/* AI & value tab */
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 860px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+.kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.kv > span { color: var(--muted); }
+hr.sep { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 4px 0; }
+.bar-track { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+.bar-track > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--warn)); }
+#aiTab .kpi small { display: block; margin-top: 2px; font-size: 11.5px; }
+#aiTab .kpis { margin-bottom: 0; }
+#aiTab .kpi b { display: block; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; font-family: var(--font-head); }
+#aiTab .kpi > span { color: var(--muted); font-size: 12px; }
