@@ -155,8 +155,8 @@ async function system(body) {
     <section class="panel sys-head ${worst}"><div class="body row center" style="gap:14px">
       <span class="sys-dot ${worst}"></span>
       <div><h3 style="margin:0">${worst === 'ok' ? 'Everything is healthy' : worst === 'warn' ? 'Healthy, with things worth a look' : 'Something needs you'}</h3>
-      <div class="small muted">Checked now · the server corrects what it can by itself every minute · key ${esc(h.key.fingerprint)}</div></div>
-      <span class="spacer"></span><button class="btn" data-act="recheck">Check again</button></div></section>
+      <div class="small muted">Checked now · the server corrects what it can by itself every minute, and emails the Admins when something stays wrong · key ${esc(h.key.fingerprint)}</div></div>
+      <span class="spacer"></span><a class="btn" href="/api/system/report" download>Troubleshooting report</a><button class="btn" data-act="recheck">Check again</button></div></section>
 
     <section class="panel"><div class="head"><h3>Health</h3></div><div class="checks">
       ${h.checks.map((c) => `<div class="check-row ${c.level}"><span class="badge ${LEVEL[c.level][0]}">${LEVEL[c.level][1]}</span><div><b>${esc(c.label)}</b><div>${esc(c.text)}</div>${c.fix ? `<div class="small muted">${esc(c.fix)}</div>` : ''}</div></div>`).join('')}

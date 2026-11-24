@@ -286,3 +286,27 @@ test('backups link what never changes, and a restore is put in place at the next
   assert.equal(new Db(dir).read('opportunities', [])[0].customer, 'Before');
   assert.equal(new Backups({ dataDir: dir, vault: db.vault }).applyPending(), null, 'applied once');
 });
+
+test('the troubleshooting report: everything to see what went wrong, and no secrets', async () => {
+  const dir = tmp();
+  process.env.CC_ADMIN_PASSWORD = 'admin-password-123';
+  const { createApp } = await import('../src/server.js');
+  const app = createApp({ dataDir: dir, startBackground: false });
+  await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  try {
+    const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@meridian.local', password: 'admin-password-123' }) });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const r = await fetch(`${base}/api/system/report`, { headers: { Cookie: cookie } });
+    assert.equal(r.status, 200);
+    const text = await r.text();
+    const rep = JSON.parse(text);
+    assert.ok(rep.version && rep.checks.length && 'signedIn' in rep && Array.isArray(rep.recentErrors));
+    assert.ok(!text.includes('admin-password-123') && !text.includes(cookie.split('=')[1]), 'no passwords or session tokens');
+    const h = await (await fetch(`${base}/healthz`)).json();
+    assert.equal(h.ok, true);
+    assert.equal(h.signedIn, 1);
+  } finally {
+    app.server.close();
+  }
+});

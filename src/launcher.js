@@ -149,6 +149,10 @@ function start() {
     }
     const wait = Math.min(60_000, 1000 * 2 ** Math.min(crashes, 6));
     log(`The server stopped (${signal ?? `code ${code}`}); starting again in ${Math.round(wait / 1000)} s.`);
+    try {
+      const s = readState(DATA);
+      writeState(DATA, { ...s, history: [...(s.history ?? []), { at: new Date().toISOString(), event: 'crash', version: s.active ?? 'built-in', message: signal ?? `code ${code}` }].slice(-50) });
+    } catch {}
     setTimeout(start, wait);
   });
 }

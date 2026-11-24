@@ -646,6 +646,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
 
     if (route === 'GET /stream') {
+      // A handful of tabs per person; a browser stuck reconnecting cannot use up the server.
+      if ([...clients].filter((c) => c.userId === user.id).length >= 6) return send(res, 429, { error: 'Too many open Meridian tabs: close a few.' }, { 'Retry-After': '30' });
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
       res.write(`event: hello\ndata: ${JSON.stringify({ version: VERSION })}\n\n`);
       const client = { res, userId: user.id };
@@ -884,6 +886,36 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       need(user, 'settings.manage');
       restartServer(user, 'from Settings');
       return send(res, 202, { restarting: true });
+    }
+    // Everything needed to see what went wrong, in one file (no secrets: keys, passwords and tokens are never in it).
+    if (route === 'GET /system/report') {
+      need(user, 'settings.manage');
+      const u = updater.status();
+      let disk = null;
+      try {
+        const st = fs.statfsSync(dataDir);
+        disk = { freeMb: Math.round((st.bavail * st.bsize) / 1048576), totalMb: Math.round((st.blocks * st.bsize) / 1048576) };
+      } catch {}
+      const report = {
+        generatedAt: new Date().toISOString(),
+        version: VERSION,
+        node: process.versions.node,
+        uptimeMinutes: Math.round(process.uptime() / 60),
+        memoryMb: Math.round(process.memoryUsage().rss / 1048576),
+        launched: updater.launched,
+        disk,
+        signedIn: users.sessionCount,
+        checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo() }),
+        versions: { active: u.active ?? null, previous: u.previous ?? null, lastFailure: u.lastFailure ?? null, history: u.history ?? [] },
+        corrections: watchdog.corrections,
+        repairs: db.repairs,
+        recentErrors,
+        reading: monitor.load(),
+        backups: backupStore.list().slice(0, 10).map(({ name, at, label, verified, bytes }) => ({ name, at, label, verified, bytes })),
+        key: { source: db.vault.source, fingerprint: db.vault.fingerprint },
+      };
+      audit.record(user, 'system', 'Downloaded the troubleshooting report');
+      return file(res, `meridian-report-${new Date().toISOString().slice(0, 16).replace(/:/g, '-')}.json`, 'application/json', JSON.stringify(report, null, 2));
     }
     if (route === 'GET /system/health') {
       need(user, 'settings.manage');
@@ -1699,7 +1731,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       else send(res, 405, { error: 'Method not allowed.' });
     } catch (error) {
       const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
-      if (status === 500) console.error(error);
+      if (status === 500) {
+        console.error(error);
+        recentErrors.unshift({ at: new Date().toISOString(), path: url.pathname.replace(/[0-9a-f-]{36}/gi, ':id'), message: scrubText(String(error.message ?? error)).slice(0, 300) });
+        recentErrors.length = Math.min(recentErrors.length, 50);
+      }
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
   };
@@ -1831,6 +1867,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   // ——— Results pages: one per POV; a final copy kept when it is marked successful ———
   const WIP_TEMPLATE = path.join(dataDir, 'templates', 'wip-template.pptx');
+  const recentErrors = [];
   const sharepoint = new SharePoint();
   function certValidTo() {
     try {
