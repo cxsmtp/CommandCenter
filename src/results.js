@@ -125,7 +125,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
             slide(
               `Business goal${g.driver ? ` · ${esc(g.driver)}` : ''}`,
               esc(g.title),
-              `${g.statement ? `<p class="summary" style="margin-top:0">${esc(g.statement)}</p>` : ''}<table class="tbl"><thead><tr><th>Criterion</th><th>How it was tested</th><th>What it means for you</th><th>Status</th></tr></thead><tbody>${g.ids
+              `${g.statement ? `<p class="summary" style="margin-top:0">${esc(g.statement)}</p>` : ''}<table class="tbl"><thead><tr><th>Criteria</th><th>Test item</th><th>Benefit</th><th>Result</th></tr></thead><tbody>${g.ids
                 .slice(0, 7)
                 .map((id) => byId[id])
                 .filter(Boolean)

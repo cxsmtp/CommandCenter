@@ -80,7 +80,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     for (const g of goals.filter((x) => x.key !== 'other')) {
       const gs = page(g.title, `Business goal${g.driver ? ` · ${g.driver}` : ''}`);
       if (g.statement) gs.addText(g.statement, { x: 0.6, y: 1.5, w: 12.1, h: 0.5, fontFace: BODY, fontSize: 13, color: MUTED, italic: true });
-      const head = ['Criterion', 'How it was tested', 'What it means for you', 'Status'].map((t) => ({ text: t.toUpperCase(), options: { color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL } } }));
+      const head = ['Criteria', 'Test item', 'Benefit', 'Result'].map((t) => ({ text: t.toUpperCase(), options: { color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL } } }));
       const body = g.ids.slice(0, 7).map((id) => byId[id]).filter(Boolean).map((c) => [
         { text: c.title, options: { color: INK, fontSize: 11 } },
         { text: String(c.test || '—').slice(0, 200), options: { color: MUTED, fontSize: 9 } },

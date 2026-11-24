@@ -67,16 +67,6 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     if (sub || accent) s.addText([{ text: sub ? `${sub} ` : '', options: { color: WHITE } }, { text: accent, options: { color: ORANGE } }], { x: 0.45, y: 0.9, w: 12.4, h: 0.35, fontFace: FONT, fontSize: 14, margin: 0 });
   };
 
-  // 1 — Cover
-  {
-    const s = add('cover');
-    s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: FONT, fontSize: 38, bold: true, color: WHITE, margin: 0 });
-    s.addText(results ? 'CxOne Platform: Proof of Value Results' : 'CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
-    const who = [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean);
-    s.addText(who.map((p) => ({ text: `${p.name} | ${p.title || ''}`, options: { breakLine: true } })), { x: 0.5, y: 5.2, w: 8, h: 0.75, fontFace: FONT, fontSize: 15, color: '8F7BFF', margin: 0, valign: 'top' });
-    s.addText(longDay(today()), { x: 0.5, y: 6.3, w: 6, h: 0.35, fontFace: FONT, fontSize: 13, color: WHITE, margin: 0 });
-  }
-
   // ——— Shared pieces, so every slide reads as one family ———
   const L = 0.5; // left margin
   const W = 12.33; // content width
@@ -91,6 +81,20 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   };
   const bullets = (items, o = {}) => items.map((t) => ({ text: t, options: { bullet: { code: o.code ?? '25AA', indent: 14 }, breakLine: true, paraSpaceAfter: o.space ?? 6, color: o.color ?? WHITE } }));
 
+
+  const sCover = () => {
+  // 1 — Cover
+  {
+    const s = add('cover');
+    s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: FONT, fontSize: 38, bold: true, color: WHITE, margin: 0 });
+    s.addText(results ? 'CxOne Platform: Proof of Value Results' : 'CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
+    const who = [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean);
+    s.addText(who.map((p) => ({ text: `${p.name} | ${p.title || ''}`, options: { breakLine: true } })), { x: 0.5, y: 5.2, w: 8, h: 0.75, fontFace: FONT, fontSize: 15, color: '8F7BFF', margin: 0, valign: 'top' });
+    s.addText(longDay(today()), { x: 0.5, y: 6.3, w: 6, h: 0.35, fontFace: FONT, fontSize: 13, color: WHITE, margin: 0 });
+  }
+  };
+
+  const sGlance = () => {
   // 2r — Results at a glance: the answer first
   if (results) {
     const s = add('content');
@@ -125,7 +129,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     card(s, L + 10.9, 3.55, W - 10.9, 2.95);
     s.addText(summary || (story?.completedAt ? `POV completed on ${longDay(story.completedAt.slice(0, 10))}.` : 'The POV is still running.'), { x: L + 11.05, y: 3.7, w: W - 11.2, h: 2.65, fontFace: FONT, fontSize: 10.5, italic: !summary, color: summary ? WHITE : MUTED, margin: 0, valign: 'top', fit: 'shrink' });
   }
+  };
 
+  const sOverview = () => {
   // 2 — Executive overview: the letter on the left, the POV at a glance on the right
   if (!results) {
     const s = add('content');
@@ -182,16 +188,22 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       y += 0.34;
     }
   }
+  };
 
+  const sPlatform = () => {
   // 3 — The platform, with this POV's engines
   if (story?.platform) {
     platformSlide(pptx, story.platform, { band: false });
-    kinds.push('content');
+    // The template's own components slide is used instead when it has one, with this POV's engines boxed.
+    kinds.push({ kind: 'content', reuse: 'components', marks: [...new Set(c.caps.flatMap((x) => COMPONENT_LABELS[x.id] ?? []))] });
   }
+  };
 
+  const sDevSecOps = () => {
   // 4 — Tailored to your DevSecOps: the lifecycle as a pipeline, the touch points with the customer's tools lit
   {
-    const s = add('content');
+    // The template's own toolchain slide is used instead when it has one, with the customer's tools boxed.
+    const s = add({ kind: 'content', reuse: 'devsecops', marks: TOOLCHAIN.flatMap((cat) => opp.toolchain?.[cat.key]?.tools ?? []) });
     head(s, 'Tailored to Your DevSecOps', 'Integrate with your SDLC and', 'secure your applications');
     const n = DEVSECOPS.length;
     const sw = (W + 0.25 * (n - 1)) / n;
@@ -221,7 +233,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       });
     });
   }
+  };
 
+  const sApma = () => {
   // 5 — APMA, when the customer has an assessment
   const apma = opp.apma;
   if (apma?.dimensions?.some((d) => d.current != null)) {
@@ -274,7 +288,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       });
     }
   }
+  };
 
+  const sPlan = () => {
   // 6 — Plan and timeline
   {
     const s = add('content');
@@ -313,9 +329,11 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       pill(s, done ? 'Completed' : 'Planned', cxm - 0.5, ly + 1.05, 1.0, done ? '3CCF8E' : 'F5C518', { size: 8.5, h: 0.26 });
     });
   }
+  };
 
+  const sEnv = () => {
   // 7 — Environment: the people, the tenant, the touch points (the WIP deck only)
-  if (!results) {
+  {
     const s = add('content');
     head(s, 'POV Environment Details');
     const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: VIOLET }, fontSize: 10.5 } });
@@ -348,7 +366,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     label(s, 'Integrations', 6.75, top - 0.35, 4);
     s.addTable([[H('Touch point'), H('Access needed'), H('Tools')], ...integ.map(([a, b2, d], i) => [cell(a, i, { color: MUTED, bold: true }), cell(b2, i), cell(d, i)])], { ...opts, x: 6.75, y: top, w: L + W - 6.75, colW: [1.75, 1.9, L + W - 6.75 - 3.65], rowH: 0.31 });
   }
+  };
 
+  const sTests = () => {
   // 8… — The test plan, one business goal at a time
   {
     const crit = Object.fromEntries((story?.criteria ?? []).map((x) => [x.id, x]));
@@ -390,18 +410,19 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
           n += 1;
           return [
             { text: [{ text: `SC${n}  `, options: { bold: true, color: ORANGE } }, { text: x.title, options: { bold: true, color: WHITE } }], options: { fontSize: 10.5, ...f } },
-            { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
             { text: x.test || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
+            { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
             { text: `●  ${lab}`, options: { color, bold: true, fontSize: 10, align: 'left', ...f } },
           ];
         });
-        s.addTable([[H('Success criterion'), H('What it means for you'), H('How we measure it'), H('Result')], ...rows], { x: L, y: 2.45, w: W, colW: [2.75, 4.0, 4.08, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.36, ...page.map((id) => rowH(crit[id]))], valign: 'middle', autoPage: false, margin: [4, 8, 4, 8] });
+        s.addTable([[H('Criteria'), H('Test item'), H('Benefit'), H('Result')], ...rows], { x: L, y: 2.45, w: W, colW: [2.75, 4.0, 4.08, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.36, ...page.map((id) => rowH(crit[id]))], valign: 'middle', autoPage: false, margin: [4, 8, 4, 8] });
       });
     });
   }
+  };
 
+  const sTenant = () => {
   // Results: what the tenant showed, from proof to rollout, next steps
-  if (results) {
     const t = live?.summary ?? story?.tenant ?? null;
     if (t) {
       const s = add('content');
@@ -427,6 +448,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       label(s, 'Scans came from', L + W / 2, 4.6, 4);
       s.addText((t.origins ?? []).map((o) => `${o.name} (${o.count})`).join(' · ') || '—', { x: L + W / 2, y: 4.95, w: W / 2, h: 0.5, fontFace: FONT, fontSize: 12, color: WHITE, margin: 0, valign: 'top' });
     }
+  };
+
+  const sExpansion = () => {
     const ex = story?.expansion;
     if (ex) {
       const s = add('content');
@@ -446,6 +470,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
         s.addText([{ text: n.name, options: { bold: true, color: WHITE, fontSize: 12 } }, ...(n.isNew ? [{ text: '  NEW', options: { bold: true, color: ORANGE, fontSize: 8.5 } }] : []), { text: `\n${[n.group, n.goal].filter(Boolean).join(' · ')}${n.benefit ? ` — ${String(n.benefit).slice(0, 120)}` : ''}`, options: { color: MUTED, fontSize: 9.5 } }], { x: nx + 0.2, y, w: W - 6.5, h: 0.66, fontFace: FONT, margin: 0, valign: 'top', fit: 'shrink' });
       });
     }
+  };
+
+  const sNext = () => {
     {
       const s = add('content');
       head(s, 'Next Steps', 'Together with', C);
@@ -459,8 +486,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
         s.addText(t, { x: L + 0.8, y, w: W - 1.0, h: 0.7, fontFace: FONT, fontSize: 14, color: WHITE, margin: 0, valign: 'middle' });
       });
     }
-  }
+  };
 
+  const sClosing = () => {
   // Closing, then the appendix: the notes of each meeting held
   kinds.push('closing');
   if (!templated) {
@@ -468,10 +496,11 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     s.background = { color: BG };
     s.addText([{ text: 'Secure what ', options: { color: WHITE } }, { text: 'comes next.', options: { color: ORANGE } }], { x: 0.8, y: 3.0, w: 11, h: 1.4, fontFace: FONT, fontSize: 54, margin: 0 });
   } else pptx.addSlide(); // replaced by the template's own closing slide
+  };
+
+  const sNotes = () => {
   const held = [...(opp.sessions ?? [])].filter((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
   if (held.length) {
-    const s = add('section');
-    s.addText('Appendix', { x: 0.8, y: 3.1, w: 11, h: 1, fontFace: FONT, fontSize: 44, bold: true, color: WHITE, margin: 0 });
     for (const m of held) {
       const n = add('notes');
       n.addText([{ text: 'Meeting Notes', options: { bold: true, color: WHITE, fontSize: 26 } }, { text: `   ${longDay(m.date)}`, options: { color: ORANGE, fontSize: 15 } }], { x: 0.5, y: 0.3, w: 12.3, h: 0.6, fontFace: FONT, margin: 0, valign: 'middle' });
@@ -501,6 +530,99 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       }
     }
   }
+  };
+
+  // Your challenges, answered: what the customer told us, against what the POV proved, and what it is worth
+  const sChallenges = () => {
+    const s = add('content');
+    head(s, 'Your Challenges, Answered', `What ${C} told us, and`, 'what the POV proved');
+    const said = [opp.discovery?.painPoints, ...(opp.sessions ?? []).filter((m) => m.type === 'first_call').map((m) => m.notes)]
+      .join('\n')
+      .split(/\n|;|(?<=\.)\s+/)
+      .map((x) => x.replace(/^\s*[-*•]\s*/, '').trim().replace(/\.$/, ''))
+      .filter((x) => x.length > 3);
+    const pains = [...new Set(said)].slice(0, 5);
+    const goals = (story?.goals ?? []).filter((g) => g.key !== 'other').slice(0, 5);
+    const crit = Object.fromEntries((story?.criteria ?? []).map((x) => [x.id, x]));
+    // Left: their words. Right: each business goal, how far the POV took it, and what was proven for it.
+    card(s, L, 1.55, 4.5, 3.9);
+    label(s, 'What you told us', L + 0.25, 1.75, 4);
+    s.addText(bullets(pains.length ? pains : goals.map((g) => g.statement || g.title).slice(0, 4), { code: '201C', space: 8 }), { x: L + 0.25, y: 2.2, w: 4.0, h: 3.1, fontFace: FONT, fontSize: 12, italic: true, valign: 'top', margin: 0, fit: 'shrink' });
+    const gx = L + 4.75;
+    const gw = W - 4.75;
+    label(s, 'What the POV proved', gx, 1.6, gw);
+    const each = Math.min(0.78, 3.7 / Math.max(1, goals.length));
+    goals.forEach((g, i) => {
+      const y = 2.0 + i * each;
+      const frac = g.total ? g.done / g.total : 0;
+      const proved = g.ids.map((id) => crit[id]).filter((x) => x && ['done', 'demo'].includes(x.state)).map((x) => x.title);
+      s.addText(g.title, { x: gx, y, w: gw - 1.8, h: 0.3, fontFace: FONT, fontSize: 12, bold: true, color: WHITE, margin: 0, valign: 'middle', fit: 'shrink' });
+      s.addShape(pptx.ShapeType.roundRect, { x: gx + gw - 1.7, y: y + 0.08, w: 1.15, h: 0.14, rectRadius: 0.07, fill: { color: '2E1D4A' }, line: { color: '2E1D4A', width: 0 } });
+      if (frac) s.addShape(pptx.ShapeType.roundRect, { x: gx + gw - 1.7, y: y + 0.08, w: Math.max(0.14, 1.15 * frac), h: 0.14, rectRadius: 0.07, fill: { color: frac === 1 ? '3CCF8E' : ORANGE }, line: { color: frac === 1 ? '3CCF8E' : ORANGE, width: 0 } });
+      s.addText(`${g.done}/${g.total}`, { x: gx + gw - 0.5, y, w: 0.5, h: 0.3, fontFace: FONT, fontSize: 11, bold: true, color: WHITE, align: 'right', margin: 0, valign: 'middle' });
+      s.addText(proved.length ? `Proven: ${proved.slice(0, 3).join(' · ')}${proved.length > 3 ? ` +${proved.length - 3}` : ''}` : 'To be proven in the remaining sessions', { x: gx, y: y + 0.3, w: gw, h: 0.3, fontFace: FONT, fontSize: 9.5, color: proved.length ? '3CCF8E' : MUTED, margin: 0, valign: 'top', fit: 'shrink' });
+    });
+    // The value, in a strip along the bottom
+    const p = story?.progress ?? { met: 0, total: 0, must: 0, mustMet: 0 };
+    const v = story?.value;
+    const tiles = [
+      [`${p.met}/${p.total}`, 'success criteria met'],
+      [`${p.mustMet}/${p.must}`, 'must-haves met'],
+      [v?.hours?.total ? `${Math.round(v.hours.total)} h` : '—', 'saved by AI'],
+      [v?.value ? new Intl.NumberFormat('en', { style: 'currency', currency: v.rates?.currency || 'USD', maximumFractionDigits: 0 }).format(v.value) : '—', 'worth of that time'],
+    ];
+    const tw = (W - 0.45) / 4;
+    tiles.forEach(([val, l], i) => {
+      const x = L + i * (tw + 0.15);
+      card(s, x, 5.7, tw, 1.05);
+      s.addText([{ text: val, options: { fontSize: 24, bold: true, color: WHITE, breakLine: true } }, { text: l.toUpperCase(), options: { fontSize: 9, bold: true, color: MUTED, charSpacing: 1 } }], { x: x + 0.2, y: 5.75, w: tw - 0.4, h: 0.95, fontFace: FONT, margin: 0, valign: 'middle' });
+    });
+  };
+
+  // The evidence behind each criterion (appendix): what proved it, the proving scans, when it was confirmed
+  const sEvidence = () => {
+    const list = story?.criteria ?? [];
+    if (!list.length) return;
+    const STATE_TXT = Object.fromEntries(Object.entries(STATE).map(([k, [lab]]) => [k, lab]));
+    const evidence = (x) => {
+      const parts = [];
+      if (x.evidence?.level === 'detected') parts.push(...x.evidence.evidence);
+      if (x.demo) parts.push(`Demonstrated by ${x.demo.by || 'the SE'}${x.demo.at ? ` on ${longDay(String(x.demo.at).slice(0, 10))}` : ''}`);
+      if (x.notes) parts.push(x.notes);
+      if (x.evidenceLink) parts.push(x.evidenceLink);
+      return parts.join(' · ') || '—';
+    };
+    const scans = (x) => (x.scans?.length ? `${x.scans.length} scan${x.scans.length > 1 ? 's' : ''}; latest ${x.scans[0].project ?? ''}${x.scans[0].branch ? ` (${x.scans[0].branch})` : ''}, ${longDay(String(x.scans[0].at ?? '').slice(0, 10))}` : '—');
+    const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: ORANGE }, fontSize: 10 } });
+    for (let i = 0; i < list.length; i += 8) {
+      const s = add('table');
+      head(s, 'Evidence', `Every success criterion and what proves it${list.length > 8 ? ` · ${i / 8 + 1} of ${Math.ceil(list.length / 8)}` : ''}`, '');
+      const rows = list.slice(i, i + 8).map((x, k) => {
+        const f = { fill: { color: k % 2 ? '1A0F2E' : PANEL } };
+        const [, color] = STATE[x.state] ?? ['', MUTED];
+        return [
+          { text: x.title, options: { bold: true, color: WHITE, fontSize: 10, ...f } },
+          { text: STATE_TXT[x.state] ?? '—', options: { bold: true, color, fontSize: 10, ...f } },
+          { text: evidence(x).slice(0, 260), options: { color: 'E6E0F2', fontSize: 9, ...f } },
+          { text: scans(x), options: { color: 'E6E0F2', fontSize: 9, ...f } },
+          { text: x.confirmedAt ? longDay(String(x.confirmedAt).slice(0, 10)) : '—', options: { color: MUTED, fontSize: 9, ...f } },
+        ];
+      });
+      s.addTable([[H('Criteria'), H('Result'), H('Evidence'), H('Proving scans'), H('Confirmed')], ...rows], { x: L, y: 1.5, w: W, colW: [2.6, 1.3, 4.4, 2.6, 1.43], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: 0.6, valign: 'middle', autoPage: false, margin: [3, 6, 3, 6] });
+    }
+  };
+
+  const sAppendix = () => {
+    const s = add('section');
+    s.addText('Appendix', { x: 0.8, y: 3.1, w: 11, h: 1, fontFace: FONT, fontSize: 44, bold: true, color: WHITE, margin: 0 });
+  };
+
+  // ——— The order: the WIP deck is the working document; the results deck is a short story, the detail behind it ———
+  const heldNotes = (opp.sessions ?? []).some((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext));
+  const order = results
+    ? [sCover, sChallenges, sGlance, sPlatform, sTests, sExpansion, sNext, sClosing, sAppendix, sDevSecOps, sApma, sPlan, sTenant, sEnv, sEvidence, sNotes]
+    : [sCover, sOverview, sPlatform, sDevSecOps, sApma, sPlan, sEnv, sTests, sClosing, ...(heldNotes ? [sAppendix, sNotes] : [])];
+  for (const make of order) make();
 
   const out = await pptx.write({ outputType: 'nodebuffer' });
   return template ? intoTemplate(template, out, kinds) : out;
@@ -523,7 +645,23 @@ async function readTemplate(zip) {
     slides.push({ path: p, xml, rels, layout, text: [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(' ') });
   }
   const find = (re) => slides.find((s) => re.test(s.text));
-  const content = find(/Executive Overview/i)?.layout ?? slides[1]?.layout ?? slides[0]?.layout;
+  // Ordinary slides take a plain layout: the Executive Overview's or the Environment Details' when the template has
+  // one, else the least busy layout among its slides (never one that draws a whole diagram, like the toolchain).
+  // Every layout in the file (unused ones too: templates often carry a clean "Title & Content" no slide uses).
+  const busy = {};
+  const layoutName = {};
+  for (const f of Object.keys(zip.files).filter((n) => /^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(n))) {
+    const lx = await zip.file(f).async('string');
+    const name = f.split('/').pop();
+    layoutName[name] = /<p:cSld name="([^"]*)"/.exec(lx)?.[1] ?? '';
+    // Text, pictures, and above all lines (a divider would cut through Meridian's tables) make a layout busy.
+    busy[name] = (lx.match(/<a:t>/g) ?? []).length + (lx.match(/<p:pic>/g) ?? []).length + 50 * (lx.match(/<p:cxnSp>|prst="line"/g) ?? []).length;
+  }
+  const closingSlide = [...slides].reverse().find((sl) => /Secure\s+what\s+comes\s+next/i.test(sl.text));
+  const avoid = new Set([slides[0]?.layout, closingSlide?.layout].filter(Boolean));
+  const plain = Object.keys(busy).filter((n) => !avoid.has(n) && !/closing|title \d+ dark|cover/i.test(layoutName[n])).sort((a, b) => busy[a] - busy[b])[0];
+  const named = find(/Executive Overview|Environment Details/i)?.layout;
+  const content = (named && busy[named] < 50 ? named : null) ?? plain ?? slides[1]?.layout ?? slides[0]?.layout;
   return {
     pres,
     presRels,
@@ -532,11 +670,15 @@ async function readTemplate(zip) {
     layouts: {
       cover: slides[0]?.layout ?? content,
       content,
-      table: find(/Test Plan/i)?.layout ?? content,
+      // Tables go on the plain layout too: a template's test-plan layout often draws its own header row or arrows.
+      table: content,
       section: slides.find((s) => /^\s*Appendix\s*$/i.test(s.text))?.layout ?? content,
       notes: find(/Meeting Notes/i)?.layout ?? content,
     },
     closing: [...slides].reverse().find((s) => /Secure\s+what\s+comes\s+next/i.test(s.text)) ?? null,
+    // The template's own toolchain and platform slides (logos and icons), reused with this POV's items boxed
+    devsecops: find(/Tailored\s+to\s+Your\s+DevSecOps/i) ?? null,
+    components: find(/Components\s+of\s+the\s+platform/i) ?? null,
   };
 }
 
@@ -574,7 +716,9 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
   let media = 0;
   let n = 0;
   for (let i = 0; i < genOrder.length; i++) {
-    const kind = kinds[i] ?? 'content';
+    const k = typeof kinds[i] === 'string' ? { kind: kinds[i] } : kinds[i] ?? { kind: 'content' };
+    const kind = k.kind;
+    const reuse = k.reuse ? t[k.reuse] : null;
     if (kind === 'closing' && !closingXml) continue;
     n += 1;
     let xml;
@@ -582,6 +726,14 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
     if (kind === 'closing' && closingXml) {
       xml = closingXml;
       rels = closingRels;
+    } else if (reuse) {
+      // The template's slide as designed, with orange boxes around what this POV uses.
+      const layoutXml = (await zip.file(`ppt/slideLayouts/${reuse.layout}`)?.async('string')) ?? '';
+      const boxes = markShapes([...textShapes(layoutXml), ...textShapes(reuse.xml)], k.marks ?? []);
+      // The template's example highlights (outlined boxes with no text) go: Meridian draws this POV's own.
+      const clean = reuse.xml.replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<\/p:sp>/g, (sp) => (!/<a:t>/.test(sp) && /prst="roundRect"/.test(sp) && /<a:ln\b/.test(sp) && !/<a:solidFill>(?:(?!<\/a:solidFill>)[\s\S])*<\/a:solidFill>\s*<a:ln/.test(sp) ? '' : sp));
+      xml = clean.replace('</p:spTree>', `${boxes}</p:spTree>`);
+      rels = reuse.rels.replace(/<Relationship\b[^>]*(notesSlide|comments|commentAuthors|tags)[^>]*\/>/g, '');
     } else {
       // Left to right whatever the template's master says, and no background of its own: the layout's shows.
       xml = scaleXml((await gen.file(genOrder[i]).async('string')).replace(/<p:bg>[\s\S]*?<\/p:bg>/, ''), f)
@@ -672,3 +824,83 @@ export async function checkTemplate(buf) {
   const t = await readTemplate(zip);
   return { slides: t.slides.length, closing: Boolean(t.closing), widthIn: Math.round((t.cx / 914400) * 100) / 100 };
 }
+
+// ——— Marking what is in the POV on the template's own slides ———
+// The team template draws the toolchain and the platform components itself (logos, icons). Rather than redraw them,
+// Meridian keeps that slide and boxes what this POV uses, in orange, the way SEs mark it by hand.
+
+const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const ALIAS = { openai: ['chatgpt'], azurepipelines: ['azuredevops'], azurerepos: ['azuredevops'], jira: ['jira'], dockerhub: ['dockerhu'], anthropicclaude: ['claude', 'anthropic'], awskiro: ['kiro'], gitlabcicd: ['gitlabci'], developerassistagent: ['developerassistagent'] };
+const matches = (label, want) => {
+  const a = norm(label);
+  const b = norm(want);
+  if (!a || !b) return false;
+  // The same name, its plural, or a known other name; never a prefix ("GitHub" is not "GitHub Copilot").
+  return a === b || a === `${b}s` || b === `${a}s` || (ALIAS[b] ?? []).includes(a);
+};
+
+/**
+ * Every text shape of a slide or layout with its text and its box in slide coordinates (EMU), groups resolved.
+ */
+export function textShapes(xml) {
+  const out = [];
+  const tf = [{ ox: 0, oy: 0, cx: 0, cy: 0, sx: 1, sy: 1 }];
+  const re = /<p:grpSp>|<\/p:grpSp>|<p:sp>[\s\S]*?<\/p:sp>/g;
+  let m;
+  const apply = (t, x, y) => [t.ox + (x - t.cx) * t.sx, t.oy + (y - t.cy) * t.sy];
+  while ((m = re.exec(xml))) {
+    if (m[0] === '<p:grpSp>') {
+      const head = xml.slice(m.index, xml.indexOf('</p:grpSpPr>', m.index));
+      const n = (k) => Number(new RegExp(`<a:${k} (?:x|cx)="(-?\\d+)" (?:y|cy)="(-?\\d+)"`).exec(head)?.slice(1) ?? NaN);
+      const off = /<a:off x="(-?\d+)" y="(-?\d+)"/.exec(head);
+      const ext = /<a:ext cx="(\d+)" cy="(\d+)"/.exec(head);
+      const choff = /<a:chOff x="(-?\d+)" y="(-?\d+)"/.exec(head);
+      const chext = /<a:chExt cx="(\d+)" cy="(\d+)"/.exec(head);
+      const parent = tf.at(-1);
+      if (off && ext && choff && chext) {
+        const [ox, oy] = apply(parent, Number(off[1]), Number(off[2]));
+        tf.push({ ox, oy, cx: Number(choff[1]), cy: Number(choff[2]), sx: parent.sx * (Number(ext[1]) / Math.max(1, Number(chext[1]))), sy: parent.sy * (Number(ext[2]) / Math.max(1, Number(chext[2]))) });
+      } else tf.push(parent);
+      void n;
+      continue;
+    }
+    if (m[0] === '</p:grpSp>') {
+      if (tf.length > 1) tf.pop();
+      continue;
+    }
+    const sp = m[0];
+    const text = [...sp.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((x) => x[1]).join('').replace(/&amp;/g, '&').trim();
+    const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(sp);
+    if (!text || !off) continue;
+    const t = tf.at(-1);
+    const [x, y] = apply(t, Number(off[1]), Number(off[2]));
+    out.push({ text, x, y, w: Number(off[3]) * t.sx, h: Number(off[4]) * t.sy });
+  }
+  return out;
+}
+
+/** Orange boxes, as slide shapes, around the shapes whose text names one of `names` (with the icon to their left). */
+export function markShapes(shapes, names, { iconLeft = true, id = 9000 } = {}) {
+  const hits = shapes.filter((s) => s.text.length <= 60 && names.some((n) => matches(s.text, n)));
+  return hits
+    .map((s, i) => {
+      const pad = Math.round(s.h * 0.12);
+      // The logo or icon sits left of its name (about 0.4 in in the team templates).
+      const left = iconLeft ? Math.max(Math.round(s.h * 1.05), 370000) : 0;
+      const x = Math.round(s.x - left - pad);
+      const y = Math.round(s.y - pad);
+      const w = Math.round(s.w + left + 2 * pad);
+      const h = Math.round(s.h + 2 * pad);
+      return `<p:sp><p:nvSpPr><p:cNvPr id="${id + i}" name="Meridian: in this POV"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 18000"/></a:avLst></a:prstGeom><a:noFill/><a:ln w="19050"><a:solidFill><a:srgbClr val="F25928"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`;
+    })
+    .join('');
+}
+
+/** Template labels for the catalogue's engines (the platform components slide). */
+export const COMPONENT_LABELS = {
+  sast: ['SAST'], fusion: ['SAST'], last: ['SAST'], secrets: ['Secrets Detection'], iac: ['IaC Security'], apisec: ['API Security'],
+  sca: ['SCA'], containers: ['Container Security'], malicious: ['Malicious Packages'], scorecard: ['Repository Health'], sbom: ['SCA'],
+  aisc: ['AI Supply Chain'], 'mcp-scanner': ['AI Supply Chain'], 'llm-scanner': ['AI Supply Chain'], 'skills-scanner': ['AI Supply Chain'],
+  dast: ['DAST'], 'dast-ai': ['DAST'], 'dev-assist': ['Developer Assist Agent', 'Developer Assist'], 'ai-triage': ['Triage Agent'], 'ai-remediation': ['Remediation Agent'],
+  'risk-orchestration': ['Application Security Posture Management'], analytics: ['Unified dashboard & reporting'], policy: ['Application Security Posture Management'], mcp: ['Developer Assist Agent'],
+};

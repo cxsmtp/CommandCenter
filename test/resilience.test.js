@@ -310,3 +310,14 @@ test('the troubleshooting report: everything to see what went wrong, and no secr
     app.server.close();
   }
 });
+
+test('the template’s own slides: items found through groups, boxed by exact name (never by prefix)', async () => {
+  const { textShapes, markShapes } = await import('../src/wip.js');
+  const sp = (name, x, y) => `<p:sp><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="500000" cy="180000"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>${name}</a:t></a:r></a:p></p:txBody></p:sp>`;
+  const xml = `<p:spTree>${sp('GitHub', 100, 100)}<p:grpSp><p:grpSpPr><a:xfrm><a:off x="1000000" y="2000000"/><a:ext cx="2000000" cy="2000000"/><a:chOff x="0" y="0"/><a:chExt cx="1000000" cy="1000000"/></a:xfrm></p:grpSpPr>${sp('GitHub Copilot', 10, 20)}${sp('BitBucket Pipeline', 30, 40)}</p:grpSp></p:spTree>`;
+  const shapes = textShapes(xml);
+  const copilot = shapes.find((s) => s.text === 'GitHub Copilot');
+  assert.deepEqual([copilot.x, copilot.y, copilot.w], [1000020, 2000040, 1000000], 'the group’s offset and scale applied');
+  const boxes = markShapes(shapes, ['GitHub Copilot', 'Bitbucket Pipelines']);
+  assert.equal((boxes.match(/<p:sp>/g) ?? []).length, 2, 'Copilot and the pipeline (plural or not), not GitHub');
+});
