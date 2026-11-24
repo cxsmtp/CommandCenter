@@ -49,7 +49,12 @@ export function resultsPage(data, { nonce = '' } = {}) {
 
   // ——— Slide 1, on the original grid ———
   const cap = pillar('capture');
-  const slots = { code: [358, 0, ''], supply: [425, 0, ''], aisc: [493, 3, ''], runtime: [559, 1, ''] };
+  // Items stack from the top of each column with one spacing for all three, so rows line up and nothing leaves gaps.
+  const STARS = { aisc: 3, runtime: 1 };
+  const most = Math.max(1, ...v.pillars.map((pl) => (pl.key === 'capture' ? (pl.groups ?? []).filter((g) => g.items.length).length : (pl.rows ?? []).length)));
+  const PITCH = Math.min(66, 238 / most);
+  const at = (i) => 368 + i * PITCH;
+  const slots = Object.fromEntries((cap?.groups ?? []).filter((g) => g.items.length).map((g, i) => [g.key, [at(i) - 3, STARS[g.key] ?? 0, '']]));
   const capture = cap
     ? `<div class="hd" style="left:${u(80)};top:${u(275)};--c:#F25928"><b>CAPTURE ALL RISKS</b><span>Fusion Scanning Architecture ${STAR}</span><i style="width:${u(192)}"></i></div>
       ${cap.groups.map((g) => `<div class="grp" style="left:${u(78)};top:${u(slots[g.key]?.[0] - 9)}">${icon(g.key, '#F25928')}<div><div class="gt">${esc(g.title)}${slots[g.key]?.[1] ? ' ' + STAR.repeat(slots[g.key][1]) : ''}</div><div class="gi">${g.items.map(eng).join('<span class="dotsep">·</span>')}</div></div></div>`).join('')}`
@@ -57,7 +62,10 @@ export function resultsPage(data, { nonce = '' } = {}) {
   const rowCol = (key, x, hy, title, sub, color, uw, ys, ids) => {
     const p = pillar(key);
     if (!p) return '';
-    const extra = p.rows.filter((r) => !ids.includes(r.id));
+    // Every row in the POV, in order, stacked from the top (the catalogue's own order, nothing left as a gap).
+    ids = p.rows.map((r) => r.id);
+    ys = ids.map((_, i) => at(i) + 9);
+    const extra = [];
     return `<div class="hd" style="left:${u(x)};top:${u(hy - 12)};--c:${color}"><b>${title}</b><span>${sub}</span><i style="width:${u(uw)}"></i></div>
       ${ids
         .map((id, i) => {
@@ -75,7 +83,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
       <div class="frame" style="left:${u(55)};top:${u(221)};width:${u(1245)};height:${u(410)}"></div>
       <div class="pill" style="left:${u(556)};top:${u(201)};width:${u(220)};height:${u(43)}">Checkmarx One</div>
       ${capture}
-      ${rowCol('prevent', 531, 291, 'ELIMINATE &amp; PREVENT RISKS', 'Assist Family of Agents', '#7A45FF', 193, [377, 443, 510], ['dev-assist', 'ai-triage', 'ai-remediation'])}
+      ${rowCol('prevent', 531, 287, 'ELIMINATE &amp; PREVENT RISKS', 'Assist Family of Agents', '#7A45FF', 193, [377, 443, 510], ['dev-assist', 'ai-triage', 'ai-remediation'])}
       ${rowCol('govern', 945, 287, 'GOVERN &amp; UNIFY RISKS', 'Orchestration/Posture Management', '#B22BCB', 195, [372, 439, 508, 569], ['risk-orchestration', 'analytics', 'policy', 'mcp'])}
       <div class="key" style="left:${u(80)};top:${u(603)}">${MARKS.done} Completed successfully ${MARKS.demo} Demonstrated by the SE ${MARKS.progress} In progress ${MARKS.planned} Planned ${STAR} AI-powered <span class="hint">· select an engine for its record</span></div>
       <div class="band" style="top:${u(669)};height:${u(60)}"><b>Checkmarx</b><span>${esc(d.customer)} · Proof of Value</span><em>1</em></div>

@@ -223,61 +223,65 @@ export function platformSlide(pptx, view, { band = true } = {}) {
   slide.addShape(pptx.ShapeType.roundRect, { x: X(556), y: Y(201), w: X(220), h: Y(43), rectRadius: 0.22, fill: { color: VIOLET }, line: { color: 'A98BFF', width: 1 } });
   slide.addText('Checkmarx One', { x: X(556), y: Y(201), w: X(220), h: Y(43), fontFace: FONT, fontSize: 16, color: 'FFFFFF', align: 'center', valign: 'middle', margin: 0 });
 
-  const sparkles = (x, y, n = 1) => slide.addText('✦'.repeat(n), { x: X(x), y: Y(y), w: X(30 * n), h: Y(28), fontFace: SYMBOL, fontSize: 17, color: SPARKLE, margin: 0, valign: 'middle' });
+  // ——— The three columns: one header line for all, then each column's items stacked from the top, evenly ———
+  // Nothing is placed at a guessed text width: sparkles and status marks run inline with the text they follow.
+  const STAR = { text: ' ✦', options: { fontFace: SYMBOL, color: SPARKLE } };
+  const stars = (n) => (n ? [{ text: ` ${'✦'.repeat(n)}`, options: { fontFace: SYMBOL, color: SPARKLE } }] : []);
   const icon = (x, y, color, glyph) => {
     slide.addShape(pptx.ShapeType.ellipse, { x: X(x), y: Y(y), w: X(42), h: Y(42), fill: { color: mix(BG, color, 0.12) }, line: { color, width: 1.25 } });
     slide.addText(glyph, { x: X(x), y: Y(y), w: X(42), h: Y(42), fontFace: FONT, fontSize: glyph.length > 2 ? 7 : 9, bold: true, color, align: 'center', valign: 'middle', margin: 0 });
   };
-  const header = (x, y, title, sub, color, uw, star) => {
-    slide.addText(title, { x: X(x), y: Y(y - 12), w: X(360), h: Y(26), fontFace: FONT, fontSize: 14, bold: true, color, margin: 0 });
-    slide.addText(sub, { x: X(x), y: Y(y + 13), w: X(360), h: Y(26), fontFace: FONT, fontSize: 14, color: 'FFFFFF', margin: 0 });
-    slide.addShape(pptx.ShapeType.line, { x: X(x), y: Y(y + 47), w: X(uw), h: 0.001, line: { color, width: 1 } });
-    if (star) sparkles(star, y + 12);
+  const HY = 272; // every column's header starts on this line…
+  const LINE_Y = HY + 58; // …and its rule on this one
+  const TOP = 352; // the first item of every column
+  const BOTTOM = 590; // above the key
+  const header = (x, w, title, sub, color, star = false) => {
+    slide.addText(title, { x: X(x), y: Y(HY), w: X(w), h: Y(24), fontFace: FONT, fontSize: 14, bold: true, color, margin: 0, valign: 'middle' });
+    slide.addText([{ text: sub, options: { color: 'FFFFFF' } }, ...(star ? [STAR] : [])], { x: X(x), y: Y(HY + 25), w: X(w), h: Y(24), fontFace: FONT, fontSize: 14, margin: 0, valign: 'middle' });
+    slide.addShape(pptx.ShapeType.line, { x: X(x), y: Y(LINE_Y), w: X(200), h: 0, line: { color, width: 1 } });
   };
   const markRun = (state) => ({ text: ` ${MARK[state].glyph}`, options: { fontFace: SYMBOL, color: MARK[state].color, bold: true } });
   const nameRun = (it) => ({ text: it.label, options: { color: it.state === 'done' ? 'FFFFFF' : DIM, bold: it.state === 'done' } });
+  // One spacing for all three columns, so rows line up across the slide.
+  const most = Math.max(1, ...view.pillars.map((pl) => (pl.key === 'capture' ? (pl.groups ?? []).filter((g) => g.items.length).length : (pl.rows ?? []).length)));
+  const pitch = () => Math.min(66, (BOTTOM - TOP) / most);
+  // One row: the icon, a bold title (with its sparkles and status inline), and a smaller line under it.
+  const row = (x, w, y, color, glyph, titleRuns, lineRuns) => {
+    icon(x, y, color, glyph);
+    slide.addText(titleRuns, { x: X(x + 52), y: Y(lineRuns?.length ? y - 1 : y + 9), w: X(w - 52), h: Y(24), fontFace: FONT, fontSize: 13, bold: true, color: 'FFFFFF', margin: 0, valign: 'middle', fit: 'shrink' });
+    if (lineRuns?.length) slide.addText(lineRuns, { x: X(x + 52), y: Y(y + 23), w: X(w - 52), h: Y(28), fontFace: FONT, fontSize: 8, margin: 0, valign: 'top', fit: 'shrink' });
+  };
+  const COLS = { capture: [76, 440], prevent: [540, 390], govern: [950, 330] };
 
-  // Capture all risks
+  // Capture all risks: one row per group of engines
   if (has('capture')) {
     const c = pillar('capture');
-    header(80, 287, 'CAPTURE ALL RISKS', 'Fusion Scanning Architecture', 'F25928', 192, 344);
-    const slots = { code: [358, 0], supply: [425, 0], aisc: [493, 3], runtime: [559, 1] };
-    const titleW = { code: 0, supply: 0, aisc: 206, runtime: 146 };
-    for (const g of c.groups) {
-      const [y, stars] = slots[g.key] ?? [];
-      if (y === undefined) continue;
-      icon(78, y - 7, 'F25928', g.icon);
-      slide.addText(g.title, { x: X(129), y: Y(y - 5), w: X(330), h: Y(22), fontFace: FONT, fontSize: 13, bold: true, color: 'FFFFFF', margin: 0 });
-      if (stars) sparkles(129 + titleW[g.key], y - 8, stars);
-      const runs = [];
-      g.items.forEach((it, i) => {
-        if (i) runs.push({ text: '  ·  ', options: { color: DIM } });
-        runs.push(nameRun(it), markRun(it.state));
-      });
-      slide.addText(runs, { x: X(129), y: Y(y + 15), w: X(370), h: Y(20), fontFace: FONT, fontSize: 8.5, margin: 0, valign: 'top' });
-    }
+    const [x, w] = COLS.capture;
+    header(x + 4, w, 'CAPTURE ALL RISKS', 'Fusion Scanning Architecture', 'F25928', true);
+    const STARS = { aisc: 3, runtime: 1 };
+    const groups = c.groups.filter((g) => g.items.length);
+    const p = pitch(groups.length);
+    groups.forEach((g, i) => {
+      const items = g.items.flatMap((it, k) => [...(k ? [{ text: ' · ', options: { color: DIM } }] : []), nameRun(it), markRun(it.state)]);
+      row(x, w, TOP + i * p, 'F25928', g.icon, [{ text: g.title }, ...stars(STARS[g.key] ?? 0)], items);
+    });
   }
 
-  // Eliminate & prevent risks, govern & unify risks: one row per agent or capability, each in its own place
-  const rows = (key, x, headerY, title, sub, color, uw, slotYs, starAfter) => {
+  // Eliminate & prevent, govern & unify: one row per agent or capability in the POV, stacked from the top
+  const rows = (key, title, sub, color, starred) => {
     const pl = pillar(key);
     if (!pl) return;
-    header(x, headerY, title, sub, color, uw);
-    const ids = key === 'prevent' ? ['dev-assist', 'ai-triage', 'ai-remediation'] : ['risk-orchestration', 'analytics', 'policy', 'mcp'];
-    const extra = pl.rows.filter((r) => !ids.includes(r.id));
-    ids.forEach((id, i) => {
-      const row = pl.rows.find((r) => r.id === id);
-      if (!row) return;
-      const y = slotYs[i];
-      icon(x - 1, y - 21, color, row.icon);
-      slide.addText([nameRun({ ...row, state: row.state === 'done' ? 'done' : 'x' }), ...(starAfter[id] ? [{ text: ' ✦', options: { fontFace: SYMBOL, color: SPARKLE } }] : []), markRun(row.state)].map((r, k) => (k === 0 ? { ...r, options: { ...r.options, color: 'FFFFFF', bold: true } } : r)), { x: X(x + 56), y: Y(y - (row.sub ? 18 : 12)), w: X(330), h: Y(24), fontFace: FONT, fontSize: 13, margin: 0, valign: 'middle' });
-      if (row.sub) slide.addText(row.sub, { x: X(x + 56), y: Y(y + 4), w: X(300), h: Y(16), fontFace: FONT, fontSize: 8, color: DIM, margin: 0 });
+    const [x, w] = COLS[key];
+    header(x + 4, w, title, sub, color);
+    const list = pl.rows;
+    const p = pitch(list.length);
+    list.forEach((r, i) => {
+      const titleRuns = [{ text: r.label, options: { color: 'FFFFFF', bold: true } }, ...(starred.has(r.id) || r.ai ? [STAR] : []), markRun(r.state)];
+      row(x, w, TOP + i * p, color, r.icon, titleRuns, r.sub ? [{ text: r.sub, options: { color: DIM } }] : []);
     });
-    // New agents or capabilities added to the catalogue in this group: listed under the last row.
-    if (extra.length) slide.addText(extra.flatMap((it, i) => [...(i ? [{ text: '  ·  ', options: { color: DIM } }] : []), nameRun(it), markRun(it.state)]), { x: X(x + 56), y: Y(slotYs[slotYs.length - 1] + 26), w: X(320), h: Y(20), fontFace: FONT, fontSize: 8.5, margin: 0 });
   };
-  rows('prevent', 531, 291, 'ELIMINATE & PREVENT RISKS', 'Assist Family of Agents', VIOLET, 193, [377, 443, 510], { 'dev-assist': 1, 'ai-triage': 1, 'ai-remediation': 1 });
-  rows('govern', 945, 287, 'GOVERN & UNIFY RISKS', 'Orchestration/Posture Management', 'A822BF', 195, [372, 439, 508, 569], { mcp: 1 });
+  rows('prevent', 'ELIMINATE & PREVENT RISKS', 'Assist Family of Agents', VIOLET, new Set(['dev-assist', 'ai-triage', 'ai-remediation']));
+  rows('govern', 'GOVERN & UNIFY RISKS', 'Orchestration/Posture Management', 'A822BF', new Set(['mcp']));
 
   // The key, just inside the frame, and the footer band
   slide.addText(
