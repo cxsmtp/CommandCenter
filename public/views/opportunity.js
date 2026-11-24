@@ -569,6 +569,12 @@ function wipPanel(d) {
         <div class="row">${a.file ? `<a class="btn sm" href="/api/opportunities/${esc(o.id)}/apma" target="_blank" rel="noopener">Open the report</a>` : ''}${current.canEdit ? '<button class="btn sm" data-act="apma-up">Replace</button><button class="btn sm ghost danger" data-act="apma-del">Remove</button>' : ''}</div>`
         : `<p class="small muted" style="margin:6px 0">Drop the customer’s APMA report (PDF): its maturity scores, the interview and the recommended first steps fill the APMA slide.</p>${current.canEdit ? '<div class="row"><button class="btn sm" data-act="apma-up">Add the APMA report</button></div>' : ''}`}
       <input type="file" id="apmaFile" accept="application/pdf,.pdf" hidden></div>
+    <div class="item"><div class="top"><b>POV screenshots</b><span class="small muted">${(o.screenshots ?? []).length ? `${o.screenshots.length} · each is a slide, in this order` : 'optional'}</span></div>
+      ${(o.screenshots ?? []).length ? `<ul class="shots">${o.screenshots.map((x, i) => `<li><img src="/api/opportunities/${esc(o.id)}/screenshots/${esc(x.id)}" alt="" loading="lazy"><span>Checkmarx ONE – <b>${esc(x.caption)}</b></span>${current.canEdit ? `<span class="row"><button class="btn sm ghost" data-shot-up="${esc(x.id)}" ${i ? '' : 'disabled'} aria-label="Move up">↑</button><button class="btn sm ghost" data-shot-down="${esc(x.id)}" ${i < o.screenshots.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button><button class="btn sm ghost" data-shot-name="${esc(x.id)}">Rename</button><button class="btn sm ghost danger" data-shot-del="${esc(x.id)}">Remove</button></span>` : ''}</li>`).join('')}</ul>` : '<p class="small muted" style="margin:6px 0">Screenshots from the tenant (the Analytics dashboard, the compliance page, triage, an SCA exploitable path, the integrations) become the deck’s POV screenshots slides, before the appendix.</p>'}
+      ${current.canEdit ? '<div class="row"><button class="btn sm" data-act="shot-add">Add screenshots</button></div>' : ''}
+      <input type="file" id="shotFile" accept="image/png,image/jpeg" multiple hidden></div>
+    <div class="item"><div class="top"><b>The RW report</b><span class="small muted">the POV guide as one page (HTML)</span></div>
+      <div class="row" style="margin-top:6px"><a class="btn sm" href="/api/opportunities/${esc(o.id)}/rw" target="_blank" rel="noopener">Open the RW report</a><button class="btn sm" data-act="dl-rw">Download HTML</button></div></div>
   </div></section>`;
 }
 
@@ -858,6 +864,33 @@ const WIRES = {
   report(main) {
     on(main, '[data-act="dl-report"]', () => attempt(() => download(`/opportunities/${oid()}/report?download=1`)));
     on(main, '[data-act="dl-rw"]', () => attempt(() => download(`/opportunities/${oid()}/rw?download=1`)));
+    // Screenshots: added (several at once, each named after its file), renamed, moved, removed.
+    const shotIn = main.querySelector('#shotFile');
+    on(main, '[data-act="shot-add"]', () => shotIn?.click());
+    shotIn?.addEventListener('change', async () => {
+      for (const f of [...shotIn.files]) {
+        const r = await fetch(`/api/opportunities/${oid()}/screenshots?caption=${encodeURIComponent(f.name.replace(/\.(png|jpe?g)$/i, '').replace(/[_-]+/g, ' '))}`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+        if (!r.ok) {
+          toast((await r.json().catch(() => ({}))).error ?? `${f.name} could not be added`, { bad: true });
+          break;
+        }
+      }
+      shotIn.value = '';
+      rerender();
+    });
+    const shotMove = (id, move) => attempt(() => api(`/opportunities/${oid()}/screenshots/${id}`, { method: 'PUT', body: { move } })).then((r) => r && rerender());
+    on(main, '[data-shot-up]', (e) => shotMove(e.target.closest('[data-shot-up]').dataset.shotUp, -1));
+    on(main, '[data-shot-down]', (e) => shotMove(e.target.closest('[data-shot-down]').dataset.shotDown, 1));
+    on(main, '[data-shot-name]', (e) => {
+      const id = e.target.closest('[data-shot-name]').dataset.shotName;
+      const x = (current.opportunity.screenshots ?? []).find((y) => y.id === id);
+      dialogForm('shotForm', 'Name the screenshot', `<label class="field">Slide title: Checkmarx ONE – …<input name="caption" required value="${esc(x?.caption ?? '')}" placeholder="e.g. Analytics and Dashboard"></label>`, (b) => api(`/opportunities/${oid()}/screenshots/${id}`, { method: 'PUT', body: b }));
+    });
+    on(main, '[data-shot-del]', async (e) => {
+      const id = e.target.closest('[data-shot-del]').dataset.shotDel;
+      if (!(await ask('Remove this screenshot from the POV?', { ok: 'Remove', danger: true }))) return;
+      if (await attempt(() => api(`/opportunities/${oid()}/screenshots/${id}`, { method: 'DELETE' }), 'Removed')) rerender();
+    });
     on(main, '[data-act="dl-results"]', () => attempt(() => download(`/opportunities/${oid()}/results?download=1`), 'Results page downloaded'));
     on(main, '[data-act="dl-final"]', () => attempt(() => download(`/opportunities/${oid()}/results?download=1&final=1`), 'Final results downloaded'));
     on(main, '[data-act="freeze"]', async () => {

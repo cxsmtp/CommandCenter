@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { createApp } from '../src/server.js';
 
 const [templatePath = '', outDir = path.resolve('sample-decks')] = process.argv.slice(2);
@@ -74,12 +75,32 @@ try {
   });
   fs.mkdirSync(outDir, { recursive: true });
   const id = opportunity.id;
+  // Two made-up screenshots (drawn here, no real tenant), so the decks show the POV screenshots slides.
+  try {
+    const { chromium } = createRequire(import.meta.url)('playwright');
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+    const tile = (n, l) => `<div style="background:#1f1235;border:1px solid #3d2860;border-radius:12px;padding:28px;text-align:center"><b style="font-size:64px;color:#f25928">${n}</b><div style="color:#b9b0cc;font-size:20px;margin-top:8px">${l}</div></div>`;
+    for (const [caption, body] of [
+      ['Analytics and Dashboard', `<h1 style="color:#fff">Executive overview</h1><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px">${tile('368', 'scans, 30 days')}${tile('6 days', 'critical fix time')}${tile('40%', 'findings triaged')}${tile('107', 'projects')}${tile('7.5M', 'lines of code')}${tile('700', 'findings fixed')}</div>`],
+      ['Total Scans by integration', `<h1 style="color:#fff">Scans by origin</h1>${[['IDE', 420], ['SCM', 310], ['CLI', 180], ['CI/CD', 260]].map(([k, v]) => `<div style="display:flex;align-items:center;gap:16px;margin:22px 0"><span style="width:120px;color:#fff;font-size:26px">${k}</span><i style="display:block;height:36px;width:${v * 2.6}px;background:#6b34fd;border-radius:8px"></i><span style="color:#b9b0cc;font-size:24px">${v}</span></div>`).join('')}`],
+    ]) {
+      await page.setContent(`<body style="margin:0;padding:48px;background:#170b2b;font-family:Arial">${body}</body>`);
+      const png = await page.screenshot();
+      await call(`/opportunities/${id}/screenshots?caption=${encodeURIComponent(caption)}`, { method: 'POST', body: png, type: 'image/png' });
+    }
+    await browser.close();
+  } catch (e) {
+    console.warn(`(no sample screenshots: ${e.message})`);
+  }
   const out = [
     ['Northwind Media - POV WIP.pptx', `/opportunities/${id}/wip`],
     ['Northwind Media - POV results (team template).pptx', `/opportunities/${id}/deck?style=team`],
     ['Northwind Media - POV results (classic).pptx', `/opportunities/${id}/deck?style=classic`],
     ['Northwind Media - POV WIP (Version Kendra).pptx', `/opportunities/${id}/wip?template=builtin-kendra`],
     ['Northwind Media - POV results (Version Kendra).pptx', `/opportunities/${id}/deck?style=builtin-kendra`],
+    ['Northwind Media - POV WIP (Chakra).pptx', `/opportunities/${id}/wip?template=builtin-chakra`],
+    ['Northwind Media - POV results (Chakra).pptx', `/opportunities/${id}/deck?style=builtin-chakra`],
     ['Northwind Media - POV guide (RW report).html', `/opportunities/${id}/rw?download=1`],
   ];
   for (const [name, p] of out) {

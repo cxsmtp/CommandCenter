@@ -1376,6 +1376,47 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         });
         return done();
       }
+      if (sub === 'screenshots') {
+        const opp = viewOpp(user, id);
+        const shot = parts[3] ? (opp.screenshots ?? []).find((x) => x.id === parts[3]) : null;
+        if (parts[3] && !shot) throw fail(404, 'No such screenshot.');
+        if (m === 'GET' && shot) return send(res, 200, db.vault.readFile(shotPath(opp.id, shot.id)), { 'Content-Type': shot.type, 'Cache-Control': 'private, max-age=300' });
+        if (!opps.canEdit(user, opps.get(id), s)) throw fail(403, 'You can view this POV but not change its screenshots.');
+        if (m === 'POST' && !parts[3]) {
+          const buf = await readRaw(req, 8 * 1048576);
+          const info = imageInfo(buf);
+          if (!info) throw fail(400, 'A screenshot is a PNG or JPEG picture.');
+          if ((opp.screenshots ?? []).length >= 30) throw fail(400, 'A POV keeps at most 30 screenshots.');
+          const sid = randomUUID();
+          db.vault.writeFile(shotPath(opp.id, sid), buf, { keepPrevious: false });
+          const caption = text(url.searchParams.get('caption'), 120) || text(decodeURIComponent(req.headers['x-file-name'] ?? ''), 120).replace(/\.(png|jpe?g)$/i, '') || 'Screenshot';
+          opps.mutate(user, id, s, (o) => {
+            (o.screenshots ??= []).push({ id: sid, caption, ...info, at: new Date().toISOString(), by: user.id });
+            (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Added the screenshot "${caption}"` });
+          });
+          return done();
+        }
+        if (m === 'PUT' && shot) {
+          const b = await readBody(req);
+          opps.mutate(user, id, s, (o) => {
+            const list = o.screenshots ?? [];
+            const i = list.findIndex((x) => x.id === shot.id);
+            if (b.caption !== undefined) list[i].caption = text(b.caption, 120) || list[i].caption;
+            // Moved up or down: the order of the slides.
+            const to = Number(b.move) ? Math.max(0, Math.min(list.length - 1, i + Math.sign(Number(b.move)))) : i;
+            if (to !== i) list.splice(to, 0, ...list.splice(i, 1));
+          });
+          return done();
+        }
+        if (m === 'DELETE' && shot) {
+          fs.rmSync(shotPath(opp.id, shot.id), { force: true });
+          opps.mutate(user, id, s, (o) => {
+            o.screenshots = (o.screenshots ?? []).filter((x) => x.id !== shot.id);
+            (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Removed the screenshot "${shot.caption}"` });
+          });
+          return done();
+        }
+      }
       if (sub === 'criteria' && parts[3] && parts[4] === 'demo-video') {
         const opp = viewOpp(user, id);
         const c = (opp.criteria ?? []).find((x) => x.id === parts[3]);
@@ -1506,7 +1547,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (sub === 'wip' && m === 'GET') {
         const opp = viewOpp(user, id);
         const { tpl, file: design } = deckFor(opp, url.searchParams.get('template'));
-        const buf = await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: design, layout: tpl?.layout, texts: tpl?.texts ?? {} });
+        const buf = await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, screenshots: shotsOf(opp), template: design, layout: tpl?.layout, texts: tpl?.texts ?? {} });
         return file(res, `${opp.customer} - POV WIP.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf);
       }
       // The APMA assessment: the PDF read into the POV (optional; it fills the APMA slide), kept encrypted.
@@ -1542,7 +1583,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
         if (want.has('wip')) {
           const tpl = fs.existsSync(WIP_TEMPLATE) ? db.vault.readFile(WIP_TEMPLATE) : null;
-          files.push({ name: `${opp.customer} - POV WIP ${stamp}.pptx`, type: PPTX, data: await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: tpl }) });
+          files.push({ name: `${opp.customer} - POV WIP ${stamp}.pptx`, type: PPTX, data: await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, screenshots: shotsOf(opp), template: tpl }) });
         }
         if (want.has('deck')) files.push({ name: `${opp.customer} - POV results ${stamp}.pptx`, type: PPTX, data: await deckOf(opp) });
         if (want.has('results')) files.push({ name: `${opp.customer} - POV results ${stamp}.html`, type: 'text/html', data: Buffer.from(resultsPage(resultsData(opp))) });
@@ -1757,7 +1798,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const orgId = db.read('deckDefaults', { org: null }).org;
     const pick = style === 'classic' ? 'builtin-classic' : style === 'team' ? (own.find((t) => t.id === orgId) ?? own[0])?.id ?? 'builtin-meridian' : style;
     const { tpl, file: design } = deckFor(opp, pick);
-    if (!tpl?.classic) return wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: design, mode: 'results', live: opp.tenant ? monitor.live(opp.id) : null, layout: tpl?.layout, texts: tpl?.texts ?? {} });
+    if (!tpl?.classic) return wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, screenshots: shotsOf(opp), template: design, mode: 'results', live: opp.tenant ? monitor.live(opp.id) : null, layout: tpl?.layout, texts: tpl?.texts ?? {} });
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
     return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, opp.tenant ? monitor.provingSnapshot(opp.id) : null, opp.tenant ? monitor.live(opp.id).summary : null), story: resultsData(opp) });
   }
@@ -1916,6 +1957,35 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // ——— Demo videos: small (≤ 25 MB) MP4 or WebM, kept in the data folder, played in the app and embedded in the results page ———
   const MAX_VIDEO = 25 * 1048576;
   const VIDEO_TYPES = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
+  // ——— POV screenshots: images the SE adds, each a slide of the decks (kept encrypted, like everything else) ———
+  const shotPath = (oppId, sid) => path.join(dataDir, 'screenshots', oppId.replace(/[^0-9a-f-]/gi, ''), `${String(sid).replace(/[^0-9a-f-]/gi, '')}.img`);
+  /** PNG or JPEG only, read from its first bytes (never from the name), with its size in pixels. */
+  function imageInfo(buf) {
+    if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) return { type: 'image/png', w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+      for (let i = 2; i + 9 < buf.length; ) {
+        if (buf[i] !== 0xff) break;
+        const marker = buf[i + 1];
+        const len = buf.readUInt16BE(i + 2);
+        if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) return { type: 'image/jpeg', w: buf.readUInt16BE(i + 7), h: buf.readUInt16BE(i + 5) };
+        i += 2 + len;
+      }
+      return { type: 'image/jpeg', w: 1600, h: 900 };
+    }
+    return null;
+  }
+  /** The POV's screenshots with their pictures, for the decks. */
+  function shotsOf(opp) {
+    return (opp.screenshots ?? [])
+      .map((x) => {
+        try {
+          return { caption: x.caption, w: x.w, h: x.h, data: `${x.type};base64,${db.vault.readFile(shotPath(opp.id, x.id)).toString('base64')}` };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  }
   const videoPath = (oppId, v) => path.join(dataDir, 'demos', oppId.replace(/[^0-9a-f-]/gi, ''), `${String(v.id).replace(/[^0-9a-f-]/gi, '')}.${VIDEO_TYPES[v.type] ?? 'bin'}`);
   function saveVideo(req, oppId, c, name) {
     const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();

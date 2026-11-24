@@ -37,6 +37,7 @@ export const SLIDES = {
   testsFull: 'Test plan, rows sized to their text (Meridian)',
   evidence: 'Evidence for every criterion',
   impact: 'What the POV changed (Analytics: fix time, triage, scans)',
+  screenshots: 'POV screenshots (a divider, then each screenshot the SE added)',
   analyticsDetail: 'Fix time and ageing charts (Analytics)',
   goals: 'Business goals at a glance (Version Kendra)',
   goalsPlan: 'Business goals and success criteria: numbered, with milestones and tracker references (Version Kendra)',
@@ -55,10 +56,17 @@ export const KENDRA_LAYOUT = {
   results: { main: ['cover', 'age', 'glance', 'impact', 'goals', 'goalsPlan', 'components', 'expansion', 'next', 'closing'], appendix: ['challenges', 'analyticsDetail', 'devsecopsFull', 'planFull', 'envFull', 'apma', 'tenant', 'evidence', 'notes'] },
 };
 
-/** Meridian's own design, the Classic results deck, and Version Kendra: always there. */
+/** Chakra: the order of the team's POV WIP deck, screenshots before the appendix and the closing slide last. */
+export const CHAKRA_LAYOUT = {
+  wip: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'screenshots'], appendix: ['notes', 'closing'] },
+  results: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'impact', 'screenshots'], appendix: ['evidence', 'notes', 'closing'] },
+};
+
+/** Meridian's own design, the Classic results deck, Version Kendra and Chakra: always there. */
 export const BUILT_IN = [
   { id: 'builtin-meridian', builtIn: true, scope: 'everyone', name: 'Meridian', description: 'Meridian’s own dark design, every slide.', layout: DEFAULT_LAYOUT, texts: {} },
   { id: 'builtin-classic', builtIn: true, classic: true, scope: 'everyone', name: 'Classic', description: 'The original results presentation (the WIP deck in Meridian’s design).', layout: DEFAULT_LAYOUT, texts: {} },
+  { id: 'builtin-chakra', builtIn: true, scope: 'everyone', name: 'Chakra', description: 'The team’s POV WIP order: cover, DevSecOps, components, APMA, plan, environment, the test plan per business goal, the POV screenshots; then the appendix with the meeting notes, and the closing slide last.', layout: CHAKRA_LAYOUT, texts: {} },
   { id: 'builtin-kendra', builtIn: true, scope: 'everyone', name: 'Version Kendra', description: 'Meridian’s slides with every engine and touch point, and the POV guide’s business goals: each goal with its numbered success criteria, milestones and tracker references.', layout: KENDRA_LAYOUT, texts: {} },
 ];
 

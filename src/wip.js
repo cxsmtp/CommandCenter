@@ -49,7 +49,7 @@ function contentOf(opp, story, { owner, catalog }) {
   return { caps, engines, people, am, se: owner };
 }
 
-export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null, layout = null, texts = {} }) {
+export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null, layout = null, texts = {}, screenshots = [] }) {
   // The same deck, two moments: 'wip' while the POV runs, 'results' for the final readout in the team's template.
   const results = mode === 'results';
   const pptx = new PptxGenJS();
@@ -842,6 +842,24 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     }
   };
 
+  // ——— POV screenshots: a divider, then each picture the SE added, titled and fitted below its title ———
+  const sScreenshots = () => {
+    if (!screenshots.length) return;
+    const d = add('section');
+    d.addText('POV Screenshots', { x: 0.8, y: 3.1, w: 11, h: 1, fontFace: FONT, fontSize: 44, bold: true, color: WHITE, margin: 0 });
+    for (const shot of screenshots) {
+      const s = add('content');
+      s.addText([{ text: 'Checkmarx ONE – ', options: { color: WHITE } }, { text: shot.caption, options: { color: ORANGE } }], { x: L, y: 0.3, w: W, h: 0.6, fontFace: FONT, fontSize: 24, bold: true, margin: 0, fit: 'shrink' });
+      // As large as fits in the space under the title, never stretched.
+      const box = { x: L, y: 1.15, w: W, h: 5.75 };
+      const ratio = (shot.w || 16) / (shot.h || 9);
+      const w = Math.min(box.w, box.h * ratio);
+      const h = w / ratio;
+      s.addShape(pptx.ShapeType.rect, { x: box.x + (box.w - w) / 2 - 0.03, y: box.y + (box.h - h) / 2 - 0.03, w: w + 0.06, h: h + 0.06, fill: { color: LINE }, line: { color: LINE, width: 0 } });
+      s.addImage({ data: shot.data, x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h });
+    }
+  };
+
   const sAppendix = () => {
     const s = add('section');
     s.addText('Appendix', { x: 0.8, y: 3.1, w: 11, h: 1, fontFace: FONT, fontSize: 44, bold: true, color: WHITE, margin: 0 });
@@ -879,6 +897,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     goals: sGoals,
     goalsPlan: sGoalsPlan,
     impact: sImpact,
+    screenshots: sScreenshots,
     analyticsDetail: sAnalyticsDetail,
   };
   const keep = (k) => MAKE[k] && !(same[k] && same[k][1] && usedKeys.has(same[k][0]));

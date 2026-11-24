@@ -1087,3 +1087,48 @@ test('What the POV changed: the Analytics dashboard read for the POV’s project
   assert.match(c.text, /What the POV changed/);
   assert.match(c.text, /7\.5M/);
 });
+
+test('POV screenshots: added, ordered and named by the SE; Chakra puts them before the appendix, the closing slide last', async () => {
+  const zlib = await import('node:zlib');
+  const png = (w, h, rgb) => {
+    const crc = (b) => { let c = ~0; for (const x of b) { c ^= x; for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+    const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+    const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(w * 3, 0).map((_, i) => rgb[i % 3])]);
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(Array(h).fill(row)))), chunk('IEND', Buffer.alloc(0))]);
+  };
+  const o = (await call('se1', '/api/opportunities', { method: 'POST', body: { customer: 'Shots Ltd', stage: 'pov', criteria: [{ capabilityId: 'sast' }], sessions: [{ type: 'launch', date: '2026-11-02', title: 'Kick-off', did: 'Scanned the first app' }] } })).body.opportunity;
+  const up = (buf, caption) => fetch(`${base}/api/opportunities/${o.id}/screenshots?caption=${encodeURIComponent(caption)}`, { method: 'POST', headers: { ...H, Cookie: jar.get('se1'), 'Content-Type': 'image/png' }, body: buf });
+  assert.equal((await up(Buffer.from('not a picture at all, really'), 'Nope')).status, 400);
+  assert.equal((await up(png(160, 90, [107, 52, 253]), 'Analytics and Dashboard')).status, 200);
+  const r2 = await up(png(90, 160, [242, 89, 41]), 'Triaging SAST result');
+  const shots = (await r2.json()).opportunity.screenshots;
+  assert.deepEqual(shots.map((x) => [x.caption, x.w, x.h, x.type]), [['Analytics and Dashboard', 160, 90, 'image/png'], ['Triaging SAST result', 90, 160, 'image/png']]);
+  // Moved up, renamed; the picture itself is kept encrypted and served to those who may see the POV.
+  await call('se1', `/api/opportunities/${o.id}/screenshots/${shots[1].id}`, { method: 'PUT', body: { move: -1, caption: 'Triaging a SAST result' } });
+  const img = await fetch(`${base}/api/opportunities/${o.id}/screenshots/${shots[0].id}`, { headers: { Cookie: jar.get('se1') } });
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  assert.ok(!fs.readdirSync(path.join(dataDir, 'screenshots'), { recursive: true }).some((f) => String(f).endsWith('.img') && fs.readFileSync(path.join(dataDir, 'screenshots', String(f))).subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))), 'not kept as a plain picture');
+  // Chakra: the order of the team's WIP deck.
+  const r = await fetch(`${base}/api/opportunities/${o.id}/wip?template=builtin-chakra`, { headers: { Cookie: jar.get('se1') } });
+  assert.equal(r.status, 200);
+  const JSZip = (await import('jszip')).default;
+  const z = await JSZip.loadAsync(Buffer.from(await r.arrayBuffer()));
+  const pres = await z.file('ppt/presentation.xml').async('string');
+  const rels = await z.file('ppt/_rels/presentation.xml.rels').async('string');
+  const rel = Object.fromEntries([...rels.matchAll(/<Relationship\b[^>]*>/g)].map((m) => [/Id="([^"]+)"/.exec(m[0])[1], /Target="([^"]+)"/.exec(m[0])[1]]));
+  const order = [];
+  for (const m of pres.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)) order.push([...(await z.file(`ppt/${rel[m[1]]}`).async('string')).matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((x) => x[1]).join(' '));
+  const at = (re) => order.findIndex((t) => re.test(t));
+  assert.equal(at(/SHOTS LTD/), 0, 'the cover first');
+  assert.ok(at(/Tailored to Your DevSecOps/) < at(/POV Plan/) && at(/POV Plan/) < at(/Test Plan Overview/));
+  assert.ok(at(/Test Plan Overview/) < at(/POV Screenshots/), 'the screenshots after the test plan');
+  assert.match(order[at(/POV Screenshots/) + 1], /Triaging a SAST result/, 'in the order the SE set');
+  assert.match(order[at(/POV Screenshots/) + 2], /Analytics and Dashboard/);
+  assert.ok(at(/POV Screenshots/) < at(/\bAppendix$/) && at(/\bAppendix$/) < at(/Meeting Notes/));
+  assert.equal(at(/comes next/), order.length - 1, 'the closing slide last');
+  // Removed: gone from the POV and from the disk.
+  await call('se1', `/api/opportunities/${o.id}/screenshots/${shots[0].id}`, { method: 'DELETE' });
+  assert.equal((await call('se1', `/api/opportunities/${o.id}`)).body.opportunity.screenshots.length, 1);
+  await call('se1', `/api/opportunities/${o.id}`, { method: 'DELETE' });
+});

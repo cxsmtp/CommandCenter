@@ -325,3 +325,9 @@ dialog.reauth { max-width: 420px; }
 .seg.sm button { padding: 3px 8px; font-size: 12px; }
 .slide-row > .grow { flex: 1; min-width: 0; }
 #sessionWarn { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--warn); border-radius: 12px; padding: 8px 12px; box-shadow: var(--shadow); font-size: 13.5px; }
+
+/* POV screenshots in the WIP panel */
+.shots{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.shots li{display:grid;grid-template-columns:96px 1fr auto;gap:10px;align-items:center}
+.shots img{width:96px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+@media (max-width:640px){.shots li{grid-template-columns:72px 1fr}.shots li .row{grid-column:1/-1}}
