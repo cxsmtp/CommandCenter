@@ -1,5 +1,5 @@
 // Builds the sample decks for a made-up POV, to check them in PowerPoint:
-//   the WIP deck, the results presentation in the team template, and the Classic results presentation.
+//   the WIP deck, the results presentation in the team template, the Classic results presentation, and the RW report.
 //
 //   node scripts/sample-decks.mjs [path\to\team-template.pptx] [output folder]
 //
@@ -48,6 +48,7 @@ try {
       sessions: [
         { type: 'pre_pov', date: day(-29), title: 'Pre-POV call' },
         { type: 'launch', date: day(-22), title: 'POV launch & quick setup', did: 'Onboarding complete: users provisioned\nBitbucket SCM integration completed\nDeveloper Assist in VS Code', theirNext: 'Internal testing of the features shown', ourNext: 'Share the WIP deck\nSchedule the DAST session' },
+        { type: 'gate', date: day(-20), title: 'Gate A: Architecture approval', did: 'Approves the POV topology and data use. Required before scanning starts.' },
         { type: 'checkpoint', date: day(-12), title: 'Check-in call', did: 'Ran DAST on the staging web app' },
         { type: 'checkpoint', date: day(2), title: 'Check-in call' },
         { type: 'wrapup', date: day(6), title: 'Wrap-up call' },
@@ -77,6 +78,9 @@ try {
     ['Northwind Media - POV WIP.pptx', `/opportunities/${id}/wip`],
     ['Northwind Media - POV results (team template).pptx', `/opportunities/${id}/deck?style=team`],
     ['Northwind Media - POV results (classic).pptx', `/opportunities/${id}/deck?style=classic`],
+    ['Northwind Media - POV WIP (Version Kendra).pptx', `/opportunities/${id}/wip?template=builtin-kendra`],
+    ['Northwind Media - POV results (Version Kendra).pptx', `/opportunities/${id}/deck?style=builtin-kendra`],
+    ['Northwind Media - POV guide (RW report).html', `/opportunities/${id}/rw?download=1`],
   ];
   for (const [name, p] of out) {
     fs.writeFileSync(path.join(outDir, name), await call(p, { raw: true }));

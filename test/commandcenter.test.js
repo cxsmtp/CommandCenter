@@ -658,6 +658,31 @@ test('the SEAL library: business goals become the bank, the first call fills the
   assert.equal(deck.status, 200);
   assert.ok((await deck.arrayBuffer()).byteLength > 10000);
 
+  // The RW report: the POV guide from the POV's own data; what is unknown says "To confirm".
+  const rw = await fetch(`${base}/api/opportunities/${opp.id}/rw`, { headers: { Cookie: jar.get('se1') } });
+  assert.equal(rw.status, 200);
+  assert.match(rw.headers.get('content-security-policy'), /script-src 'nonce-/);
+  const rwHtml = await rw.text();
+  assert.match(rwHtml, /Initech · Checkmarx One Proof of Value Guide/);
+  assert.match(rwHtml, /"id":"1\.1"/, 'criteria numbered goal.n');
+  assert.match(rwHtml, /Find flaws before release/);
+  assert.match(rwHtml, /class="tbd">tenant URL/);
+  assert.ok(!/<\/script>[\s\S]*<\/script>[\s\S]*<\/script>/.test(rwHtml.replace(/<script[^>]*>[\s\S]*?<\/script>/, '')), 'one script');
+  assert.ok(!/KLA|kla\.com/.test(rwHtml), 'nothing from the sample guide');
+  // Version Kendra: a built-in template with the guide's goals and criteria slides.
+  const kendra = (await call('se1', '/api/deck-templates')).body.templates.find((t) => t.id === 'builtin-kendra');
+  assert.equal(kendra.name, 'Version Kendra');
+  assert.ok(kendra.layout.wip.main.includes('goalsPlan') && kendra.layout.results.main.includes('goals'));
+  for (const p of [`/api/opportunities/${opp.id}/wip?template=builtin-kendra`, `/api/opportunities/${opp.id}/deck?style=builtin-kendra`]) {
+    const r = await fetch(`${base}${p}`, { headers: { Cookie: jar.get('se1') } });
+    assert.equal(r.status, 200, p);
+    const JSZip = (await import('jszip')).default;
+    const z = await JSZip.loadAsync(Buffer.from(await r.arrayBuffer()));
+    const all = (await Promise.all(Object.keys(z.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).map((n) => z.file(n).async('string')))).join(' ');
+    assert.match(all, /Business goals and success criteria/);
+    assert.match(all, /<a:t>1\.1/);
+  }
+
   // Admins edit the bank in Meridian: SEs may not; edits stand until the SEAL files are imported again.
   assert.equal((await call('se1', '/api/bank/goals', { method: 'POST', body: { title: 'Nope' } })).status, 403);
   const eid = bank.entries[0].id;

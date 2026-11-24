@@ -541,6 +541,9 @@ function report(d) {
       ${d.finals.length ? `<p class="small muted" style="margin:6px 0">The results page exactly as it stood when the POV was marked successful: later activity in the tenant does not change it.</p><div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/results?final=1" target="_blank" rel="noopener">Open the final copy</a><button class="btn" data-act="dl-final">Download it</button>${current.canEdit ? '<button class="btn ghost" data-act="freeze">Keep a new final copy now</button>' : ''}</div>` : `<p class="small muted" style="margin:6px 0">Kept by itself when the POV is marked successful.${current.canEdit ? ' Or keep one now.' : ''}</p>${current.canEdit ? '<div class="row"><button class="btn" data-act="freeze">Keep the results as final now</button></div>' : ''}`}
     </div>
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
+    <p style="margin:0"><b>The RW report</b>: the POV guide as one page to share with the customer. Their business goals with every success criterion (numbered, with milestone, tracker references and status), their toolchain, the platform components with the criteria that test them, the plan with its approval gates, and the team. What is not known yet shows as "To confirm".</p>
+    <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/rw" target="_blank" rel="noopener">Open the RW report</a><button class="btn" data-act="dl-rw">Download HTML</button></div>
+    <hr style="border:0;border-top:1px solid var(--line);width:100%">
     <p style="margin:0">The success-criteria report: the answer first, every criterion with its status and evidence, the sessions held and what the tenant showed. It prints to PDF from the browser.</p>
     <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
     <p class="small muted" style="margin:0">To keep it with the customer's documents, save it as PDF and put it in the SharePoint site${o.sharepointUrl ? '' : ' (add its link under Edit details)'}. Publishing to SharePoint by itself needs a Microsoft Graph app registration; the report layout will follow the formats you supply.</p>
@@ -854,6 +857,7 @@ const WIRES = {
   },
   report(main) {
     on(main, '[data-act="dl-report"]', () => attempt(() => download(`/opportunities/${oid()}/report?download=1`)));
+    on(main, '[data-act="dl-rw"]', () => attempt(() => download(`/opportunities/${oid()}/rw?download=1`)));
     on(main, '[data-act="dl-results"]', () => attempt(() => download(`/opportunities/${oid()}/results?download=1`), 'Results page downloaded'));
     on(main, '[data-act="dl-final"]', () => attempt(() => download(`/opportunities/${oid()}/results?download=1&final=1`), 'Final results downloaded'));
     on(main, '[data-act="freeze"]', async () => {
@@ -881,6 +885,7 @@ const WIRES = {
           <label class="check"><input type="checkbox" name="wip" checked> The WIP deck</label>
           <label class="check"><input type="checkbox" name="deck" checked> The results presentation</label>
           <label class="check"><input type="checkbox" name="results" checked> The results page (HTML)</label>
+          <label class="check"><input type="checkbox" name="rw" checked> The RW report: the POV guide (HTML)</label>
           ${last ? `<p class="small muted">Last published ${esc(when(last.at))} by ${esc(last.by)} to ${esc(last.folder)}.</p>` : ''}
           <p class="form-error" id="spErr" role="alert"></p>
           <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Publish</button></div></form>`,
@@ -894,7 +899,7 @@ const WIRES = {
               btn.disabled = true;
               btn.textContent = 'Publishing…';
               try {
-                const r = await api(`/opportunities/${oid()}/sharepoint`, { method: 'POST', body: { what: ['wip', 'deck', 'results'].filter((k) => f[k].checked) } });
+                const r = await api(`/opportunities/${oid()}/sharepoint`, { method: 'POST', body: { what: ['wip', 'deck', 'results', 'rw'].filter((k) => f[k].checked) } });
                 closeDialog();
                 toast(`Published ${r.files.length} document${r.files.length === 1 ? '' : 's'} to ${r.folder}`);
                 rerender();

@@ -18,6 +18,7 @@ import { readTable, readCsv, recordsOf, matchRecords, logMessage, opportunityIdO
 import { SfMailbox } from './sf-mailbox.js';
 import { Templates } from './templates.js';
 import { Bank } from './bank.js';
+import { rwReport } from './guide.js';
 import { Library } from './library.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
@@ -1483,6 +1484,14 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         if (url.searchParams.get('download')) return file(res, `${opp.customer} - POV results.html`, 'text/html; charset=utf-8', resultsPage(resultsData(opp)));
         return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; media-src data:; frame-ancestors 'self'` });
       }
+      // The RW report: the POV guide as one interactive page (goals and success criteria, toolchain, platform, plan, team).
+      if (sub === 'rw' && m === 'GET') {
+        const opp = viewOpp(user, id);
+        const make = (nonce = '') => rwReport(placed(opp), resultsData(opp), { owner: users.get(opp.ownerId), catalog, texts: deckFor(opp).tpl?.texts ?? {}, nonce });
+        if (url.searchParams.get('download')) return file(res, `${opp.customer} - POV guide (RW report).html`, 'text/html; charset=utf-8', make());
+        const nonce = randomBytes(12).toString('base64');
+        return send(res, 200, make(nonce), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data:; frame-ancestors 'self'` });
+      }
       if (sub === 'deck' && m === 'GET') {
         const opp = viewOpp(user, id);
         return file(res, `${opp.customer} - POV results.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', await deckOf(opp, url.searchParams.get('style')));
@@ -1531,6 +1540,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         }
         if (want.has('deck')) files.push({ name: `${opp.customer} - POV results ${stamp}.pptx`, type: PPTX, data: await deckOf(opp) });
         if (want.has('results')) files.push({ name: `${opp.customer} - POV results ${stamp}.html`, type: 'text/html', data: Buffer.from(resultsPage(resultsData(opp))) });
+        if (want.has('rw')) files.push({ name: `${opp.customer} - POV guide ${stamp}.html`, type: 'text/html', data: Buffer.from(rwReport(placed(opp), resultsData(opp), { owner: users.get(opp.ownerId), catalog, texts: deckFor(opp).tpl?.texts ?? {} })) });
         if (!files.length) throw fail(400, 'Pick at least one document.');
         const r = await sharepoint.publish(spConfig(), { siteUrl: opp.sharepointUrl, customer: opp.customer, files });
         opps.mutate({ ...user, role: 'admin' }, id, fullSettings(), (o) => {

@@ -36,6 +36,8 @@ export const SLIDES = {
   planFull: 'Plan & timeline: every meeting (Meridian)',
   testsFull: 'Test plan, rows sized to their text (Meridian)',
   evidence: 'Evidence for every criterion',
+  goals: 'Business goals at a glance (Version Kendra)',
+  goalsPlan: 'Business goals and success criteria: numbered, with milestones and tracker references (Version Kendra)',
   notes: 'Meeting notes',
 };
 
@@ -45,10 +47,17 @@ export const DEFAULT_LAYOUT = {
   results: { main: MAIN, appendix: ['challenges', 'glance', 'expansion', 'next', 'apma', 'tenant', 'devsecopsFull', 'planFull', 'envFull', 'testsFull', 'evidence', 'notes'] },
 };
 
-/** Meridian's own design, and the Classic results deck: always there. */
+/** Version Kendra: Meridian's own slides, every engine and touch point, and the guide's business goals and criteria. */
+export const KENDRA_LAYOUT = {
+  wip: { main: ['cover', 'age', 'goals', 'devsecopsFull', 'components', 'planFull', 'envFull', 'goalsPlan', 'closing'], appendix: ['overview', 'apma', 'notes'] },
+  results: { main: ['cover', 'age', 'glance', 'goals', 'goalsPlan', 'components', 'expansion', 'next', 'closing'], appendix: ['challenges', 'devsecopsFull', 'planFull', 'envFull', 'apma', 'tenant', 'evidence', 'notes'] },
+};
+
+/** Meridian's own design, the Classic results deck, and Version Kendra: always there. */
 export const BUILT_IN = [
   { id: 'builtin-meridian', builtIn: true, scope: 'everyone', name: 'Meridian', description: 'Meridian’s own dark design, every slide.', layout: DEFAULT_LAYOUT, texts: {} },
   { id: 'builtin-classic', builtIn: true, classic: true, scope: 'everyone', name: 'Classic', description: 'The original results presentation (the WIP deck in Meridian’s design).', layout: DEFAULT_LAYOUT, texts: {} },
+  { id: 'builtin-kendra', builtIn: true, scope: 'everyone', name: 'Version Kendra', description: 'Meridian’s slides with every engine and touch point, and the POV guide’s business goals: each goal with its numbered success criteria, milestones and tracker references.', layout: KENDRA_LAYOUT, texts: {} },
 ];
 
 const lines = (v, n = 6) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => text(x, 200)).filter(Boolean).slice(0, n);

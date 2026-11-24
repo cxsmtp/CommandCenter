@@ -529,6 +529,81 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   }
   };
 
+  // ——— The guide's business goals (Version Kendra): the goals at a glance, then each goal with its criteria ———
+  const guideGoals = () => {
+    const crit = Object.fromEntries((story?.criteria ?? []).map((x) => [x.id, x]));
+    let goals = (story?.goals ?? []).filter((g) => g.ids.length);
+    if (!goals.length && story?.criteria?.length) goals = [{ key: 'all', title: 'Success criteria', statement: 'Agreed with the team for this POV.', ids: story.criteria.map((x) => x.id) }];
+    return goals.map((g) => ({ ...g, list: g.ids.filter((id) => crit[id]).map((id) => crit[id]) }));
+  };
+  const sGoals = () => {
+    const goals = guideGoals();
+    if (!goals.length) return;
+    const s = add('content');
+    head(s, 'Business Goals', `What ${C} set out to achieve:`, `${goals.length} goal${goals.length === 1 ? '' : 's'}, ${goals.reduce((n, g) => n + g.list.length, 0)} success criteria`);
+    const cols = goals.length <= 3 ? goals.length : goals.length === 4 ? 2 : 3;
+    const rows = Math.ceil(goals.length / cols);
+    const gap = 0.22;
+    const cw = (W - gap * (cols - 1)) / cols;
+    const ch = Math.min(2.5, (5.35 - gap * (rows - 1)) / rows);
+    goals.slice(0, 9).forEach((g, i) => {
+      const x = L + (i % cols) * (cw + gap);
+      const y = 1.55 + Math.floor(i / cols) * (ch + gap);
+      card(s, x, y, cw, ch, { line: VIOLET });
+      s.addShape(pptx.ShapeType.roundRect, { x: x + 0.2, y: y + 0.2, w: 0.5, h: 0.5, rectRadius: 0.08, fill: { color: VIOLET }, line: { color: VIOLET, width: 0 } });
+      s.addText(String(i + 1), { x: x + 0.2, y: y + 0.2, w: 0.5, h: 0.5, fontFace: FONT, fontSize: 16, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
+      s.addText(`GOAL ${i + 1}`, { x: x + 0.85, y: y + 0.2, w: cw - 1.05, h: 0.22, fontFace: FONT, fontSize: 9, bold: true, color: ORANGE, charSpacing: 1, margin: 0 });
+      s.addText(g.title, { x: x + 0.85, y: y + 0.42, w: cw - 1.05, h: 0.62, fontFace: FONT, fontSize: 13, bold: true, color: WHITE, margin: 0, valign: 'top', fit: 'shrink' });
+      if (g.statement && ch > 1.6) s.addText(g.statement, { x: x + 0.2, y: y + 1.1, w: cw - 0.4, h: ch - 1.55, fontFace: FONT, fontSize: 10, color: MUTED, margin: 0, valign: 'top', fit: 'shrink' });
+      const met = g.list.filter((x2) => ['done', 'demo'].includes(x2.state)).length;
+      s.addText(`${g.list.length} success criteria${results ? `  ·  ${met} met` : ''}`, { x: x + 0.2, y: y + ch - 0.4, w: cw - 0.4, h: 0.25, fontFace: FONT, fontSize: 9.5, bold: true, color: results && met === g.list.length ? '3CCF8E' : 'C9B8FF', margin: 0 });
+    });
+  };
+  const sGoalsPlan = () => {
+    const goals = guideGoals();
+    const rowH = (x) => Math.max(0.6, 0.2 + 0.165 * Math.max(Math.ceil(String(x.benefit || x.statement || '').length / 52), Math.ceil(String(x.test || '').length / 58), Math.ceil(String(x.title).length / 24) + 1));
+    goals.forEach((g, gi) => {
+      const pages = [];
+      let cur = [];
+      let h = 0;
+      g.list.forEach((x, n) => {
+        const rh = rowH(x);
+        if (cur.length && h + rh > 4.15) {
+          pages.push(cur);
+          cur = [];
+          h = 0;
+        }
+        cur.push([x, `${gi + 1}.${n + 1}`]);
+        h += rh;
+      });
+      if (cur.length) pages.push(cur);
+      pages.forEach((page, pi) => {
+        const s = add('content');
+        s.addText('Business goals and success criteria', { x: L, y: 0.3, w: 10, h: 0.55, fontFace: FONT, fontSize: 24, bold: true, color: WHITE, margin: 0 });
+        s.addText([{ text: 'Each goal lists ', options: { color: WHITE } }, { text: 'what we test', options: { color: ORANGE } }, { text: ' and ', options: { color: WHITE } }, { text: `what ${C} gains`, options: { color: ORANGE } }], { x: L, y: 0.85, w: 10, h: 0.3, fontFace: FONT, fontSize: 13, margin: 0 });
+        if (pages.length > 1) s.addText(`${pi + 1} of ${pages.length}`, { x: L + W - 2, y: 0.4, w: 2, h: 0.3, fontFace: FONT, fontSize: 10, color: MUTED, align: 'right', margin: 0 });
+        card(s, L, 1.35, W, 0.95, { line: VIOLET });
+        s.addShape(pptx.ShapeType.roundRect, { x: L + 0.2, y: 1.55, w: 0.55, h: 0.55, rectRadius: 0.08, fill: { color: VIOLET }, line: { color: VIOLET, width: 0 } });
+        s.addText(String(gi + 1), { x: L + 0.2, y: 1.55, w: 0.55, h: 0.55, fontFace: FONT, fontSize: 18, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
+        const meta = [`${g.list.length} success criteria`, g.driver && `Value driver: ${g.driver}`, g.measures?.length && `Measured by: ${g.measures.slice(0, 3).join('; ')}`].filter(Boolean).join('  ·  ');
+        s.addText([{ text: g.title, options: { bold: true, fontSize: 14, color: WHITE, breakLine: true } }, ...(g.statement ? [{ text: g.statement, options: { fontSize: 10.5, color: 'E6E0F2', breakLine: true } }] : []), { text: meta, options: { fontSize: 9, color: MUTED } }], { x: L + 0.95, y: 1.38, w: W - 1.15, h: 0.9, fontFace: FONT, margin: 0, valign: 'middle', fit: 'shrink' });
+        const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: '2B1A4A' }, fontSize: 9.5 } });
+        const rows = page.map(([x, num], i) => {
+          const f = { fill: { color: i % 2 ? '1A0F2E' : PANEL } };
+          const [lab, color] = STATE[x.state] ?? ['Planned', MUTED];
+          const refs = String(x.refs ?? '').split(/[,;\s]+/).filter(Boolean);
+          return [
+            { text: [{ text: `${num}\n`, options: { bold: true, color: 'A98BFF', fontSize: 9.5 } }, { text: x.title, options: { bold: true, color: WHITE } }, ...(refs.length ? [{ text: `\nTracker: ${refs.map((r) => `#${r.replace(/^#/, '')}`).join(', ')}`, options: { color: MUTED, fontSize: 8.5 } }] : [])], options: { fontSize: 10.5, valign: 'top', ...f } },
+            { text: x.test || '', options: { color: 'E6E0F2', fontSize: 9.5, valign: 'top', ...f } },
+            { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, valign: 'top', ...f } },
+            { text: [...(x.milestone ? [{ text: `${x.milestone.replace(/M(\d)/g, 'Milestone $1')}\n`, options: { color: '6FB3FF', bold: true, fontSize: 9 } }] : []), { text: `●  ${lab}`, options: { color, bold: true, fontSize: 9.5 } }], options: { valign: 'top', ...f } },
+          ];
+        });
+        s.addTable([[H('Criterion'), H('Test item'), H('Benefit'), H(results ? 'Milestone · result' : 'Milestone · status')], ...rows], { x: L, y: 2.5, w: W, colW: [2.9, 4.05, 3.68, 1.7], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.34, ...page.map(([x]) => rowH(x))], autoPage: false, margin: [5, 8, 5, 8] });
+      });
+    });
+  };
+
   const sTenant = () => {
   // Results: what the tenant showed, from proof to rollout, next steps
     const t = live?.summary ?? story?.tenant ?? null;
@@ -754,6 +829,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     tenant: sTenant,
     evidence: sEvidence,
     notes: () => heldNotes && sNotes(),
+    goals: sGoals,
+    goalsPlan: sGoalsPlan,
   };
   const keep = (k) => MAKE[k] && !(same[k] && same[k][1] && usedKeys.has(same[k][0]));
   const appendix = plan.appendix.filter(keep);
