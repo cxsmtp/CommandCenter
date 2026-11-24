@@ -33,7 +33,7 @@ export function successReport(opp, { owner, live, evidence = {}, org = 'Meridian
   .answer div { border: 1px solid var(--line); border-radius: 10px; padding: 12px; } .answer b { display: block; font-size: 24px; }
   .bar { height: 10px; background: #eee; border-radius: 5px; overflow: hidden; } .bar span { display: block; height: 100%; background: var(--accent); }
   table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; } th { font-size: 12px; color: var(--muted); }
-  .st { font-weight: 600; white-space: nowrap; } .ev { font-size: 12px; color: var(--muted); }
+  .st { font-weight: 600; white-space: nowrap; text-align: center; vertical-align: middle; } .ev { font-size: 12px; color: var(--muted); }
   footer { margin-top: 36px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
   @media print { .page { padding: 0; } h2 { break-after: avoid; } tr { break-inside: avoid; } }
 </style></head><body><div class="page">
@@ -52,7 +52,7 @@ export function successReport(opp, { owner, live, evidence = {}, org = 'Meridian
 ${opp.summary ? `<h2>Summary</h2><p>${esc(opp.summary).replace(/\n/g, '<br>')}</p>` : ''}
 <h2>Success criteria</h2>
 ${[...groups]
-  .map(([k, list]) => `<h3>${esc(k)}</h3><table><thead><tr><th style="width:42%">Criterion</th><th>Status</th><th>Evidence and notes</th></tr></thead><tbody>${list
+  .map(([k, list]) => `<h3>${esc(k)}</h3><table><thead><tr><th style="width:42%">Criterion</th><th style="text-align:center">Status</th><th>Evidence and notes</th></tr></thead><tbody>${list
     .map((c) => {
       const ev = evidence[c.id];
       return `<tr><td>${esc(c.title)}${c.priority === 'nice' ? ' <span class="muted">(nice to have)</span>' : ''}</td><td class="st" style="color:${COLOR[c.status]}">${esc(CRITERION_STATUS[c.status])}${c.confirmedAt ? `<div class="ev">${day(c.confirmedAt)}</div>` : ''}</td><td>${esc(c.notes)}${ev?.evidence?.length ? `<div class="ev">${ev.evidence.map(esc).join('<br>')}</div>` : ''}${c.evidenceLink ? `<div class="ev"><a href="${esc(c.evidenceLink)}">${esc(c.evidenceLink)}</a></div>` : ''}</td></tr>`;

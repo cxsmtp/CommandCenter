@@ -132,7 +132,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
             slide(
               `Business goal${g.driver ? ` · ${esc(g.driver)}` : ''}`,
               esc(g.title),
-              `${g.statement ? `<p class="summary" style="margin-top:0">${esc(g.statement)}</p>` : ''}<table class="tbl"><thead><tr><th>Criteria</th><th>Test item</th><th>Benefit</th><th>Result</th></tr></thead><tbody>${g.ids
+              `${g.statement ? `<p class="summary" style="margin-top:0">${esc(g.statement)}</p>` : ''}<table class="tbl"><thead><tr><th>Criteria</th><th>Test item</th><th>Benefit</th><th class="c">Result</th></tr></thead><tbody>${g.ids
                 .slice(0, 7)
                 .map((id) => byId[id])
                 .filter(Boolean)
@@ -148,7 +148,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
       slide(
         `Success criteria${crit.length > 10 ? ` · ${i / 10 + 1} of ${Math.ceil(crit.length / 10)}` : ''}`,
         'Success criteria',
-        `<table class="tbl"><thead><tr><th>Group</th><th>Criterion</th><th>Status</th><th>Completed on</th><th>Evidence</th></tr></thead><tbody>${crit
+        `<table class="tbl"><thead><tr><th>Group</th><th>Criterion</th><th class="c">Status</th><th>Completed on</th><th>Evidence</th></tr></thead><tbody>${crit
           .slice(i, i + 10)
           .map((c) => `<tr><td class="m">${esc(c.group)}</td><td><button class="lnk" data-e="${esc(c.id)}">${esc(c.title)}</button>${c.ai ? ' ' + STAR : ''}${c.priority === 'nice' ? ' <span class="m">(nice to have)</span>' : ''}</td><td class="st s-${c.state}">${MARKS[c.state] ?? ''} ${esc(STATE_LABEL[c.state])}</td><td class="m">${c.confirmedAt ? stamp(c.confirmedAt) : '—'}</td><td class="m">${esc([...(c.evidence?.level === 'detected' ? c.evidence.evidence : []), c.scans.length ? `${c.scans.length} proving scan${c.scans.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ').slice(0, 160)) || '—'}</td></tr>`)
           .join('') || '<tr><td colspan="5" class="m">No success criteria yet.</td></tr>'}</tbody></table>`,
@@ -345,7 +345,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 80px; display: flex
 .tbl th { text-align: left; color: var(--dim); font-weight: 700; font-size: ${u(11)}; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid #6b34fd; padding: ${u(8)} ${u(10)}; }
 .tbl td { border-bottom: 1px solid var(--line); padding: ${u(8)} ${u(10)}; vertical-align: top; }
 .tbl.kv td:first-child { color: var(--dim); width: 32%; text-transform: uppercase; font-size: ${u(12)}; letter-spacing: 0.08em; }
-.st { white-space: nowrap; font-weight: 700; } .st.s-done, .st.s-demo { color: #3ccf8e; } .st.s-progress { color: #f5a524; } .st.s-planned { color: #f5c518; } .st.s-missed { color: #8a8197; }
+.st { white-space: nowrap; font-weight: 700; text-align: center; vertical-align: middle; } .tbl th.c { text-align: center; } .st.s-done, .st.s-demo { color: #3ccf8e; } .st.s-progress { color: #f5a524; } .st.s-planned { color: #f5c518; } .st.s-missed { color: #8a8197; }
 .lnk { font: inherit; color: #fff; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: #6b34fd; text-underline-offset: 3px; }
 .steps { margin: 0; padding-left: 1.2em; font-size: ${u(22)}; } .steps li { margin-bottom: ${u(14)}; } .steps li::marker { color: var(--orange); }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: #170c26; border-left: 1px solid #6b34fd; transform: translateX(100%); transition: transform 0.25s ease; z-index: 20; overflow-y: auto; padding: 28px 28px 40px; box-shadow: -20px 0 60px #000a; }

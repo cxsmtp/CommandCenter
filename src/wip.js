@@ -522,10 +522,10 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
             { text: [{ text: `SC${n}  `, options: { bold: true, color: ORANGE } }, { text: x.title, options: { bold: true, color: WHITE } }], options: { fontSize: 10.5, ...f } },
             { text: x.test || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
             { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
-            { text: lab, options: { color, bold: true, fontSize: 10, align: 'left', ...f } },
+            { text: lab, options: { color, bold: true, fontSize: 10, align: 'center', valign: 'middle', ...f } },
           ];
         });
-        s.addTable([[H('Criteria'), H('Test item'), H('Benefit'), H('Result')], ...rows], { x: L, y: 2.45, w: W, colW: [2.75, 4.0, 4.08, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.36, ...page.map((id) => rowH(crit[id]))], valign: 'middle', autoPage: false, margin: [4, 8, 4, 8] });
+        s.addTable([[H('Criteria'), H('Test item'), H('Benefit'), H('Result', 'center')], ...rows], { x: L, y: 2.45, w: W, colW: [2.75, 4.0, 4.08, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.36, ...page.map((id) => rowH(crit[id]))], valign: 'middle', autoPage: false, margin: [4, 8, 4, 8] });
       });
     });
   }
@@ -589,7 +589,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
         s.addText(String(gi + 1), { x: L + 0.2, y: 1.55, w: 0.55, h: 0.55, fontFace: FONT, fontSize: 18, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
         const meta = [`${g.list.length} success criteria`, g.driver && `Value driver: ${g.driver}`, g.measures?.length && `Measured by: ${g.measures.slice(0, 3).join('; ')}`].filter(Boolean).join('  ·  ');
         s.addText([{ text: g.title, options: { bold: true, fontSize: 14, color: WHITE, breakLine: true } }, ...(g.statement ? [{ text: g.statement, options: { fontSize: 10.5, color: 'E6E0F2', breakLine: true } }] : []), { text: meta, options: { fontSize: 9, color: MUTED } }], { x: L + 0.95, y: 1.38, w: W - 1.15, h: 0.9, fontFace: FONT, margin: 0, valign: 'middle', fit: 'shrink' });
-        const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: '2B1A4A' }, fontSize: 9.5 } });
+        const H = (t, align = 'left') => ({ text: t, options: { bold: true, color: WHITE, fill: { color: '2B1A4A' }, fontSize: 9.5, align } });
         const rows = page.map(([x, num], i) => {
           const f = { fill: { color: i % 2 ? '1A0F2E' : PANEL } };
           const [lab, color] = STATE[x.state] ?? ['Planned', MUTED];
@@ -598,10 +598,10 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
             { text: [{ text: `${num}\n`, options: { bold: true, color: 'A98BFF', fontSize: 9.5 } }, { text: x.title, options: { bold: true, color: WHITE } }, ...(refs.length ? [{ text: `\nTracker: ${refs.map((r) => `#${r.replace(/^#/, '')}`).join(', ')}`, options: { color: MUTED, fontSize: 8.5 } }] : [])], options: { fontSize: 10.5, valign: 'top', ...f } },
             { text: x.test || '', options: { color: 'E6E0F2', fontSize: 9.5, valign: 'top', ...f } },
             { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, valign: 'top', ...f } },
-            { text: [...(x.milestone ? [{ text: `${x.milestone.replace(/M(\d)/g, 'Milestone $1')}\n`, options: { color: '6FB3FF', bold: true, fontSize: 9 } }] : []), { text: lab, options: { color, bold: true, fontSize: 9.5 } }], options: { valign: 'top', ...f } },
+            { text: [...(x.milestone ? [{ text: `${x.milestone.replace(/M(\d)/g, 'Milestone $1')}\n`, options: { color: '6FB3FF', bold: true, fontSize: 9 } }] : []), { text: lab, options: { color, bold: true, fontSize: 9.5 } }], options: { align: 'center', valign: 'middle', ...f } },
           ];
         });
-        s.addTable([[H('Criterion'), H('Test item'), H('Benefit'), H(results ? 'Milestone · result' : 'Milestone · status')], ...rows], { x: L, y: 2.5, w: W, colW: [2.9, 4.05, 3.68, 1.7], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.34, ...page.map(([x]) => rowH(x))], autoPage: false, margin: [5, 8, 5, 8] });
+        s.addTable([[H('Criterion'), H('Test item'), H('Benefit'), H(results ? 'Milestone · result' : 'Milestone · status', 'center')], ...rows], { x: L, y: 2.5, w: W, colW: [2.9, 4.05, 3.68, 1.7], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.34, ...page.map(([x]) => rowH(x))], autoPage: false, margin: [5, 8, 5, 8] });
       });
     });
   };

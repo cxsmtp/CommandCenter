@@ -16,7 +16,7 @@ const PANEL = '1D1030';
 const BRASS = 'F25928';
 const MUTED = 'B9B0CC';
 const LINE = '3A2352';
-const STATUS_COLOR = { met: '3CCF8E', not_met: '8A8197', in_progress: 'F5C518', not_started: '9E94B8', na: '8A8197' };
+const STATUS_COLOR = { met: '3CCF8E', not_met: '8A8197', in_progress: 'F5A524', not_started: 'F5C518', na: '8A8197' };
 const HEAD = 'Arial';
 const BODY = 'Arial';
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
@@ -95,12 +95,12 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     for (const g of goals.filter((x) => x.key !== 'other')) {
       const gs = page(g.title, `Business goal${g.driver ? ` · ${g.driver}` : ''}`);
       if (g.statement) gs.addText(g.statement, { x: 0.6, y: 1.5, w: 12.1, h: 0.5, fontFace: BODY, fontSize: 13, color: MUTED, italic: true });
-      const head = ['Criteria', 'Test item', 'Benefit', 'Result'].map((t) => ({ text: t.toUpperCase(), options: { color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL } } }));
+      const head = ['Criteria', 'Test item', 'Benefit', 'Result'].map((t) => ({ text: t.toUpperCase(), options: { color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL }, align: t === 'Result' ? 'center' : 'left' } }));
       const body = g.ids.slice(0, 7).map((id) => byId[id]).filter(Boolean).map((c) => [
         { text: c.title, options: { color: INK, fontSize: 11 } },
         { text: String(c.test || '—').slice(0, 200), options: { color: MUTED, fontSize: 9 } },
         { text: String(c.benefit || '—').slice(0, 200), options: { color: MUTED, fontSize: 9 } },
-        { text: (STATE[c.state] ?? ['—'])[0], options: { color: (STATE[c.state] ?? [, MUTED])[1], bold: true, fontSize: 11 } },
+        { text: (STATE[c.state] ?? ['—'])[0], options: { color: (STATE[c.state] ?? [, MUTED])[1], bold: true, fontSize: 11, align: 'center', valign: 'middle' } },
       ]);
       gs.addTable([head, ...body], { x: 0.6, y: 2.1, w: 12.1, colW: [3.4, 3.9, 3.4, 1.4], fontFace: BODY, border: { type: 'solid', color: LINE, pt: 0.5 }, valign: 'middle' });
       if (g.measures?.length) gs.addText(`Success measures: ${g.measures.slice(0, 4).join(' · ')}`, { x: 0.6, y: 6.25, w: 12.1, h: 0.45, fontFace: BODY, fontSize: 10, color: MUTED });
@@ -111,11 +111,11 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   const rows = [...(opp.criteria ?? [])].sort((a, b) => String(catLabel[a.category] ?? 'zz').localeCompare(String(catLabel[b.category] ?? 'zz')));
   for (let i = 0; i < rows.length; i += 10) {
     const slide = page('Success criteria', `Success criteria ${rows.length > 10 ? `${Math.floor(i / 10) + 1} of ${Math.ceil(rows.length / 10)}` : ''}`);
-    const head = ['Group', 'Criterion', 'Status', 'Evidence'].map((t) => ({ text: t.toUpperCase(), options: { bold: false, color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL } } }));
+    const head = ['Group', 'Criterion', 'Status', 'Evidence'].map((t) => ({ text: t.toUpperCase(), options: { bold: false, color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL }, align: t === 'Status' ? 'center' : 'left' } }));
     const body = rows.slice(i, i + 10).map((c) => [
       { text: catLabel[c.category] ?? 'Custom', options: { color: MUTED, fontSize: 10 } },
       { text: `${c.title}${c.priority === 'nice' ? ' (nice to have)' : ''}`, options: { color: INK, fontSize: 11 } },
-      { text: CRITERION_STATUS[c.status], options: { color: STATUS_COLOR[c.status], bold: true, fontSize: 11 } },
+      { text: CRITERION_STATUS[c.status], options: { color: STATUS_COLOR[c.status], bold: true, fontSize: 11, align: 'center', valign: 'middle' } },
       { text: [c.notes, ...(evidence[c.id]?.level === 'detected' ? evidence[c.id].evidence : [])].filter(Boolean).join(' · ').slice(0, 220), options: { color: MUTED, fontSize: 9 } },
     ]);
     slide.addTable([head, ...body], { x: 0.6, y: 1.65, w: 12.1, colW: [2.2, 4.3, 1.5, 4.1], fontFace: BODY, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: 0.42, valign: 'middle' });
