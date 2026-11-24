@@ -9,7 +9,8 @@
  *   repoHosts  text found in projects' repository addresses (github.com, gitlab, dev.azure.com…)
  *   actions    AI actions Checkmarx One counted on the credits (triage, remediation)
  *   aspm       what the ASPM pages hold: applications, risk-scores (Application Risk Management), risks (Risk
- *              Orchestration), cloud (Cloud Insights accounts), dast (a DAST environment scanned)
+ *              Orchestration), cloud (Cloud Insights accounts), dast (a DAST environment scanned),
+ *              policy (a policy applied), violations (policy violations raised)
  *   keywords   words looked for in the opportunity's own notes, discovery and sessions (a hint, never proof)
  *
  * Evidence only ever suggests: the SE confirms a criterion is met. An Admin (or anyone with catalog.manage) edits
@@ -73,7 +74,7 @@ export const DEFAULT_CATALOG = [
   c('risk-orchestration', 'aspm', 'Risk Orchestration', 'ASPM — Risk Orchestration (risks across engines, triaged and fixed by agents)', { aspm: ['risks'], keywords: ['risk orchestration', 'risk hub', 'unified risk', 'aspm'] }, { isNew: true, proof: 'Open Risk Orchestration; show the risks from every engine in one list, ranked, and an agent triaging or fixing one.', tech: 'GET /api/risks answers with risks on the tenant (metaData.totalResults above 0).' }),
   c('arm', 'aspm', 'Application Risk Management', 'ASPM — Application Risk Management (applications, criticality, risk score)', { aspm: ['applications', 'risk-scores'], keywords: ['application risk', 'risk score', 'business impact', 'criticality', 'applications'] }, { proof: 'Group the in-scope projects into applications with their business criticality; show each application’s risk score and its top risks.', tech: 'Applications in GET /api/applications, and risk scores for them in GET /api/risk-management/summary.' }),
   c('cloud-insights', 'aspm', 'Cloud Insights', 'ASPM — Cloud Insights (cloud accounts, exposed resources, code to cloud)', { aspm: ['cloud'], keywords: ['cloud insights', 'cloud account', 'kubernetes', 'eks', 'aks', 'runtime context', 'code to cloud'] }, { proof: 'Connect a cloud account; show the running images and resources, which are exposed to the internet, and the risks that are therefore urgent.', tech: 'Cloud accounts in GET /api/cnas/accounts (total above 0), with the date each was last scanned.' }),
-  c('policy', 'aspm', 'Policy Management', 'Policy Management (rules, break build)', { keywords: ['policy', 'break build', 'break the build', 'threshold', 'gate', 'violation'] }, { proof: 'Create a policy, show a violation on a project and the pipeline breaking on it.', tech: MANUAL }),
+  c('policy', 'aspm', 'Policy Management', 'Policy Management (rules, break build)', { aspm: ['policy', 'violations'], keywords: ['policy', 'break build', 'break the build', 'threshold', 'gate', 'violation'] }, { proof: 'Create a policy, show a violation on a project and the pipeline breaking on it.', tech: 'A policy of their own (not the default) applied to projects or tags in GET /api/policy_management_service_uri/policies/v3; violations from .../incidents/total. The pipeline breaking is shown by the SE.' }),
   c('analytics', 'aspm', 'Analytics & Reporting', 'Analytics and Reports (PDF, SARIF, JSON)', { keywords: ['analytics', 'dashboard', 'kpi', 'report', 'sarif', 'pdf report', 'mttr'] }, { proof: 'Walk through the analytics dashboard (trends, MTTR, ageing); export the agreed report formats.', tech: MANUAL }),
   // ——— SCM ———
   c('github', 'scm', 'GitHub integration (repo import, PR decoration)', 'Code Repository integration — GitHub', { repoHosts: ['github.com', 'github.'], keywords: ['github'] }, { proof: 'Import repositories from GitHub; show a pull request decorated with new findings.', tech: 'A project whose repository address (repoUrl in GET /api/projects) is on GitHub.' }),
@@ -229,6 +230,8 @@ function aspmFacts(a) {
   if (a.armScores?.scored > 0) out.set('risk-scores', `Application Risk Management scored ${n(a.armScores.scored, 'application')}${a.armScores.top != null ? ` (highest ${a.armScores.top.toFixed(1)})` : ''}`);
   if (a.risks?.total > 0) out.set('risks', `Risk Orchestration lists ${n(a.risks.total, 'risk')} across engines`);
   if (a.dast?.scanned > 0) out.set('dast', `DAST scanned ${n(a.dast.scanned, 'environment')}${a.dast.lastScanAt ? `, last on ${new Date(a.dast.lastScanAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : ''}`);
+  if (a.policies?.applied > 0) out.set('policy', `${n(a.policies.applied, 'policy', 'policies')} applied to projects${a.policies.breakBuild ? `, ${a.policies.breakBuild} breaking the build` : ''}`);
+  if (a.policies?.violations > 0) out.set('violations', `Policies raised ${n(a.policies.violations, 'violation')}`);
   if (a.cloud?.accounts > 0) out.set('cloud', `Cloud Insights has ${n(a.cloud.accounts, 'cloud account')} connected${a.cloud.lastScanAt ? `, last scanned ${new Date(a.cloud.lastScanAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : ''}`);
   return out;
 }

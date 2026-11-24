@@ -910,6 +910,8 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
     '/api/risk-management/summary': { summary: [{ name: 'Payments', riskScore: 8.9, riskSeverity: 'high' }, { name: 'Web', riskScore: 4.1, riskSeverity: 'medium' }] },
     '/api/risks': { metaData: { totalResults: 229 }, risks: [{ assetName: 'secret.py' }] },
     '/api/cnas/accounts': { data: [{ name: 'prod', lastScanDate: '2026-11-20T10:00:00Z' }], total: 2 },
+    '/api/policy_management_service_uri/policies/v3': { policies: [{ name: 'Default', defaultPolicy: true, projects: [{ astProjectId: 'p1' }] }, { name: 'No new criticals', projects: [{ astProjectId: 'p1', name: 'Payments' }], tags: [], breakBuild: false, netNewBreakBuild: true }, { name: 'Draft', projects: [], tags: [] }] },
+    '/api/policy_management_service_uri/incidents/total': 12,
     '/api/dast/scans/environments': { totalItems: 4, environments: [{ domain: 'shop.example', lastScanTime: '2026-11-21T09:00:00Z', settings: { authSettings: { userName: 'u', password: 'hunter2' } } }, { domain: 'b.example' }] },
   };
   const client = { request: async (p) => (p in answers ? answers[p] : Promise.reject(Object.assign(new Error('404'), { status: 404 }))) };
@@ -919,11 +921,12 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.equal(a.armScores.top, 8.9);
   assert.equal(a.risks.total, 229);
   assert.deepEqual(a.cloud, { accounts: 2, lastScanAt: '2026-11-20T10:00:00.000Z' });
+  assert.deepEqual(a.policies, { made: 2, applied: 1, breakBuild: 1, violations: 12 });
   assert.deepEqual(a.dast, { environments: 4, scanned: 1, lastScanAt: '2026-11-21T09:00:00.000Z' });
   assert.ok(!/hunter2|Payments|shop\.example|secret\.py|prod/.test(JSON.stringify(a)), 'no names, no passwords');
   // A tenant without ASPM answers nothing: every part is null, the read goes on.
   const none = await aspm({ request: async () => Promise.reject(new Error('403')) });
-  assert.deepEqual(Object.values(none), [null, null, null, null, null]);
+  assert.ok(Object.values(none).every((v) => v === null));
 
   const facts = tenantFacts({ scans: [], projects: { list: [] }, aspm: a });
   const cap = (id) => DEFAULT_CATALOG.find((x) => x.id === id);
@@ -931,5 +934,6 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.equal(evaluate(cap('arm'), facts).level, 'detected');
   assert.match(evaluate(cap('cloud-insights'), facts).evidence[0], /2 cloud accounts connected/);
   assert.match(evaluate(cap('dast'), facts).evidence.join(' '), /DAST scanned 1 environment/);
-  assert.equal(evaluate(cap('policy'), facts).level, 'none', 'policy is still confirmed by the SE');
+  assert.deepEqual(evaluate(cap('policy'), facts).evidence, ['1 policy applied to projects, 1 breaking the build', 'Policies raised 12 violations']);
+  assert.equal(evaluate(cap('policy'), tenantFacts({ scans: [], projects: { list: [] }, aspm: { ...a, policies: { made: 1, applied: 0, breakBuild: 0, violations: 0 } } })).level, 'none', 'a policy on nothing proves nothing');
 });
