@@ -208,7 +208,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const colours = () => tenantColours(opps.raw().map((o) => o.id));
   const evidenceOf = (opp) => {
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
-    const facts = snap ? tenantFacts(snap) : null;
+    const proof = opp.tenant ? monitor.proof(opp.id) : null;
+    const facts = snap || proof ? tenantFacts(snap, proof) : null;
     const words = wordsOf(opp);
     const out = {};
     for (const c of opp.criteria ?? []) {
@@ -317,7 +318,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     };
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
     base.prediction = predict(opp, base, { now });
-    base.gaps = gaps(placed(opp), base, { facts: snap ? tenantFacts(snap) : null, people: snap ? peopleActivity(snap, now) : null, catalog, now });
+    base.gaps = gaps(placed(opp), base, { facts: snap ? tenantFacts(snap, monitor.proof(opp.id)) : null, people: snap ? peopleActivity(snap, now) : null, catalog, now });
     return base;
   }
 
@@ -1438,7 +1439,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
           confirmedAt: c.confirmedAt,
           confirmedBy: c.confirmedBy ? users.get(c.confirmedBy)?.name ?? '' : '',
           evidence: evidence[c.id],
-          scans: snap ? provingScans(rule, snap) : [],
+          scans: opp.tenant ? provingScans(rule, monitor.provingSnapshot(opp.id)) : [],
           timeline: history.filter((h) => h.what.includes(`"${c.title}"`)).map((h) => ({ at: h.at, what: h.what.replace(`"${c.title}": `, '').replace(` "${c.title}"`, ''), by: users.get(h.by)?.name ?? '' })),
         };
       });
@@ -1457,7 +1458,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       progress: progressOf(opp),
       value: valueFor(raw),
       platform: platformView(opp, catalog),
-      flow: flowView(opp, catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null),
+      flow: flowView(opp, catalog, opp.tenant ? monitor.provingSnapshot(opp.id) : null, opp.tenant ? monitor.live(opp.id).summary : null),
       criteria,
       ...storyOf(opp, criteria, snap),
       tenant: opp.tenant ? monitor.live(opp.id).summary : null,
@@ -1511,7 +1512,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   function deckOf(opp) {
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
-    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, snap, opp.tenant ? monitor.live(opp.id).summary : null), story: resultsData(opp) });
+    return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, opp.tenant ? monitor.provingSnapshot(opp.id) : null, opp.tenant ? monitor.live(opp.id).summary : null), story: resultsData(opp) });
   }
 
   /** One text file: the tenant's read, every failed scan of the last 7 days and each failed engine's log. */

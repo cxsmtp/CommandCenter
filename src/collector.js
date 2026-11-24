@@ -12,6 +12,7 @@ import { CxClient, mapWithConcurrency } from './cxone/client.js';
 
 export const SCAN_WINDOW_DAYS = 7;
 const MAX_SCANS = Number(process.env.CC_MAX_SCANS) || 500;
+const MAX_HISTORY_SCANS = Number(process.env.CC_MAX_HISTORY_SCANS) || 20000;
 const MAX_PROJECTS = Number(process.env.CC_MAX_PROJECTS) || 500;
 const CHUNK = 50;
 const DAY = 86_400_000;
@@ -141,9 +142,9 @@ export function severityOf(summary) {
   return sev;
 }
 
-async function scansSince(client, since) {
+async function scansSince(client, since, max = MAX_SCANS) {
   const out = [];
-  for await (const scan of client.paginate('/api/scans', { query: { 'from-date': since, sort: '-created_at' }, itemsKey: 'scans', limit: 100, maxItems: MAX_SCANS })) {
+  for await (const scan of client.paginate('/api/scans', { query: { 'from-date': since, sort: '-created_at' }, itemsKey: 'scans', limit: 100, maxItems: max })) {
     if (scan?.id && timeOf(scan.createdAt) >= timeOf(since)) out.push(slimScan(scan));
   }
   return out;
@@ -374,7 +375,7 @@ export async function scanLog(connection, scanId, engine, { client = new CxClien
  * One full read of a POV's tenant. Each part fails on its own: a tenant without, say, the scan-summary service still
  * shows its scans. `errors` lists what could not be read.
  */
-export async function collect(connection, { client = new CxClient(connection), now = Date.now(), previous = null, slow = true } = {}) {
+export async function collect(connection, { client = new CxClient(connection), now = Date.now(), previous = null, slow = true, historyFrom = null } = {}) {
   const started = Date.now();
   const since = new Date(now - SCAN_WINDOW_DAYS * DAY).toISOString();
   const errors = [];
@@ -390,7 +391,8 @@ export async function collect(connection, { client = new CxClient(connection), n
   const identity = await client.identity();
   const [projects, scans, active] = await Promise.all([
     part('projects', () => listProjects(client), { total: null, list: [] }),
-    part('scans', () => scansSince(client, since), []),
+    // Back to `historyFrom` when asked (the tenant's whole history the first time): the POV's proof record needs it.
+    part('scans', () => (historyFrom && historyFrom < since ? scansSince(client, historyFrom, MAX_HISTORY_SCANS) : scansSince(client, since)), []),
     part('running', () => activeScans(client), []),
   ]);
   const names = new Map(projects.list.map((p) => [p.id, p.name]));
@@ -404,7 +406,9 @@ export async function collect(connection, { client = new CxClient(connection), n
   if (['projects', 'scans', 'running'].every((name) => errors.some((e) => e.part === name))) {
     throw Object.assign(new Error(errors[0].message), { status: errors[0].status, errors });
   }
-  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans, active, findings, credits: creditInfo, ai, people, errors };
+  const recent = scans.filter((s) => timeOf(s.createdAt) >= timeOf(since)).slice(0, MAX_SCANS);
+  const older = scans.length > recent.length ? scans.filter((s) => timeOf(s.createdAt) < timeOf(since)) : [];
+  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans: recent, older, active, findings, credits: creditInfo, ai, people, errors };
 }
 
 /**

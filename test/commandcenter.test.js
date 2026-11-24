@@ -772,3 +772,39 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
   assert.equal((await call('admin', '/api/wip-template', { method: 'DELETE' })).status, 200);
   await call('se1', `/api/opportunities/${opp.id}`, { method: 'DELETE' });
 });
+
+test('success criteria count everything the tenant ever proved, not only the last 7 days', async () => {
+  const { mergeProof, historyFrom, proofScans } = await import('../src/proof.js');
+  const old = seedTenant('history', { projects: 2, scans: 3, seed: 3 });
+  const day = 86_400e3;
+  // A SAST scan 20 days ago, and nothing else with SAST since.
+  old.scans = [
+    { ...old.scans[0], id: 'old-sast', status: 'Completed', engines: ['sast'], sourceOrigin: 'Jenkins', createdAt: new Date(Date.now() - 20 * day).toISOString(), updatedAt: new Date(Date.now() - 20 * day + 600e3).toISOString() },
+    { ...old.scans[1], id: 'new-sca', status: 'Completed', engines: ['sca'], sourceOrigin: 'Web', createdAt: new Date(Date.now() - 1 * day).toISOString(), updatedAt: new Date(Date.now() - 1 * day + 600e3).toISOString() },
+  ];
+  const m = await startMock({ tenants: { history: old } });
+  try {
+    const conn = deriveConnection(apiKeyFor(m.origin, 'history'));
+    // The first read: the whole history.
+    const first = await collect(conn, { historyFrom: historyFrom(null) });
+    assert.deepEqual(first.scans.map((s) => s.id), ['new-sca'], 'the dashboards still show the last 7 days');
+    let proof = mergeProof(null, [...first.scans, ...first.older], { tenant: conn.tenant, at: first.at });
+    assert.ok(proof.engines.sast, 'the 20-day-old SAST scan is on the record');
+    assert.ok(proof.syncedTo);
+    // Later reads take only what is new, and the record keeps the old scan.
+    const next = await collect(conn, { historyFrom: historyFrom(proof) });
+    assert.equal(next.older.length, 0);
+    proof = mergeProof(proof, next.scans, { tenant: conn.tenant, at: next.at });
+    assert.equal(proof.engines.sast.count, 1, 'a scan read twice is counted once');
+    const sast = DEFAULT_CATALOG.find((c) => c.id === 'sast');
+    const ev = evaluate(sast, tenantFacts(next, proof));
+    assert.equal(ev.level, 'detected');
+    assert.match(ev.evidence[0], /sast engine \(since /);
+    assert.equal(evaluate(sast, tenantFacts(next)).level, 'none', 'the last 7 days alone would have missed it');
+    assert.ok(proofScans(proof).some((s) => s.id === 'old-sast'), 'the old scan is shown as proof');
+    // Another tenant on the same POV starts a new record.
+    assert.equal(mergeProof(proof, [], { tenant: 'other' }).engines.sast, undefined);
+  } finally {
+    m.server.close();
+  }
+});

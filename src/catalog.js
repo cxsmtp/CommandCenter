@@ -201,16 +201,24 @@ export class Catalog {
 }
 
 /** What a tenant shows, in the shape the rules read. */
-export function tenantFacts(snapshot) {
+export function tenantFacts(snapshot, proof = null) {
   const completed = (snapshot?.scans ?? []).filter((s) => /completed|partial/i.test(s.status));
+  const first = {};
+  for (const [kind, bucket] of [['engine', proof?.engines], ['scanType', proof?.scanTypes], ['origin', proof?.origins]]) for (const [k, v] of Object.entries(bucket ?? {})) first[`${kind}:${k}`] = v.first;
   return {
-    engines: new Set(completed.flatMap((s) => s.engines ?? [])),
-    scanTypes: new Set(completed.map((s) => s.scanType).filter((t) => t && t !== 'none')),
-    origins: [...new Set((snapshot?.scans ?? []).flatMap((s) => [s.origin, s.originRaw, s.userAgent].filter(Boolean)).map((o) => o.toLowerCase()))],
+    engines: new Set([...completed.flatMap((s) => s.engines ?? []), ...Object.keys(proof?.engines ?? {})]),
+    scanTypes: new Set([...completed.map((s) => s.scanType).filter((t) => t && t !== 'none'), ...Object.keys(proof?.scanTypes ?? {})]),
+    origins: [...new Set([...(snapshot?.scans ?? []).flatMap((s) => [s.origin, s.originRaw, s.userAgent].filter(Boolean)), ...Object.keys(proof?.origins ?? {})].map((o) => o.toLowerCase()))],
     repoHosts: [...new Set((snapshot?.projects?.list ?? []).map((p) => p.repoUrl).filter(Boolean).map((u) => u.toLowerCase()))],
     actions: new Set(Object.entries(snapshot?.credits?.actions ?? {}).filter(([, n]) => n > 0).map(([k]) => k)),
+    first,
   };
 }
+
+const since = (facts, key) => {
+  const at = facts.first?.[key];
+  return at ? ` (since ${new Date(at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })})` : '';
+};
 
 /**
  * Evidence for one criterion: { level: 'detected' | 'mentioned' | 'none', evidence: [text] }. `detected` comes from
@@ -220,8 +228,8 @@ export function evaluate(capability, facts, notesText = '') {
   const d = capability?.detect ?? {};
   const evidence = [];
   if (facts) {
-    for (const e of d.engines ?? []) if (facts.engines.has(e)) evidence.push(`Completed scans ran the ${e} engine`);
-    for (const t of d.scanTypes ?? []) if (facts.scanTypes.has(t)) evidence.push(`A ${t === 'fusion' ? 'Fusion' : 'LAST'} scan completed`);
+    for (const e of d.engines ?? []) if (facts.engines.has(e)) evidence.push(`Completed scans ran the ${e} engine${since(facts, `engine:${e}`)}`);
+    for (const t of d.scanTypes ?? []) if (facts.scanTypes.has(t)) evidence.push(`A ${t === 'fusion' ? 'Fusion' : 'LAST'} scan completed${since(facts, `scanType:${t}`)}`);
     for (const o of d.origins ?? []) {
       const hit = facts.origins.find((x) => wordIn(x, o));
       if (hit) evidence.push(`Scans came from "${hit}"`);

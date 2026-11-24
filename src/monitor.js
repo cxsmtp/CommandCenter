@@ -19,6 +19,7 @@ import { EventEmitter } from 'node:events';
 import { collect, summarize, healthOf } from './collector.js';
 import { CxClient } from './cxone/client.js';
 import { Vault } from './vault.js';
+import { mergeProof, historyFrom, proofScans } from './proof.js';
 
 const SLOW_EVERY_MS = 60 * 60_000;
 const MAX_BACKOFF_MS = 60 * 60_000;
@@ -88,7 +89,7 @@ export class Monitor extends EventEmitter {
   #entry(id) {
     let entry = this.#state.get(id);
     if (!entry) {
-      entry = { snapshot: null, previous: null, error: null, history: [], refreshing: null, timer: null, nextAt: null, failures: 0, slowAt: 0 };
+      entry = { snapshot: null, previous: null, error: null, history: [], proof: null, refreshing: null, timer: null, nextAt: null, failures: 0, slowAt: 0 };
       if (SAFE_ID.test(id)) {
         try {
           Object.assign(entry, this.#vault.readJson(path.join(this.#dir, `${id}.json`)), { refreshing: null, timer: null, nextAt: null, slowAt: 0 });
@@ -102,7 +103,7 @@ export class Monitor extends EventEmitter {
   #persist(id, entry) {
     if (!SAFE_ID.test(id)) return;
     // A snapshot is a cache of what Checkmarx One says: no previous copy is needed, the next read rebuilds it.
-    this.#vault.writeFile(path.join(this.#dir, `${id}.json`), JSON.stringify({ snapshot: entry.snapshot, previous: entry.previous, error: entry.error, history: entry.history, failures: entry.failures }), { keepPrevious: false });
+    this.#vault.writeFile(path.join(this.#dir, `${id}.json`), JSON.stringify({ snapshot: entry.snapshot, previous: entry.previous, error: entry.error, history: entry.history, failures: entry.failures, proof: entry.proof }), { keepPrevious: false });
   }
 
   /** The first reads, spread over the interval (at most 10 minutes), the stalest first. */
@@ -179,7 +180,12 @@ export class Monitor extends EventEmitter {
       try {
         const connection = this.#source.connection(id);
         const slow = force || !entry.snapshot || Date.now() - entry.slowAt >= SLOW_EVERY_MS;
-        const snapshot = await this.#lanes.run(() => this.#collect(connection, { client: this.#clientFor(id, connection), previous: entry.snapshot, slow }), { high: force });
+        // The proof record: the whole scan history the first time (or for another tenant), then what is new.
+        const sameTenant = entry.proof?.tenant === connection.tenant;
+        const snapshot = await this.#lanes.run(() => this.#collect(connection, { client: this.#clientFor(id, connection), previous: entry.snapshot, slow, historyFrom: historyFrom(sameTenant ? entry.proof : null) }), { high: force });
+        const scansOk = !(snapshot.errors ?? []).some((e) => e.part === 'scans');
+        entry.proof = mergeProof(sameTenant ? entry.proof : null, [...(snapshot.scans ?? []), ...(snapshot.older ?? [])], { tenant: connection.tenant, at: snapshot.at, complete: scansOk });
+        delete snapshot.older;
         if (slow) entry.slowAt = Date.now();
         entry.failures = 0;
         entry.previous = entry.snapshot;
@@ -215,6 +221,19 @@ export class Monitor extends EventEmitter {
 
   snapshot(id) {
     return this.#entry(id).snapshot;
+  }
+
+  /** Everything the tenant has proven during the POV (engines, scan types, origins, with when and an example). */
+  proof(id) {
+    return this.#entry(id).proof;
+  }
+
+  /** The proving scans of the whole POV: the record's examples and the latest read's scans. */
+  provingSnapshot(id) {
+    const e = this.#entry(id);
+    if (!e.snapshot && !e.proof) return null;
+    const seen = new Set((e.snapshot?.scans ?? []).map((s) => s.id));
+    return { ...(e.snapshot ?? {}), scans: [...(e.snapshot?.scans ?? []), ...proofScans(e.proof).filter((s) => !seen.has(s.id))] };
   }
 
   /** What the dashboards show of one tenant. */
