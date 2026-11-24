@@ -91,14 +91,16 @@ const NAV = [
   ['Set up', [['catalog', ICON.catalog, 'Capabilities'], ['audit', ICON.audit, 'Audit', 'audit.view'], ['settings', ICON.settings, 'Settings']]],
 ];
 
-const MARK = '<svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12.5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/><ellipse cx="16" cy="16" rx="5.2" ry="12.5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/><path d="M16 2.2v27.6" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="9" r="2.4" fill="currentColor"/></svg>';
+// The Kendra mark; its tooltip says what the name means.
+const KENDRA_MEANING = 'Kendra (केन्द्र, Sanskrit for “centre”): the centre for the best solution engineers to manage the growth.';
+const MARK = `<img class="brand-logo" src="/logo.png" alt="Kendra" title="${KENDRA_MEANING}" width="40" height="40">`;
 function shell() {
   const u = state.session.user;
   const r = route();
   const attention = state.overview?.totals?.needsAttention ?? 0;
   root.innerHTML = `<div class="shell">
     <nav class="nav" id="nav" aria-label="Main">
-      <div class="brand">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Kendra')}</span><span class="brand-tag">One line of sight</span></span></div>
+      <div class="brand" title="${KENDRA_MEANING}">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Kendra')}</span><span class="brand-tag">One line of sight</span></span></div>
       ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.filter(([, , , need]) => !need || can(need)).map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}

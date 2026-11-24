@@ -2,6 +2,15 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.69 · 2026-11-24
+
+**The Kendra logo: menu, sign-in, About, and the browser tab icon, with what the name means**
+
+The round lion mark, cropped to its circle, replaces the old mark in the menu and on the sign-in screen, and is the
+browser tab icon (favicon.ico, 32 and 64 px, 192 px, and the phone home-screen icon). Hovering the mark says what
+the name means: Kendra (केन्द्र, Sanskrit for "centre"): the centre for the best solution engineers to manage the
+growth. About shows it too.
+
 ## 1.0.68 · 2026-11-24
 
 **Settings like CxMissionZero: grouped menu, Security, Network & certificates, Update & recovery, About**

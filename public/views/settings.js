@@ -342,7 +342,7 @@ async function about(body, data) {
   const a = await api('/system/about');
   body.innerHTML = `<div class="stack">
     <section class="panel about-card"><div class="body">
-      <div class="about-name">Kendra</div><div class="muted">One line of sight across every Checkmarx One POV</div>
+      <div class="row center" style="gap:16px"><img src="/logo.png" alt="" width="72" height="72" style="border-radius:50%"><div><div class="about-name">Kendra</div><div class="muted"><b>केन्द्र</b>, Sanskrit for “centre”: the centre for the best solution engineers to manage the growth.</div></div></div>
       <dl class="about-facts"><dt>Version</dt><dd class="mono">${esc(a.version)}</dd><dt>Organisation</dt><dd>${esc(data.settings.orgName)}</dd><dt>Running since</dt><dd>${esc(when(a.startedAt))} <span class="muted">(${esc(ago(a.startedAt))})</span></dd><dt>Node.js</dt><dd class="mono">${esc(a.node)}</dd>${a.repo ? `<dt>Releases from</dt><dd class="mono">${esc(a.repo)}</dd>` : ''}${a.dataDir ? `<dt>Data folder</dt><dd class="mono">${esc(a.dataDir)}</dd>` : ''}<dt>Licence</dt><dd>${esc(a.licence)}</dd></dl>
       ${can('settings.manage') ? '<div class="row" style="margin-top:14px"><a class="btn" href="#/settings/updates">Update &amp; recovery</a><a class="btn ghost" href="#/settings/system">Health &amp; backups</a></div>' : ''}
     </div></section>
