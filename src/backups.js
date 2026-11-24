@@ -50,6 +50,11 @@ export class Backups {
     const dest = path.join(this.root, name);
     fs.mkdirSync(dest, { recursive: true, mode: 0o700 });
     const files = {};
+    // Files that never change once written (sealed audit days, demo videos, final results) are linked, not copied,
+    // and their checksum is carried over from the last backup when size and time match: videos are not read again.
+    const before = this.list()[0];
+    const known = before ? this.manifest(before.name)?.files ?? {} : {};
+    const fixed = (r, name) => name.endsWith('.arc') || /^(demos|results)\//.test(r);
     const copy = (from, to, rel = '') => {
       for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
         if ((!rel && SKIP_TOP.has(entry.name)) || SKIP_FILE.test(entry.name)) continue;
@@ -60,15 +65,16 @@ export class Backups {
           fs.mkdirSync(dst, { recursive: true, mode: 0o700 });
           copy(src, dst, r);
         } else if (entry.isFile()) {
-          // A sealed day of the audit trail never changes: the backup links to it (no second copy on disk).
-          if (entry.name.endsWith('.arc')) {
+          const st = fs.statSync(src);
+          if (fixed(r, entry.name)) {
             try {
               fs.linkSync(src, dst);
             } catch {
               fs.copyFileSync(src, dst);
             }
           } else fs.copyFileSync(src, dst);
-          files[r] = { size: fs.statSync(dst).size, sha256: sha256(dst) };
+          const k = known[r];
+          files[r] = { size: st.size, mtime: Math.round(st.mtimeMs), sha256: fixed(r, entry.name) && k && k.size === st.size && k.mtime === Math.round(st.mtimeMs) ? k.sha256 : sha256(dst) };
         }
       }
     };
@@ -157,11 +163,23 @@ export class Backups {
    * Put a backup's records back. A backup of the data as it is now is taken first, so a restore can be undone.
    * The records in memory are stale afterwards: the caller restarts the server.
    */
-  restore(name, { version = '' } = {}) {
+  restore(name, { version = '', staged = false } = {}) {
     const dir = this.#path(name);
     const check = this.verify(name);
     if (!check.ok) throw Object.assign(new Error(`This backup cannot be restored: ${check.problems.join('; ')}`), { status: 409 });
     const undo = this.take('before-restore', { version });
+    // Staged: put in place at the next start, before anything is read (the server restarts straight after).
+    if (staged) {
+      fs.writeFileSync(path.join(this.#dir, 'restore-pending.json'), JSON.stringify({ name, undo, at: new Date().toISOString() }), { mode: 0o600 });
+      return { restored: name, undo, staged: true };
+    }
+    this.apply(name);
+    return { restored: name, undo };
+  }
+
+  /** Copy a backup's records over the data folder (at start, for a staged restore). */
+  apply(name) {
+    const dir = this.#path(name);
     const m = this.manifest(name);
     for (const rel of Object.keys(m.files)) {
       const dst = path.join(this.#dir, rel);
@@ -170,7 +188,19 @@ export class Backups {
       fs.copyFileSync(path.join(dir, rel), tmp);
       fs.renameSync(tmp, dst);
     }
-    return { restored: name, undo };
+  }
+
+  /** A restore chosen before the restart: applied now, before the records are read. Returns its name or null. */
+  applyPending() {
+    const file = path.join(this.#dir, 'restore-pending.json');
+    if (!fs.existsSync(file)) return null;
+    try {
+      const p = JSON.parse(fs.readFileSync(file, 'utf8'));
+      this.apply(p.name);
+      return p.name;
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
   }
 
   /** Every `hours`, an automatic backup (and one at start when the last is older than that). */

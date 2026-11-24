@@ -68,6 +68,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const releaseLock = lockDataDir(dataDir);
   for (const note of preflight(dataDir)) console.warn(`[start] ${note}`);
   const db = new Db(dataDir);
+  // A restore chosen before the restart is put in place now, before any record is read.
+  {
+    const restored = new Backups({ dataDir, vault: db.vault }).applyPending();
+    if (restored) console.log(`[start] Restored the backup ${restored}.`);
+  }
   const users = new Users(db);
   const catalog = new Catalog(db);
   const library = new Library(db);
@@ -182,6 +187,14 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (why) console.log(`[meridian] Stopping (${why}): finishing ${inFlight} request(s) first.`);
     const end = Date.now() + 6000;
     const finish = () => {
+      // A last backup on the way out (not for a restore, which has its own 'before-restore' one).
+      if (why !== 'restore') {
+        try {
+          backupStore.take('stop', { version: VERSION });
+        } catch (error) {
+          console.error(`[meridian] The backup on stopping failed: ${error.message}`);
+        }
+      }
       for (const f of [() => users.stop(), () => trail.stop(), () => monitor.stop()]) {
         try {
           f();
@@ -890,7 +903,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       need(user, 'settings.manage');
       if (!updater.launched) throw fail(409, 'Restoring needs the launcher (npm start or the container image), which restarts the server with the restored records.');
       const b = await readBody(req);
-      const r = backupStore.restore(text(b.name, 200), { version: VERSION });
+      const r = backupStore.restore(text(b.name, 200), { version: VERSION, staged: true });
       audit.record(user, 'system', `Restored the backup ${r.restored} (the data before it is in ${r.undo})`);
       gracefulExit(RESTART_CODE, 'restore');
       return send(res, 202, { ...r, restarting: true });

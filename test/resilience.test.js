@@ -263,3 +263,26 @@ test('one server per data folder, crash leftovers cleared, Node.js checked, Admi
   await alerts.tick();
   assert.match(sent[2].body, /Fixed by itself — Memory high/);
 });
+
+test('backups link what never changes, and a restore is put in place at the next start', async () => {
+  const dir = tmp();
+  const db = new Db(dir);
+  db.write('opportunities', [{ id: 'o1', customer: 'Before' }]);
+  fs.mkdirSync(path.join(dir, 'demos'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'demos', 'video.bin'), Buffer.alloc(200_000, 7));
+  const b = new Backups({ dataDir: dir, vault: db.vault });
+  const first = b.take('manual');
+  const second = b.take('manual');
+  const v1 = fs.statSync(path.join(dir, 'backups', first, 'demos', 'video.bin'));
+  const v2 = fs.statSync(path.join(dir, 'backups', second, 'demos', 'video.bin'));
+  assert.equal(v1.ino, v2.ino, 'the video is linked, not copied again');
+  assert.equal(b.manifest(second).files['demos/video.bin'].sha256, b.manifest(first).files['demos/video.bin'].sha256);
+  // A staged restore changes nothing now; the next start puts it in place before anything is read.
+  db.write('opportunities', [{ id: 'o1', customer: 'After' }]);
+  const r = b.restore(first, { staged: true });
+  assert.equal(r.staged, true);
+  assert.equal(new Db(dir).read('opportunities', [])[0].customer, 'After');
+  assert.equal(new Backups({ dataDir: dir, vault: db.vault }).applyPending(), first);
+  assert.equal(new Db(dir).read('opportunities', [])[0].customer, 'Before');
+  assert.equal(new Backups({ dataDir: dir, vault: db.vault }).applyPending(), null, 'applied once');
+});
