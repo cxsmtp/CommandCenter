@@ -2,6 +2,7 @@
 import { $, esc, api, can, state, attempt, openDialog, closeDialog, formData, toast, ask } from '../core.js';
 import { getCatalog } from './new-opportunity.js';
 import { getTemplates, criteriaWizard } from './criteria-wizard.js';
+import { deckPanel, wireDeckPanel } from './deck-templates.js';
 
 const RULES = [
   ['engines', 'Engines in completed scans', 'sast, sca, kics, containers, apisec, microengines, ai'],
@@ -17,9 +18,9 @@ export async function renderCatalog(main, { crumbs }) {
   const { catalog, categories } = await getCatalog(true);
   const editable = can('catalog.manage');
   const tp = await getTemplates(true);
-  const [lib, bankInfo] = await Promise.all([api('/library'), api('/bank')]);
+  const [lib, bankInfo, decks] = await Promise.all([api('/library'), api('/bank'), deckPanel()]);
   const all = can('templates.manage') && state.session.user.role === 'admin' ? await api('/templates?all=1') : tp;
-  main.innerHTML = `${libraryPanel(lib, bankInfo)}${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Meridian recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
+  main.innerHTML = `${libraryPanel(lib, bankInfo)}${decks}${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Meridian recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
   <div class="findbar"><input type="search" id="capQ" placeholder="Find a capability" aria-label="Find a capability"></div>
   ${categories
     .map(([key, label]) => {
@@ -43,6 +44,7 @@ export async function renderCatalog(main, { crumbs }) {
   });
   wireTemplates(main, all);
   wireLibrary(main);
+  wireDeckPanel(main);
   main.querySelector('[data-act="reset"]')?.addEventListener('click', async () => {
     if (!(await ask('Put back the built-in catalogue? Your own capabilities and changes are lost (criteria already on opportunities stay).', { ok: 'Restore defaults', danger: true }))) return;
     if (await attempt(() => api('/catalog/reset', { method: 'POST' }), 'Restored')) document.dispatchEvent(new CustomEvent('cc:rerender'));

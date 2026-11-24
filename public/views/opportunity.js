@@ -536,7 +536,7 @@ function report(d) {
   return `${wipPanel(d)}<section class="panel"><div class="body stack">
     <p style="margin:0"><b>The results page</b> opens with the Checkmarx One platform slide, showing only this POV's engines with their status. Select any engine for its record: progress, the scans and evidence that prove it, notes, links and every timestamp up to the POV's completion. The other slides follow. Printing it gives a PDF of every slide, then one page per engine.</p>
     <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="dl-results">Download the page (HTML)</button><button class="btn" data-act="deck">Download the presentation (.pptx)</button></div>
-    <div class="row center" style="gap:8px"><span class="small muted">Presentation style</span><div class="seg" role="group" aria-label="Presentation style">${[['', `Organisation default (${state.session.settings?.reportStyle === 'team' ? 'Team template' : 'Classic'})`], ['classic', 'Classic'], ['team', 'Team template']].map(([k, l]) => `<button type="button" data-style="${k}" aria-pressed="${(o.reportStyle ?? '') === k}"${current.canEdit ? '' : ' disabled'}>${l}</button>`).join('')}</div></div>
+    <label class="field" style="max-width:520px">Customer presentation <span class="small muted">the design and slides of the WIP deck and the final report</span><select id="deckPick"${current.canEdit ? '' : ' disabled'}><option value="">Team’s choice</option></select></label>
     <div class="item"><div class="top"><b>Final results</b>${d.finals.length ? `<span class="small muted">kept ${esc(when(d.finals[0].at))}${d.finals.length > 1 ? ` · ${d.finals.length} copies` : ''}</span>` : ''}</div>
       ${d.finals.length ? `<p class="small muted" style="margin:6px 0">The results page exactly as it stood when the POV was marked successful: later activity in the tenant does not change it.</p><div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/results?final=1" target="_blank" rel="noopener">Open the final copy</a><button class="btn" data-act="dl-final">Download it</button>${current.canEdit ? '<button class="btn ghost" data-act="freeze">Keep a new final copy now</button>' : ''}</div>` : `<p class="small muted" style="margin:6px 0">Kept by itself when the POV is marked successful.${current.canEdit ? ' Or keep one now.' : ''}</p>${current.canEdit ? '<div class="row"><button class="btn" data-act="freeze">Keep the results as final now</button></div>' : ''}`}
     </div>
@@ -857,9 +857,18 @@ const WIRES = {
       if (await attempt(() => api(`/opportunities/${oid()}/results/freeze`, { method: 'POST' }), 'Final results kept')) rerender();
     });
     on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
-    on(main, '[data-style]', async (b) => {
-      if (await attempt(() => api(`/opportunities/${oid()}`, { method: 'PATCH', body: { reportStyle: b.dataset.style } }), 'Presentation style saved')) rerender();
-    });
+    // The presentation template: the team's choice, or one picked for this POV.
+    api('/deck-templates')
+      .then((dt) => {
+        const sel = $('#deckPick');
+        if (!sel) return;
+        const o = current.opportunity;
+        sel.innerHTML = `<option value="">Team’s choice</option>${dt.templates.map((t) => `<option value="${esc(t.id)}" ${o.deckTemplateId === t.id || (!o.deckTemplateId && o.reportStyle === 'classic' && t.id === 'builtin-classic') ? 'selected' : ''}>${esc(t.name)}${t.design ? ' (team design)' : ''}</option>`).join('')}`;
+        sel.addEventListener('change', async () => {
+          if (await attempt(() => api(`/opportunities/${oid()}`, { method: 'PATCH', body: { deckTemplateId: sel.value, reportStyle: '' } }), 'Presentation saved')) rerender();
+        });
+      })
+      .catch(() => {});
     on(main, '[data-act="wip"]', () => attempt(() => download(`/opportunities/${oid()}/wip`), 'WIP deck downloaded'));
     on(main, '[data-act="wip-plan"]', () => editPlan());
     on(main, '[data-act="sp-publish"]', () => {

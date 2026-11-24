@@ -12,6 +12,7 @@ import { SESSION_TYPES } from './opportunities.js';
 import { platformSlide } from './deck.js';
 import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS } from './toolchain.js';
 import { fillCover, fillPlan, fillEnvironment, fillTestPlan } from './template-fill.js';
+import { DEFAULT_LAYOUT } from './deck-templates.js';
 
 const BG = '170B2B';
 const PANEL = '1F1235';
@@ -45,7 +46,7 @@ function contentOf(opp, story, { owner, catalog }) {
   return { caps, engines, people, am, se: owner };
 }
 
-export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null }) {
+export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null, layout = null, texts = {} }) {
   // The same deck, two moments: 'wip' while the POV runs, 'results' for the final readout in the team's template.
   const results = mode === 'results';
   const pptx = new PptxGenJS();
@@ -152,7 +153,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     s.addText(`Dear ${C} Team,`, { x: L, y: 1.55, w: 7.4, h: 0.4, fontFace: FONT, fontSize: 15, bold: true, color: WHITE, margin: 0 });
     s.addText(letter.map((p) => ({ text: p.trim(), options: { breakLine: true, paraSpaceAfter: 10 } })), { x: L, y: 2.0, w: 7.4, h: 3.95, fontFace: FONT, fontSize: 12.5, color: 'E6E0F2', valign: 'top', margin: 0, lineSpacingMultiple: 1.12, fit: 'shrink' });
     s.addShape(pptx.ShapeType.rect, { x: L, y: 6.15, w: 0.06, h: 0.55, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
-    s.addText(opp.plan?.quote || '“From code to confidence: building security from the ground up with Checkmarx.”', { x: L + 0.2, y: 6.1, w: 7.2, h: 0.65, fontFace: FONT, fontSize: 13, italic: true, bold: true, color: WHITE, margin: 0, valign: 'middle' });
+    s.addText(opp.plan?.quote || texts.quote || '“From code to confidence: building security from the ground up with Checkmarx.”', { x: L + 0.2, y: 6.1, w: 7.2, h: 0.65, fontFace: FONT, fontSize: 13, italic: true, bold: true, color: WHITE, margin: 0, valign: 'middle' });
     // At a glance
     const gx = 8.4;
     const gw = L + W - gx;
@@ -272,11 +273,11 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     kinds.push('content');
   };
 
-  const sDevSecOps = () => {
+  const sDevSecOps = (viaTemplate = true) => {
   // 4 — Tailored to your DevSecOps: the lifecycle as a pipeline, the touch points with the customer's tools lit
   {
     // The template's own toolchain slide is used instead when it has one, with the customer's tools boxed.
-    const s = add({ kind: 'content', reuse: 'devsecops', marks: TOOLCHAIN.flatMap((cat) => opp.toolchain?.[cat.key]?.tools ?? []) });
+    const s = add(viaTemplate ? { kind: 'content', reuse: 'devsecops', marks: TOOLCHAIN.flatMap((cat) => opp.toolchain?.[cat.key]?.tools ?? []) } : 'content');
     head(s, 'Tailored to Your DevSecOps', 'Integrate with your SDLC and', 'secure your applications');
     const n = DEVSECOPS.length;
     const sw = (W + 0.25 * (n - 1)) / n;
@@ -363,7 +364,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   }
   };
 
-  const sPlan = () => {
+  const sPlan = (viaTemplate = true) => {
   // 6 — Plan and timeline
   {
     // The template's own plan slide, when it has one: the real milestones, the goals, the champion.
@@ -374,15 +375,15 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     const wrapup = ms.find((m) => m.type === 'wrapup') ?? ms.at(-1);
     const champion = (opp.stakeholders ?? []).find((p) => p.side === 'customer' && /champion|admin|sponsor/i.test(p.povRole ?? ''))?.name ?? '';
     const pl = opp.plan ?? {};
-    const fill = { customer: C, scope: (pl.scope?.length ? pl.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title)).slice(0, 3), support: (pl.support?.length ? pl.support : PLAN_DEFAULTS.support).slice(0, 3), success: (pl.success?.length ? pl.success : PLAN_DEFAULTS.success).slice(0, 3), launch, checkin, wrapup, champion };
-    const s = add(use.plan ? { kind: 'content', reuse: 'plan', fill } : 'content');
+    const fill = { customer: C, scope: (pl.scope?.length ? pl.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title)).slice(0, 3), support: (pl.support?.length ? pl.support : (texts.support?.length ? texts.support : PLAN_DEFAULTS.support)).slice(0, 3), success: (pl.success?.length ? pl.success : (texts.success?.length ? texts.success : PLAN_DEFAULTS.success)).slice(0, 3), launch, checkin, wrapup, champion };
+    const s = add(viaTemplate && use.plan ? { kind: 'content', reuse: 'plan', fill } : 'content');
     head(s, 'POV Plan & Timeline', 'Focus on', `${C}’s goals`);
     const plan = opp.plan ?? {};
     const scope = plan.scope?.length ? plan.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title).slice(0, 5);
     const cards = [
       ['Scope', `Focus on ${C} goals`, scope.length ? scope : ['Agreed with the team at the start of the POV']],
-      ['Support', 'Ensuring a smooth POV', plan.support?.length ? plan.support : PLAN_DEFAULTS.support],
-      ['Success', 'Real-world outcomes', plan.success?.length ? plan.success : PLAN_DEFAULTS.success],
+      ['Support', 'Ensuring a smooth POV', plan.support?.length ? plan.support : (texts.support?.length ? texts.support : PLAN_DEFAULTS.support)],
+      ['Success', 'Real-world outcomes', plan.success?.length ? plan.success : (texts.success?.length ? texts.success : PLAN_DEFAULTS.success)],
     ];
     const kw = (W - 0.3) / 3;
     cards.forEach(([t, sub, items], i) => {
@@ -460,7 +461,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   }
   };
 
-  const sTests = () => {
+  const sTests = (viaTemplate = true) => {
+    const tpl = viaTemplate && use.test;
   // 8… — The test plan, one business goal at a time
   {
     const crit = Object.fromEntries((story?.criteria ?? []).map((x) => [x.id, x]));
@@ -475,7 +477,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       let h = 0;
       for (const id of ids) {
         const rh = rowH(crit[id]);
-        if (cur.length && (use.test ? cur.length >= 6 : h + rh > 4.3)) {
+        if (cur.length && (tpl ? cur.length >= 6 : h + rh > 4.3)) {
           pages.push(cur);
           cur = [];
           h = 0;
@@ -492,7 +494,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
           const [label, color] = STATE[x.state] ?? ['Planned', MUTED];
           return { title: x.title, result: label, color, test: x.test, benefit: x.benefit || x.statement };
         });
-        const s = add(use.test ? { kind: 'content', reuse: 'test', fill: { number: gi + 1, title: `${g.title}${pages.length > 1 ? ` (${pi + 1} of ${pages.length})` : ''}`, statement: g.statement, rows: fillRows } } : 'content');
+        const s = add(tpl ? { kind: 'content', reuse: 'test', fill: { number: gi + 1, title: `${g.title}${pages.length > 1 ? ` (${pi + 1} of ${pages.length})` : ''}`, statement: g.statement, rows: fillRows } } : 'content');
         s.addText('Test Plan Overview', { x: L, y: 0.3, w: 9, h: 0.55, fontFace: FONT, fontSize: 26, bold: true, color: WHITE, margin: 0 });
         s.addText([{ text: 'Business Goals', options: { color: ORANGE } }, { text: ' and ', options: { color: WHITE } }, { text: 'Success Criteria', options: { color: ORANGE } }], { x: L, y: 0.85, w: 9, h: 0.3, fontFace: FONT, fontSize: 13, margin: 0 });
         if (pages.length > 1) s.addText(`${pi + 1} of ${pages.length}`, { x: L + W - 2, y: 0.4, w: 2, h: 0.3, fontFace: FONT, fontSize: 10, color: MUTED, align: 'right', margin: 0 });
@@ -717,11 +719,37 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
 
   // ——— The order: the WIP deck is the working document; the results deck is a short story, the detail behind it ———
   const heldNotes = (opp.sessions ?? []).some((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext));
-  // The main deck is the team template's own story, in its order: cover, toolchain, platform, plan, environment, the
-  // test plan per business goal, closing. Everything Meridian adds goes to the appendix.
-  const order = results
-    ? [sCover, sAge, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sChallenges, sGlance, sExpansion, sNext, sApma, sTenant, ...(use.env ? [() => sEnv(false)] : []), sEvidence, sNotes]
-    : [sCover, sAge, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sOverview, sApma, ...(use.env ? [() => sEnv(false)] : []), ...(heldNotes ? [sNotes] : [])];
+  // The order comes from the presentation template: its main deck, then its appendix. A Meridian variant that would
+  // repeat its template version exactly (no team design for it) is left out.
+  const plan = layout?.[results ? 'results' : 'wip'] ?? DEFAULT_LAYOUT[results ? 'results' : 'wip'];
+  const usedKeys = new Set([...plan.main, ...plan.appendix]);
+  const same = { devsecopsFull: ['devsecops', !tinfo?.devsecops], planFull: ['plan', !use.plan], envFull: ['env', !use.env], testsFull: ['tests', !use.test] };
+  const MAKE = {
+    cover: sCover,
+    age: sAge,
+    devsecops: () => sDevSecOps(true),
+    devsecopsFull: () => sDevSecOps(false),
+    components: sPlatform,
+    plan: () => sPlan(true),
+    planFull: () => sPlan(false),
+    env: () => sEnv(true),
+    envFull: () => sEnv(false),
+    tests: () => sTests(true),
+    testsFull: () => sTests(false),
+    closing: sClosing,
+    overview: sOverview,
+    challenges: sChallenges,
+    glance: sGlance,
+    expansion: sExpansion,
+    next: sNext,
+    apma: sApma,
+    tenant: sTenant,
+    evidence: sEvidence,
+    notes: () => heldNotes && sNotes(),
+  };
+  const keep = (k) => MAKE[k] && !(same[k] && same[k][1] && usedKeys.has(same[k][0]));
+  const appendix = plan.appendix.filter(keep);
+  const order = [...plan.main.filter(keep).map((k) => MAKE[k]), ...(appendix.length ? [sAppendix, ...appendix.map((k) => MAKE[k])] : [])];
   for (const make of order) make();
 
   const out = await pptx.write({ outputType: 'nodebuffer' });

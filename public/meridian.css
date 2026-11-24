@@ -315,3 +315,12 @@ hr.sep { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 4px 
 dialog.reauth { max-width: 420px; }
 .draft-note { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .linkish { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* Presentation template editor */
+.slide-list { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+.slide-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; font-size: 13.5px; }
+.slide-row.main { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.slide-row.appendix { background: color-mix(in srgb, var(--line) 50%, transparent); }
+.slide-row.off { opacity: .55; }
+.seg.sm button { padding: 3px 8px; font-size: 12px; }
+.slide-row > .grow { flex: 1; min-width: 0; }

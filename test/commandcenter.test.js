@@ -766,7 +766,7 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
   const pres = await z.file('ppt/presentation.xml').async('string');
   const count = [...pres.matchAll(/<p:sldId /g)].length;
   // One slide for each, the closing one from the template; a template environment slide also brings the full one to the appendix.
-  assert.ok(count >= (await slideTexts(plain)).length && count <= (await slideTexts(plain)).length + 1, 'one slide for each');
+  assert.ok(count >= (await slideTexts(plain)).length, 'every slide, and the template’s own versions with Meridian’s in the appendix');
   const rels = await z.file('ppt/_rels/presentation.xml.rels').async('string');
   for (const m of rels.matchAll(/Target="(slides\/[^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${m[1]} is in the file`);
   for (const n of Object.keys(z.files).filter((x) => /^ppt\/slides\/_rels\/.+\.rels$/.test(x))) for (const m of (await z.file(n).async('string')).matchAll(/Target="\.\.\/([^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${n} points at ${m[1]}, which exists`);
@@ -775,8 +775,8 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
   assert.equal(team.status, 200);
   const teamText = (await slideTexts(Buffer.from(await team.arrayBuffer()))).join(' | ');
   assert.ok(teamText.includes('Proof of Value Results') && teamText.includes('Next Steps'), 'the team-style results deck');
-  const classic = await fetch(`${base}/api/opportunities/${opp.id}/deck`, { headers: { Cookie: jar.get('se1') } });
-  assert.ok(!(await slideTexts(Buffer.from(await classic.arrayBuffer()))).join(' ').includes('Proof of Value Results'), 'Classic by default');
+  const classic = await fetch(`${base}/api/opportunities/${opp.id}/deck?style=classic`, { headers: { Cookie: jar.get('se1') } });
+  assert.ok(!(await slideTexts(Buffer.from(await classic.arrayBuffer()))).join(' ').includes('Proof of Value Results'), 'Classic when asked');
   assert.equal((await call('admin', '/api/wip-template', { method: 'DELETE' })).status, 200);
   await call('se1', `/api/opportunities/${opp.id}`, { method: 'DELETE' });
 });
@@ -861,4 +861,44 @@ test('SharePoint: an Admin connects the Microsoft app, an SE publishes the POV�
     delete process.env.CC_MS_GRAPH_URL;
     ms.close();
   }
+});
+
+test('presentation templates: managers compose the slides, share one with customers for their team, POVs follow it', async () => {
+  // An associate cannot make one; a team lead can.
+  assert.equal((await call('se1', '/api/deck-templates', { method: 'POST', body: { name: 'Mine' } })).status, 403);
+  const made = await call('tl', '/api/deck-templates', {
+    method: 'POST',
+    body: { name: 'Crisp results', layout: { results: { main: ['cover', 'tests', 'closing'], appendix: ['evidence', 'nope'] }, wip: { main: ['cover', 'plan'], appendix: [] } }, texts: { support: 'Weekly office hours\nA named AppSec expert', quote: 'Secure what comes next.' } },
+  });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  const id = made.body.template.id;
+  assert.deepEqual(made.body.template.layout.results.appendix, ['evidence'], 'unknown slides are dropped');
+  assert.deepEqual(made.body.template.texts.support, ['Weekly office hours', 'A named AppSec expert']);
+  // Shared with customers for the team lead's team: their SE's POV follows it.
+  assert.equal((await call('tl', '/api/deck-templates/default', { method: 'PUT', body: { templateId: id } })).status, 200);
+  assert.equal((await call('tl', '/api/deck-templates/default', { method: 'PUT', body: { templateId: id, org: true } })).status, 403, 'only Admins set everyone’s');
+  const listed = (await call('se1', '/api/deck-templates')).body.templates;
+  assert.ok(listed.some((t) => t.id === id), 'their SE sees it');
+  assert.ok(listed.some((t) => t.id === 'builtin-classic') && listed.some((t) => t.id === 'builtin-meridian'));
+  const o = await call('se1', '/api/opportunities', { method: 'POST', body: { customer: 'Template Co', criteria: [{ capabilityId: 'sast' }] } });
+  const JSZip = (await import('jszip')).default;
+  const slides = async (p) => {
+    const r = await fetch(`${base}/api/opportunities/${o.body.opportunity.id}/${p}`, { headers: { Cookie: jar.get('se1') } });
+    assert.equal(r.status, 200);
+    const z = await JSZip.loadAsync(Buffer.from(await r.arrayBuffer()));
+    const names = Object.keys(z.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => Number(/(\d+)\.xml/.exec(a)[1]) - Number(/(\d+)\.xml/.exec(b)[1]));
+    return Promise.all(names.map(async (n) => [...(await z.file(n).async('string')).matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(' ')));
+  };
+  const results = await slides('deck');
+  assert.equal(results.length, 5, 'cover, test plan, closing, the appendix divider, evidence');
+  assert.match(results[1], /Test Plan Overview/);
+  assert.match(results.at(-1), /Evidence/);
+  const wip = await slides('wip');
+  assert.ok(wip.some((t) => /Weekly office hours/.test(t)), 'the template’s own words');
+  // A POV can choose another; Classic stays the original deck.
+  await call('se1', `/api/opportunities/${o.body.opportunity.id}`, { method: 'PATCH', body: { deckTemplateId: 'builtin-classic' } });
+  assert.ok(!(await slides('deck')).join(' ').includes('Test Plan Overview'));
+  assert.equal((await call('se1', `/api/deck-templates/${id}`, { method: 'DELETE' })).status, 403, 'not theirs to remove');
+  assert.equal((await call('tl', `/api/deck-templates/${id}`, { method: 'DELETE' })).status, 200);
+  await call('se1', `/api/opportunities/${o.body.opportunity.id}`, { method: 'DELETE' });
 });

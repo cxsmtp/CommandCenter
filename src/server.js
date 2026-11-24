@@ -29,6 +29,7 @@ import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector
 import { finalDeck } from './deck.js';
 import { wipDeck, checkTemplate } from './wip.js';
 import { SharePoint } from './sharepoint.js';
+import { DeckTemplates, SLIDES, DEFAULT_LAYOUT } from './deck-templates.js';
 import { lockDataDir, preflight, AdminAlerts } from './stability.js';
 import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
@@ -1045,6 +1046,61 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const customer = text(decodeURIComponent(req.headers['x-customer'] ?? ''), 160);
       return send(res, 200, { apma: { ...cleanApma(a), found: a.found }, otherCustomer: forAnotherCustomer(a, customer) });
     }
+    // ——— Presentation templates ———
+    if (route === 'GET /deck-templates') {
+      const mine = db.read('deckDefaults', { org: null, teams: {} });
+      return send(res, 200, { templates: deckTemplates.list(user), slides: SLIDES, defaultLayout: DEFAULT_LAYOUT, canManage: can(user, 'templates.manage'), canSetOrg: can(user, 'settings.manage'), orgDefault: mine.org, myTeamDefault: mine.teams?.[user.id] ?? null });
+    }
+    if (route === 'POST /deck-templates') {
+      need(user, 'templates.manage');
+      const t = deckTemplates.create(user, await readBody(req));
+      audit.record(user, 'templates', `Made the presentation template “${t.name}”`);
+      return send(res, 201, { template: t });
+    }
+    if (parts[0] === 'deck-templates' && parts[1] && !['default'].includes(parts[1])) {
+      const id = parts[1];
+      if (!parts[2] && m === 'PUT') {
+        need(user, 'templates.manage');
+        const t = deckTemplates.update(user, id, await readBody(req));
+        audit.record(user, 'templates', `Changed the presentation template “${t.name}”`);
+        return send(res, 200, { template: t });
+      }
+      if (!parts[2] && m === 'DELETE') {
+        need(user, 'templates.manage');
+        const t = deckTemplates.remove(user, id);
+        audit.record(user, 'templates', `Removed the presentation template “${t.name}”`);
+        return send(res, 200, { ok: true });
+      }
+      if (parts[2] === 'design' && m === 'POST') {
+        need(user, 'templates.manage');
+        const buf = await readRaw(req, 60 * 1048576);
+        const found = await checkTemplate(buf);
+        if (!found) throw fail(400, 'That is not a PowerPoint file (.pptx).');
+        const tpl = deckTemplates.get(id);
+        if (!deckTemplates.canEdit(user, tpl)) throw fail(403, 'Only its maker, a manager above them or an Admin may change this template.');
+        db.vault.writeFile(deckTemplates.fileOf(id), buf, { keepPrevious: false });
+        const t = deckTemplates.setDesign(user, id, { ...found, name: text(decodeURIComponent(req.headers['x-file-name'] ?? 'design.pptx'), 200), at: new Date().toISOString(), by: user.name });
+        audit.record(user, 'templates', `Uploaded the design of the presentation template “${t.name}”`);
+        return send(res, 200, { template: t });
+      }
+      if (parts[2] === 'design' && m === 'DELETE') {
+        need(user, 'templates.manage');
+        const tpl = deckTemplates.get(id);
+        if (!deckTemplates.canEdit(user, tpl)) throw fail(403, 'Only its maker, a manager above them or an Admin may change this template.');
+        fs.rmSync(deckTemplates.fileOf(id), { force: true });
+        return send(res, 200, { template: deckTemplates.setDesign(user, id, null) });
+      }
+    }
+    if (route === 'PUT /deck-templates/default') {
+      need(user, 'templates.manage');
+      const b = await readBody(req);
+      if (b.org) need(user, 'settings.manage');
+      deckTemplates.setDefault(user, b.templateId ? text(b.templateId, 80) : null, { org: Boolean(b.org) });
+      const t = b.templateId ? deckTemplates.get(b.templateId) : null;
+      audit.record(user, 'templates', `${t ? `Shared “${t.name}” with customers` : 'Cleared the customer presentation'} for ${b.org ? 'everyone' : 'their team'}`);
+      return send(res, 200, { ok: true });
+    }
+
     // ——— The WIP deck template (.pptx): its look, layouts and closing slide are used for every POV's WIP deck ———
     if (route === 'GET /wip-template') {
       if (!fs.existsSync(WIP_TEMPLATE)) return send(res, 200, { template: null });
@@ -1059,6 +1115,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       db.vault.writeFile(WIP_TEMPLATE, buf, { keepPrevious: false });
       const info = { ...found, name: text(decodeURIComponent(req.headers['x-file-name'] ?? 'template.pptx'), 200), at: new Date().toISOString(), by: user.name };
       db.write('wipTemplate', info);
+      // The organisation's presentation template takes this design (made the first time).
+      const orgId = db.read('deckDefaults', { org: null }).org;
+      const target = orgId && deckTemplates.get(orgId) && !deckTemplates.get(orgId).builtIn ? deckTemplates.get(orgId) : deckTemplates.create(user, { name: 'Team template', description: 'The team’s PowerPoint design.', scope: 'everyone' });
+      db.vault.writeFile(deckTemplates.fileOf(target.id), buf, { keepPrevious: false });
+      deckTemplates.setDesign({ ...user, role: 'admin' }, target.id, info);
+      if (!orgId) deckTemplates.setDefault(user, target.id, { org: true });
       audit.record(user, 'settings', `Uploaded the POV WIP template “${info.name}”`);
       return send(res, 200, { template: info });
     }
@@ -1404,8 +1466,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       // The POV work-in-progress deck, in the team's template when there is one.
       if (sub === 'wip' && m === 'GET') {
         const opp = viewOpp(user, id);
-        const tpl = fs.existsSync(WIP_TEMPLATE) ? db.vault.readFile(WIP_TEMPLATE) : null;
-        const buf = await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: tpl });
+        const { tpl, file: design } = deckFor(opp, url.searchParams.get('template'));
+        const buf = await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: design, layout: tpl?.layout, texts: tpl?.texts ?? {} });
         return file(res, `${opp.customer} - POV WIP.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf);
       }
       // The APMA assessment: the PDF read into the POV (optional; it fills the APMA slide), kept encrypted.
@@ -1634,11 +1696,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   /** The results presentation: Classic (Meridian's own design), or Team (the WIP design, in the team's template). */
   function deckOf(opp, style = null) {
-    const chosen = ['classic', 'team'].includes(style) ? style : opp.reportStyle || settings().reportStyle || 'classic';
-    if (chosen === 'team') {
-      const tpl = fs.existsSync(WIP_TEMPLATE) ? db.vault.readFile(WIP_TEMPLATE) : null;
-      return wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: tpl, mode: 'results', live: opp.tenant ? monitor.live(opp.id) : null });
-    }
+    // The POV's presentation template (or one asked for: a template id, or the older 'classic' / 'team').
+    const own = db.read('deckTemplates', []);
+    const orgId = db.read('deckDefaults', { org: null }).org;
+    const pick = style === 'classic' ? 'builtin-classic' : style === 'team' ? (own.find((t) => t.id === orgId) ?? own[0])?.id ?? 'builtin-meridian' : style;
+    const { tpl, file: design } = deckFor(opp, pick);
+    if (!tpl?.classic) return wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: design, mode: 'results', live: opp.tenant ? monitor.live(opp.id) : null, layout: tpl?.layout, texts: tpl?.texts ?? {} });
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
     return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, opp.tenant ? monitor.provingSnapshot(opp.id) : null, opp.tenant ? monitor.live(opp.id).summary : null), story: resultsData(opp) });
   }
@@ -1869,6 +1932,25 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const WIP_TEMPLATE = path.join(dataDir, 'templates', 'wip-template.pptx');
   const recentErrors = [];
   const sharepoint = new SharePoint();
+  // Presentation templates (design, slides, words), set by managers; the template uploaded before them becomes the first.
+  const deckTemplates = new DeckTemplates(db, { users, dataDir });
+  try {
+    const legacy = fs.existsSync(WIP_TEMPLATE) ? path.join(dataDir, 'templates', 'legacy-plain.pptx') : null;
+    if (legacy && !db.read('deckTemplates', []).length) {
+      fs.writeFileSync(legacy, db.vault.readFile(WIP_TEMPLATE));
+      const t = deckTemplates.migrate(legacy);
+      fs.rmSync(legacy, { force: true });
+      if (t) db.vault.writeFile(deckTemplates.fileOf(t.id), fs.readFileSync(WIP_TEMPLATE) && db.vault.readFile(WIP_TEMPLATE), { keepPrevious: false });
+    }
+  } catch (error) {
+    console.error(`[start] The earlier WIP template could not become a presentation template: ${error.message}`);
+  }
+  /** The presentation template a POV's decks use, with its design's file (or none for Meridian's own). */
+  const deckFor = (opp, chosen = null) => {
+    const tpl = (chosen && deckTemplates.get(chosen)) || deckTemplates.resolve(opp, { legacyStyle: settings().reportStyle });
+    const file = tpl?.design && fs.existsSync(deckTemplates.fileOf(tpl.id)) ? db.vault.readFile(deckTemplates.fileOf(tpl.id)) : null;
+    return { tpl, file };
+  };
   function certValidTo() {
     try {
       return cert && !cert.selfSigned ? new X509Certificate(cert.options.cert ?? cert.options.pfx).validTo : null;

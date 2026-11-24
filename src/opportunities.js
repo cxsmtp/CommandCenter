@@ -437,6 +437,7 @@ function applyFields(opp, b) {
     changed.push('value rates');
   }
   if ('reportStyle' in b && ['', 'classic', 'team'].includes(b.reportStyle)) set('reportStyle', b.reportStyle);
+  if ('deckTemplateId' in b) set('deckTemplateId', text(b.deckTemplateId, 80));
   if ('povResult' in b && ['', 'successful', 'unsuccessful'].includes(b.povResult)) set('povResult', b.povResult);
   if (Array.isArray(b.goals)) {
     opp.goals = b.goals
