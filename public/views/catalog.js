@@ -10,7 +10,7 @@ const RULES = [
   ['origins', 'Scan origin contains', 'jenkins, github action, cli'],
   ['repoHosts', 'Project repository on', 'github.com, gitlab, dev.azure.com'],
   ['actions', 'AI actions on credits', 'triage, remediation'],
-  ['aspm', 'Checkmarx One shows', 'applications, risk-scores, risks, cloud, dast, policy, violations, feedback:jira, sso, ldap, groups, custom-states, custom-presets'],
+  ['aspm', 'Checkmarx One shows', 'applications, risk-scores, risks, cloud, dast, policy, violations, feedback:jira, sso, ldap, groups, triaged, custom-states, custom-presets'],
   ['keywords', 'Keywords in notes (hint only)', 'jira, ticket'],
 ];
 

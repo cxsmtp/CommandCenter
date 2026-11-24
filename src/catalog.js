@@ -12,7 +12,8 @@
  *              Orchestration), cloud (Cloud Insights accounts), dast (a DAST environment scanned),
  *              policy (a policy applied), violations (policy violations raised), feedback:jira|azure|servicenow|
  *              email|slack|teams (a feedback app of that kind set up), sso, ldap, groups (access),
- *              custom-states, custom-presets (triage states and SAST presets of their own)
+ *              triaged (findings triaged by hand), custom-states, custom-presets (triage states and
+ *              SAST presets of their own)
  *   keywords   words looked for in the opportunity's own notes, discovery and sessions (a hint, never proof)
  *
  * Evidence only ever suggests: the SE confirms a criterion is met. An Admin (or anyone with catalog.manage) edits
@@ -124,7 +125,7 @@ export const DEFAULT_CATALOG = [
   // ——— Platform ———
   c('sso', 'platform', 'Single sign-on (SAML / OIDC)', 'Identity & Access Management — SSO', { aspm: ['sso', 'ldap'], keywords: ['sso', 'saml', 'okta', 'entra', 'azure ad'] }, { proof: 'Sign in through the customer’s identity provider; show group mapping.', tech: 'Identity providers in the IAM (GET /auth/admin/realms/{tenant}/identity-provider/instances), or an LDAP directory (…/components). Needs a key that may read the IAM; otherwise confirmed by the SE.' }),
   c('rbac', 'platform', 'Roles, groups & access control', 'Identity & Access Management — roles and groups', { aspm: ['groups'], keywords: ['rbac', 'roles', 'groups', 'permissions'] }, { proof: 'Show a developer seeing only their team’s projects.', tech: 'Groups in GET /api/access-management/groups. Which roles they hold on which projects is shown by the SE.' }),
-  c('triage-workflow', 'platform', 'Triage workflow & custom states', 'Results — triage states', { aspm: ['custom-states'], keywords: ['triage', 'not exploitable', 'custom state'] }, { proof: 'Triage results with the customer’s states and comments; show the audit trail.', tech: 'Triage states of their own in GET /api/custom-states. Findings moved through them are shown by the SE.' }),
+  c('triage-workflow', 'platform', 'Triage workflow & custom states', 'Results — triage states', { aspm: ['triaged', 'custom-states'], keywords: ['triage', 'not exploitable', 'custom state'] }, { proof: 'Triage results with the customer’s states and comments; show the audit trail.', tech: 'Findings moved by hand to Confirmed, Urgent or Not exploitable (state counters of each project’s latest scan in GET /api/scan-summary), and triage states of their own in GET /api/custom-states.' }),
   c('presets', 'platform', 'Presets & query customisation', 'SAST presets / CxQL', { aspm: ['custom-presets'], keywords: ['preset', 'cxql', 'custom query'] }, { proof: 'Tune a preset or a query for the customer’s framework.', tech: 'A SAST preset of their own in GET /api/queries/presets (built-in presets have small ids). Query changes are shown by the SE.' }),
   c('speed', 'platform', 'Scan speed & accuracy benchmark', 'Scan duration / false-positive rate', { keywords: ['scan time', 'false positive', 'accuracy', 'benchmark'] }, { proof: 'Compare scan times and the false-positive rate on the agreed applications.', tech: 'Scan durations are shown in the Live tenant tab (createdAt → updatedAt); the comparison is confirmed by the SE.' }),
 ];
@@ -218,16 +219,21 @@ export function tenantFacts(snapshot, proof = null) {
     origins: [...new Set([...(snapshot?.scans ?? []).flatMap((s) => [s.origin, s.originRaw, s.userAgent].filter(Boolean)), ...Object.keys(proof?.origins ?? {})].map((o) => o.toLowerCase()))],
     repoHosts: [...new Set((snapshot?.projects?.list ?? []).map((p) => p.repoUrl).filter(Boolean).map((u) => u.toLowerCase()))],
     actions: new Set(Object.entries(snapshot?.credits?.actions ?? {}).filter(([, n]) => n > 0).map(([k]) => k)),
-    aspm: aspmFacts(snapshot?.aspm),
+    aspm: aspmFacts(snapshot?.aspm, snapshot?.findings),
     first,
   };
 }
 
 /** ASPM signal → the sentence that proves it, from the counts the collector kept. */
-function aspmFacts(a) {
+function aspmFacts(a, findings = null) {
   const out = new Map();
-  if (!a) return out;
   const n = (v, one, many = `${one}s`) => `${v} ${v === 1 ? one : many}`;
+  // Manual triage: findings a person moved to Confirmed, Urgent or Not exploitable (AI triage only proposes), from
+  // the state counters of every project's latest scan (GET /api/scan-summary).
+  const per = Object.values(findings?.byProject ?? {});
+  const moved = per.reduce((t, p) => t + (p.confirmed ?? 0) + (p.urgent ?? 0) + (p.notExploitable ?? 0), 0);
+  if (moved > 0) out.set('triaged', `${n(moved, 'finding')} triaged by hand to Confirmed, Urgent or Not exploitable, in ${n(per.filter((p) => (p.confirmed ?? 0) + (p.urgent ?? 0) + (p.notExploitable ?? 0) > 0).length, 'project')}`);
+  if (!a) return out;
   if (a.applications?.total > 0) out.set('applications', `${n(a.applications.total, 'application')} defined${a.applications.projects ? `, holding ${n(a.applications.projects, 'project')}` : ''}`);
   if (a.armScores?.scored > 0) out.set('risk-scores', `Application Risk Management scored ${n(a.armScores.scored, 'application')}${a.armScores.top != null ? ` (highest ${a.armScores.top.toFixed(1)})` : ''}`);
   if (a.risks?.total > 0) out.set('risks', `Risk Orchestration lists ${n(a.risks.total, 'risk')} across engines`);

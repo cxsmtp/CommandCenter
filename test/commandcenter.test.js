@@ -947,6 +947,8 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.equal(evaluate(cap('servicenow'), facts).level, 'none');
   assert.deepEqual(evaluate(cap('sso'), facts).evidence, ['Single sign-on through 1 identity provider (SAML)', 'Users come from 1 LDAP directory']);
   assert.deepEqual(evaluate(cap('triage-workflow'), facts).evidence, ['1 triage state of their own']);
+  const triaged = tenantFacts({ scans: [], projects: { list: [] }, findings: { byProject: { p1: { confirmed: 2, urgent: 1, notExploitable: 3, proposedNotExploitable: 9 }, p2: { proposedNotExploitable: 4 } } } });
+  assert.deepEqual(evaluate(cap('triage-workflow'), triaged).evidence, ['6 findings triaged by hand to Confirmed, Urgent or Not exploitable, in 1 project'], 'AI proposals do not count as manual triage');
   assert.deepEqual(evaluate(cap('presets'), facts).evidence, ['1 SAST preset of their own']);
   assert.deepEqual(evaluate(cap('rbac'), facts).evidence, ['2 groups set up for access']);
   assert.match(evaluate(cap('cloud-insights'), facts).evidence[0], /2 cloud accounts connected/);
