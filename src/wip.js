@@ -11,6 +11,7 @@ import JSZip from 'jszip';
 import { SESSION_TYPES } from './opportunities.js';
 import { platformSlide } from './deck.js';
 import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS } from './toolchain.js';
+import { fillCover, fillPlan, fillEnvironment, fillTestPlan } from './template-fill.js';
 
 const BG = '170B2B';
 const PANEL = '1F1235';
@@ -51,6 +52,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   pptx.layout = 'LAYOUT_WIDE';
   pptx.title = `${opp.customer} — ${results ? 'POV results' : 'POV work in progress'}`;
   const templated = Boolean(template);
+  // Which of the template's own slides this deck can use (filled with the POV's data, or with its items boxed).
+  const tinfo = template ? await readTemplate(await JSZip.loadAsync(template)) : null;
+  const use = { cover: Boolean(tinfo?.cover), plan: Boolean(tinfo?.plan), env: Boolean(tinfo?.env), test: Boolean(tinfo?.test) };
   const kinds = [];
   const c = contentOf(opp, story, { owner, catalog });
   const C = opp.customer;
@@ -85,7 +89,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const sCover = () => {
   // 1 — Cover
   {
-    const s = add('cover');
+    const s = add(use.cover ? { kind: 'cover', reuse: 'cover', fill: { customer: C, results, people: [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean), date: longDay(today()) } } : 'cover');
     s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: FONT, fontSize: 38, bold: true, color: WHITE, margin: 0 });
     s.addText(results ? 'CxOne Platform: Proof of Value Results' : 'CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
     const who = [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean);
@@ -293,8 +297,17 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const sPlan = () => {
   // 6 — Plan and timeline
   {
-    const s = add('content');
-    head(s, results ? 'How We Got Here' : 'POV Plan & Timeline', 'Mapped to', `${C}’s goals`);
+    // The template's own plan slide, when it has one: the real milestones, the goals, the champion.
+    const ms = [...(opp.sessions ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+    const launch = ms.find((m) => m.type === 'launch') ?? ms[0];
+    const checks = ms.filter((m) => m.type === 'checkpoint');
+    const checkin = checks.find((m) => statusOf(m) === 'planned') ?? checks.at(-1) ?? ms[1];
+    const wrapup = ms.find((m) => m.type === 'wrapup') ?? ms.at(-1);
+    const champion = (opp.stakeholders ?? []).find((p) => p.side === 'customer' && /champion|admin|sponsor/i.test(p.povRole ?? ''))?.name ?? '';
+    const pl = opp.plan ?? {};
+    const fill = { customer: C, scope: (pl.scope?.length ? pl.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title)).slice(0, 3), support: (pl.support?.length ? pl.support : PLAN_DEFAULTS.support).slice(0, 3), success: (pl.success?.length ? pl.success : PLAN_DEFAULTS.success).slice(0, 3), launch, checkin, wrapup, champion };
+    const s = add(use.plan ? { kind: 'content', reuse: 'plan', fill } : 'content');
+    head(s, 'POV Plan & Timeline', 'Focus on', `${C}’s goals`);
     const plan = opp.plan ?? {};
     const scope = plan.scope?.length ? plan.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title).slice(0, 5);
     const cards = [
@@ -331,11 +344,21 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   }
   };
 
-  const sEnv = () => {
+  const sEnv = (main = true) => {
+  // The template's own environment slide carries the essentials; the full detail is in the appendix.
+  const tenant = opp.tenant;
+  const weeksN = opp.startDate && opp.endDate ? Math.max(1, Math.round((new Date(opp.endDate) - new Date(opp.startDate)) / (7 * 864e5))) : null;
+  const tcx = opp.toolchain ?? {};
+  const pair = (k) => [tcx[k]?.access || TOOLCHAIN.find((x) => x.key === k)?.access, (tcx[k]?.tools ?? []).join(', ')];
+  const envFill = {
+    people: c.people.slice(0, 7),
+    env: { 'POV dates': opp.startDate ? `${longDay(opp.startDate)} – ${longDay(opp.endDate)}` : '', 'POV duration': weeksN ? `${weeksN} week${weeksN > 1 ? 's' : ''}` : '', 'Solutions tested': c.engines.join(', '), 'Tenant name': opp.plan?.accountName || tenant?.tenant || '', 'Tenant URL': tenant?.baseUrl ?? '' },
+    integrations: { scm: pair('scm'), ide: pair('ide'), cicd: pair('cicd'), feedback: pair('feedback'), languages: [undefined, tcx.languages || opp.discovery?.languages || ''] },
+  };
   // 7 — Environment: the people, the tenant, the touch points (the WIP deck only)
   {
-    const s = add('content');
-    head(s, 'POV Environment Details');
+    const s = add(main && use.env ? { kind: 'content', reuse: 'env', fill: envFill } : 'content');
+    head(s, main ? 'POV Environment Details' : 'Environment & Toolchain in Full');
     const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: VIOLET }, fontSize: 10.5 } });
     const zebra = (i) => (i % 2 ? '1A0F2E' : PANEL);
     const cell = (t, i, o = {}) => ({ text: String(t ?? '') || '—', options: { color: WHITE, fontSize: 10, fill: { color: zebra(i) }, ...o } });
@@ -383,7 +406,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       let h = 0;
       for (const id of ids) {
         const rh = rowH(crit[id]);
-        if (cur.length && h + rh > 4.3) {
+        if (cur.length && (use.test ? cur.length >= 6 : h + rh > 4.3)) {
           pages.push(cur);
           cur = [];
           h = 0;
@@ -394,8 +417,14 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       if (cur.length) pages.push(cur);
       let n = 0;
       pages.forEach((page, pi) => {
-        const s = add('content');
-        s.addText(results ? 'Results by Business Goal' : 'Test Plan Overview', { x: L, y: 0.3, w: 9, h: 0.55, fontFace: FONT, fontSize: 26, bold: true, color: WHITE, margin: 0 });
+        // The template's own test plan slide, when it has one: six rows a page, the result under each criterion.
+        const fillRows = page.map((id) => {
+          const x = crit[id];
+          const [label, color] = STATE[x.state] ?? ['Planned', MUTED];
+          return { title: x.title, result: label, color, test: x.test, benefit: x.benefit || x.statement };
+        });
+        const s = add(use.test ? { kind: 'content', reuse: 'test', fill: { number: gi + 1, title: `${g.title}${pages.length > 1 ? ` (${pi + 1} of ${pages.length})` : ''}`, statement: g.statement, rows: fillRows } } : 'content');
+        s.addText('Test Plan Overview', { x: L, y: 0.3, w: 9, h: 0.55, fontFace: FONT, fontSize: 26, bold: true, color: WHITE, margin: 0 });
         s.addText([{ text: 'Business Goals', options: { color: ORANGE } }, { text: ' and ', options: { color: WHITE } }, { text: 'Success Criteria', options: { color: ORANGE } }], { x: L, y: 0.85, w: 9, h: 0.3, fontFace: FONT, fontSize: 13, margin: 0 });
         if (pages.length > 1) s.addText(`${pi + 1} of ${pages.length}`, { x: L + W - 2, y: 0.4, w: 2, h: 0.3, fontFace: FONT, fontSize: 10, color: MUTED, align: 'right', margin: 0 });
         card(s, L, 1.4, W, 0.85, { line: VIOLET });
@@ -619,9 +648,11 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
 
   // ——— The order: the WIP deck is the working document; the results deck is a short story, the detail behind it ———
   const heldNotes = (opp.sessions ?? []).some((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext));
+  // The main deck is the team template's own story, in its order: cover, toolchain, platform, plan, environment, the
+  // test plan per business goal, closing. Everything Meridian adds goes to the appendix.
   const order = results
-    ? [sCover, sChallenges, sGlance, sPlatform, sTests, sExpansion, sNext, sClosing, sAppendix, sDevSecOps, sApma, sPlan, sTenant, sEnv, sEvidence, sNotes]
-    : [sCover, sOverview, sPlatform, sDevSecOps, sApma, sPlan, sEnv, sTests, sClosing, ...(heldNotes ? [sAppendix, sNotes] : [])];
+    ? [sCover, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sChallenges, sGlance, sExpansion, sNext, sApma, sTenant, ...(use.env ? [() => sEnv(false)] : []), sEvidence, sNotes]
+    : [sCover, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sOverview, sApma, ...(use.env ? [() => sEnv(false)] : []), ...(heldNotes ? [sNotes] : [])];
   for (const make of order) make();
 
   const out = await pptx.write({ outputType: 'nodebuffer' });
@@ -679,6 +710,23 @@ async function readTemplate(zip) {
     // The template's own toolchain and platform slides (logos and icons), reused with this POV's items boxed
     devsecops: find(/Tailored\s+to\s+Your\s+DevSecOps/i) ?? null,
     components: find(/Components\s+of\s+the\s+platform/i) ?? null,
+    // Slides Meridian fills with the POV's data, used only in the shape the filler knows.
+    cover: slides[0] && /customer\s*name/i.test(slides[0].text) ? slides[0] : null,
+    plan: (() => {
+      const sl = find(/POV\s+Plan/i);
+      const runs = sl ? [...sl.xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]) : [];
+      return sl && runs.length === 31 && runs[28] === 'Scope' && runs[30] === 'Success' ? sl : null;
+    })(),
+    env: (() => {
+      const sl = find(/Environment\s+Details/i);
+      return sl && (sl.xml.match(/<a:tbl>/g) ?? []).length >= 2 ? sl : null;
+    })(),
+    test: (() => {
+      const sl = find(/Test\s+Plan\s+Overview/i);
+      const tr = sl && /<a:tr\b[^>]*>[\s\S]*?<\/a:tr>/.exec(sl.xml)?.[0];
+      const cells = tr ? (tr.match(/<a:tc\b/g) ?? []).length : 0;
+      return sl && cells === 3 && !/criteria|success criterion/i.test(tr.replace(/<[^>]+>/g, '')) ? sl : null;
+    })(),
   };
 }
 
@@ -729,9 +777,11 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
     } else if (reuse) {
       // The template's slide as designed, with orange boxes around what this POV uses.
       const layoutXml = (await zip.file(`ppt/slideLayouts/${reuse.layout}`)?.async('string')) ?? '';
-      const boxes = markShapes([...textShapes(layoutXml), ...textShapes(reuse.xml)], k.marks ?? []);
+      const boxes = k.marks ? markShapes([...textShapes(layoutXml), ...textShapes(reuse.xml)], k.marks) : '';
+      const FILL = { cover: fillCover, plan: fillPlan, env: fillEnvironment, test: fillTestPlan };
+      const source = k.fill ? FILL[k.reuse](reuse.xml, k.fill) : reuse.xml;
       // The template's example highlights (outlined boxes with no text) go: Meridian draws this POV's own.
-      const clean = reuse.xml.replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<\/p:sp>/g, (sp) => (!/<a:t>/.test(sp) && /prst="roundRect"/.test(sp) && /<a:ln\b/.test(sp) && !/<a:solidFill>(?:(?!<\/a:solidFill>)[\s\S])*<\/a:solidFill>\s*<a:ln/.test(sp) ? '' : sp));
+      const clean = source.replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<\/p:sp>/g, (sp) => (!/<a:t>/.test(sp) && /prst="roundRect"/.test(sp) && /<a:ln\b/.test(sp) && !/<a:solidFill>(?:(?!<\/a:solidFill>)[\s\S])*<\/a:solidFill>\s*<a:ln/.test(sp) ? '' : sp));
       xml = clean.replace('</p:spTree>', `${boxes}</p:spTree>`);
       rels = reuse.rels.replace(/<Relationship\b[^>]*(notesSlide|comments|commentAuthors|tags)[^>]*\/>/g, '');
     } else {
@@ -845,7 +895,7 @@ const matches = (label, want) => {
 export function textShapes(xml) {
   const out = [];
   const tf = [{ ox: 0, oy: 0, cx: 0, cy: 0, sx: 1, sy: 1 }];
-  const re = /<p:grpSp>|<\/p:grpSp>|<p:sp>[\s\S]*?<\/p:sp>/g;
+  const re = /<p:grpSp>|<\/p:grpSp>|<p:sp>[\s\S]*?<\/p:sp>|<p:pic>[\s\S]*?<\/p:pic>/g;
   let m;
   const apply = (t, x, y) => [t.ox + (x - t.cx) * t.sx, t.oy + (y - t.cy) * t.sy];
   while ((m = re.exec(xml))) {
@@ -869,29 +919,54 @@ export function textShapes(xml) {
       continue;
     }
     const sp = m[0];
-    const text = [...sp.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((x) => x[1]).join('').replace(/&amp;/g, '&').trim();
     const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(sp);
-    if (!text || !off) continue;
+    if (!off) continue;
     const t = tf.at(-1);
     const [x, y] = apply(t, Number(off[1]), Number(off[2]));
-    out.push({ text, x, y, w: Number(off[3]) * t.sx, h: Number(off[4]) * t.sy });
+    const box = { x, y, w: Number(off[3]) * t.sx, h: Number(off[4]) * t.sy };
+    if (sp.startsWith('<p:pic>')) {
+      out.push({ pic: true, text: '', ...box });
+      continue;
+    }
+    const text = [...sp.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((x2) => x2[1]).join('').replace(/&amp;/g, '&').trim();
+    if (!text) continue;
+    const sz = Number(/<a:(?:rPr|defRPr|endParaRPr)\b[^>]*\bsz="(\d+)"/.exec(sp)?.[1]) || 1200;
+    const align = /<a:pPr\b[^>]*algn="ctr"/.test(sp) ? 'ctr' : /<a:pPr\b[^>]*algn="r"/.test(sp) ? 'r' : 'l';
+    const ins = Number(/<a:bodyPr\b[^>]*lIns="(\d+)"/.exec(sp)?.[1] ?? 91440) * t.sx;
+    out.push({ text, sz: (sz / 100) * Math.min(t.sx, t.sy), align, ins, ...box });
   }
   return out;
 }
 
-/** Orange boxes, as slide shapes, around the shapes whose text names one of `names` (with the icon to their left). */
-export function markShapes(shapes, names, { iconLeft = true, id = 9000 } = {}) {
-  const hits = shapes.filter((s) => s.text.length <= 60 && names.some((n) => matches(s.text, n)));
-  return hits
+/**
+ * Orange boxes, as slide shapes, around what this POV uses: each wraps the item's own icon (the picture just left of
+ * its name, on the same row) and the width of its words (from the text's size and alignment, not its text frame), with
+ * the same padding everywhere, so boxes never run into their neighbours.
+ */
+export function markShapes(shapes, names, { id = 9000 } = {}) {
+  const pics = shapes.filter((p) => p.pic);
+  const texts = shapes.filter((s) => !s.pic && s.text.length <= 60 && names.some((n) => matches(s.text, n)));
+  const EMU_PT = 12700;
+  return texts
     .map((s, i) => {
-      const pad = Math.round(s.h * 0.12);
-      // The logo or icon sits left of its name (about 0.4 in in the team templates).
-      const left = iconLeft ? Math.max(Math.round(s.h * 1.05), 370000) : 0;
-      const x = Math.round(s.x - left - pad);
-      const y = Math.round(s.y - pad);
-      const w = Math.round(s.w + left + 2 * pad);
-      const h = Math.round(s.h + 2 * pad);
-      return `<p:sp><p:nvSpPr><p:cNvPr id="${id + i}" name="Meridian: in this POV"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 18000"/></a:avLst></a:prstGeom><a:noFill/><a:ln w="19050"><a:solidFill><a:srgbClr val="F25928"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`;
+      // Arial-like text: about half an em per character, a little more for capitals.
+      const em = s.sz * EMU_PT;
+      const words = [...s.text].reduce((n, ch) => n + (/[A-Z]/.test(ch) ? 0.64 : /[ il.,']/.test(ch) ? 0.3 : 0.52), 0) * em;
+      const inner = Math.max(0, s.w - 2 * s.ins);
+      const textW = Math.min(words, inner);
+      const tx = s.x + s.ins + (s.align === 'ctr' ? (inner - textW) / 2 : s.align === 'r' ? inner - textW : 0);
+      const lineH = em * 1.25;
+      const ty = s.y + Math.max(0, (s.h - lineH) / 2);
+      const midY = ty + lineH / 2;
+      const icon = pics
+        .filter((p) => Math.abs(p.y + p.h / 2 - midY) < Math.max(p.h, lineH) * 0.6 && p.x + p.w <= tx + 30000 && tx - (p.x + p.w) < 520000 && p.w < 700000)
+        .sort((a2, b2) => b2.x + b2.w - (a2.x + a2.w))[0];
+      const pad = Math.round(em * 0.35);
+      const left = Math.round((icon ? icon.x : tx) - pad);
+      const top = Math.round(Math.min(ty, icon ? icon.y : ty) - pad * 0.6);
+      const bottom = Math.round(Math.max(ty + lineH, icon ? icon.y + icon.h : 0) + pad * 0.6);
+      const right = Math.round(tx + textW + pad);
+      return `<p:sp><p:nvSpPr><p:cNvPr id="${id + i}" name="Meridian: in this POV"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${left}" y="${top}"/><a:ext cx="${right - left}" cy="${bottom - top}"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 22000"/></a:avLst></a:prstGeom><a:solidFill><a:srgbClr val="F25928"><a:alpha val="12000"/></a:srgbClr></a:solidFill><a:ln w="15875"><a:solidFill><a:srgbClr val="F25928"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`;
     })
     .join('');
 }

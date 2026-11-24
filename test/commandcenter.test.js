@@ -765,7 +765,8 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
   const z = await JSZip.loadAsync(filled);
   const pres = await z.file('ppt/presentation.xml').async('string');
   const count = [...pres.matchAll(/<p:sldId /g)].length;
-  assert.equal(count, (await slideTexts(plain)).length, 'one slide for each, the closing one from the template');
+  // One slide for each, the closing one from the template; a template environment slide also brings the full one to the appendix.
+  assert.ok(count >= (await slideTexts(plain)).length && count <= (await slideTexts(plain)).length + 1, 'one slide for each');
   const rels = await z.file('ppt/_rels/presentation.xml.rels').async('string');
   for (const m of rels.matchAll(/Target="(slides\/[^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${m[1]} is in the file`);
   for (const n of Object.keys(z.files).filter((x) => /^ppt\/slides\/_rels\/.+\.rels$/.test(x))) for (const m of (await z.file(n).async('string')).matchAll(/Target="\.\.\/([^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${n} points at ${m[1]}, which exists`);

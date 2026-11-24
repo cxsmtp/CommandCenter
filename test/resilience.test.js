@@ -321,3 +321,21 @@ test('the template’s own slides: items found through groups, boxed by exact na
   const boxes = markShapes(shapes, ['GitHub Copilot', 'Bitbucket Pipelines']);
   assert.equal((boxes.match(/<p:sp>/g) ?? []).length, 2, 'Copilot and the pipeline (plural or not), not GitHub');
 });
+
+test('filling the template’s own slides: runs replaced in place, table rows cloned with the template’s style, left to right', async () => {
+  const { replaceRuns, fillCover, fillTestPlan, fillEnvironment } = await import('../src/template-fill.js');
+  assert.equal(replaceRuns('<a:t>a</a:t><a:t>b &amp; c</a:t>', (i, t) => (i === 1 ? `${t}!` : undefined)), '<a:t>a</a:t><a:t>b &amp; c!</a:t>');
+  const cover = fillCover('<p:spTree><a:r><a:rPr lang="en-US" sz="5400"/><a:t>Customer Name</a:t></a:r><a:t>Guide</a:t></p:spTree>', { customer: 'Northwind Media International Holdings', results: true, people: [{ name: 'Sam', title: 'SE' }], date: '1st December 2026' });
+  assert.match(cover, /<a:t>Northwind Media International Holdings<\/a:t>/);
+  assert.match(cover, /<a:t>Results<\/a:t>/);
+  assert.match(cover, /Sam \| SE/);
+  assert.ok(!/sz="5400"/.test(cover), 'the name is sized to fit one line');
+  const cell = (t, style = true) => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p>${t ? `<a:r>${style ? '<a:rPr lang="en-US" sz="1000"/>' : ''}<a:t>${t}</a:t></a:r>` : '<a:endParaRPr lang="en-US"/>'}</a:p></a:txBody><a:tcPr/></a:tc>`;
+  const tp = fillTestPlan(`<p:sp><a:t>Test Plan Overview</a:t></p:sp><p:sp><a:p><a:r><a:rPr lang="en-US"/><a:t>A long description of what this goal is about.</a:t></a:r></a:p></p:sp><p:sp><a:t>1</a:t></p:sp><a:tbl><a:tr h="1">${cell('Seamless IDE')}${cell('Install it')}${cell('Embeds security')}</a:tr><a:tr h="1">${cell('Two')}${cell('x')}${cell('y')}</a:tr></a:tbl>`, { number: 3, title: 'Find flaws early', statement: 'Before release.', rows: [{ title: 'SAST', result: 'Completed', color: '3CCF8E', test: 'Scan two apps', benefit: 'Fewer flaws' }] });
+  assert.match(tp, /<a:t>3<\/a:t>/);
+  assert.match(tp, /Find flaws early[\s\S]*Before release/);
+  assert.equal((tp.match(/<a:tr\b/g) ?? []).length, 1, 'one row per criterion');
+  assert.match(tp, /<a:t>SAST<\/a:t>[\s\S]*3CCF8E[\s\S]*Completed[\s\S]*Scan two apps[\s\S]*Fewer flaws/);
+  const env = fillEnvironment(`<a:tbl><a:tr h="1">${cell('Environment Details')}${cell('')}</a:tr><a:tr h="1">${cell('POV duration')}${cell('', false)}</a:tr></a:tbl>`, { env: { 'POV duration': '4 weeks' } });
+  assert.match(env, /<a:pPr algn="l" rtl="0"\/><a:r><a:rPr lang="en-US" sz="1000"\/><a:t>4 weeks<\/a:t>/, 'styled like its label, left to right');
+});
