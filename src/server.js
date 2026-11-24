@@ -25,7 +25,7 @@ import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, prog
 import { Monitor } from './monitor.js';
 import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
-import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
+import { eventsOf, scanLog, exportSbom, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
 import { wipDeck, checkTemplate } from './wip.js';
 import { SharePoint } from './sharepoint.js';
@@ -1584,6 +1584,21 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         need(user, 'tenant.logs');
         const log = await scanLog(opps.connection(opp.id), parts[3], parts[4]);
         return file(res, `${opp.tenant.tenant}-${parts[3]}-${parts[4]}.log`, 'text/plain; charset=utf-8', log);
+      }
+      if (sub === 'sbom' && m === 'GET') {
+        // The SBOM evidence: made from the newest completed scan that ran SCA (or the one asked for).
+        const opp = viewOpp(user, id);
+        if (!opp.tenant) return send(res, 409, { error: 'Connect the tenant first.' });
+        const snap = monitor.snapshot(opp.id);
+        const scans = [...(snap?.scans ?? []), ...(snap?.older ?? [])].filter((s) => /completed|partial/i.test(s.status) && (s.engines ?? []).includes('sca')).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+        const asked = text(url.searchParams.get('scan'), 80);
+        const scan = asked ? scans.find((s) => s.id === asked) ?? { id: asked } : scans[0];
+        if (!scan) return send(res, 409, { error: 'No completed SCA scan on this tenant yet: run one, then make the SBOM.' });
+        const format = url.searchParams.get('format') === 'spdx' ? 'spdx' : 'cyclonedx';
+        const sbom = await exportSbom(new CxClient(opps.connection(opp.id)), scan.id, format);
+        audit.record(user, 'opportunity', `Made a ${format === 'spdx' ? 'SPDX' : 'CycloneDX'} SBOM for ${opp.customer}`);
+        const name = `${opp.customer} - SBOM ${format === 'spdx' ? 'SPDX' : 'CycloneDX'}${scan.projectName ? ` - ${scan.projectName}` : ''}.json`.replace(/[\\/:*?"<>|]/g, '-').slice(0, 150);
+        return file(res, name, 'application/json; charset=utf-8', sbom);
       }
       if (sub === 'troubleshoot' && m === 'GET') {
         const opp = viewOpp(user, id);

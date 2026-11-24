@@ -268,6 +268,7 @@ async function credits(client, projectNames) {
  *                 GET /api/access-management/groups. Kinds and counts only; null where the key may not read them.
  *   contributors  GET /api/contributors/insights: developers counted per tool they use Checkmarx from (IDE plugins,
  *                 AI agents, CLI), which proves the IDE and coding-agent criteria
+ *   aiInventory   GET /api/ai-sc/global-inventory/results: the AI assets (models, agents, MCP servers) found
  *   schedules     GET /api/projects/schedules: scans scheduled to run by themselves (daily, weekly…)
  *   triage        GET /api/custom-states: the customer's own triage states (the list holds no built-in ones);
  *                 GET /api/queries/presets: presets made by the customer (built-in ones have small ids, theirs large)
@@ -277,7 +278,7 @@ export async function aspm(client, connection = null) {
   // Each part on its own: a page this tenant lacks, or one that fails, leaves the others standing.
   const soft = (fn) => fn().catch(() => null);
   const iam = connection?.iamUrl && connection?.tenant ? `${connection.iamUrl}/auth/admin/realms/${encodeURIComponent(connection.tenant)}` : null;
-  const [apps, arm, risks, cloud, dast, pol, incidents, fbApps, fbProfiles, idps, dirs, groups, states, presets, schedules, contributors] = await Promise.all([
+  const [apps, arm, risks, cloud, dast, pol, incidents, fbApps, fbProfiles, idps, dirs, groups, states, presets, schedules, contributors, aiInv] = await Promise.all([
     soft(() => client.request('/api/applications', { query: { limit: 100, offset: 0 }, retries: 1 })),
     soft(() => client.request('/api/risk-management/summary', { retries: 1 })),
     soft(() => client.request('/api/risks', { query: { limit: 200, offset: 0 }, retries: 1 })),
@@ -294,7 +295,11 @@ export async function aspm(client, connection = null) {
     soft(() => client.request('/api/queries/presets', { retries: 1 })),
     soft(() => client.request('/api/projects/schedules', { query: { offset: 0, limit: 100 }, retries: 1 })),
     soft(() => client.request('/api/contributors/insights', { retries: 1 })),
+    soft(() => client.request('/api/ai-sc/global-inventory/results', { query: { limit: 100, offset: 0 }, retries: 1 })),
   ]);
+  // AI Inventory: the AI models, agents and MCP servers found in the code (counted whatever the list's wrapper).
+  const aiList = arrayIn(aiInv, ['results', 'items', 'data', 'assets', 'inventory']);
+  const aiCount = aiList ? n0(aiInv?.totalCount ?? aiInv?.total ?? aiInv?.totalResults) ?? aiList.length : null;
   // Developers by the tool they use Checkmarx from ("VS Code", "Cursor", "Claude-cli", "Kiro"…), versions folded.
   const tools = {};
   for (const [k, v] of Object.entries(contributors && typeof contributors === 'object' ? contributors : {})) {
@@ -334,6 +339,7 @@ export async function aspm(client, connection = null) {
     triage: Array.isArray(states) || Array.isArray(presets)
       ? { customStates: Array.isArray(states) ? states.filter((x) => x && !x.deleted).length : null, customPresets: Array.isArray(presets) ? presets.filter((x) => Number(x?.id) > CUSTOM_PRESET_ID).length : null }
       : null,
+    aiInventory: aiCount == null ? null : { assets: aiCount },
     contributors: contributors && typeof contributors === 'object' ? { total: n0(contributors.total), tools } : null,
     schedules: scheduleList ? { total: n0(schedules?.total_count) ?? scheduleList.length, active: scheduleList.filter((x) => x?.active !== false).length } : null,
     policies: policies ? { made: made.length, applied: made.filter((x) => x.projects?.length || x.tags?.length).length, breakBuild: made.filter((x) => x.breakBuild || x.netNewBreakBuild).length, violations } : null,
@@ -387,6 +393,29 @@ export async function supplyChain(client, scanIds) {
     risks += n0(d.totalCount) ?? 0;
   }
   return checked ? { checked, risks } : null;
+}
+
+/**
+ * An SBOM of one scan, made the way the SCA results page exports it: POST /api/sca/export/requests, then GET
+ * ...?exportId= until it is Completed, then .../{exportId}/download. CycloneDX or SPDX, JSON.
+ */
+export const SBOM_FORMATS = { cyclonedx: 'CycloneDxjson', spdx: 'Spdxjson' };
+export async function exportSbom(client, scanId, format = 'cyclonedx', { waitMs = 90_000, everyMs = 2000 } = {}) {
+  const FileFormat = SBOM_FORMATS[format] ?? SBOM_FORMATS.cyclonedx;
+  const started = await client.request('/api/sca/export/requests', { method: 'POST', body: { ScanId: scanId, FileFormat, ExportParameters: { hidePrivatePackages: false, hideDevAndTestDependencies: false, showOnlyEffectiveLicenses: true, includeVex: format !== 'spdx' } }, retries: 1 });
+  const exportId = text(started?.exportId ?? started?.id, 80);
+  if (!exportId) throw Object.assign(new Error('Checkmarx One did not start the SBOM export.'), { status: 502 });
+  for (const until = Date.now() + waitMs; Date.now() < until; ) {
+    const st = await client.request('/api/sca/export/requests', { query: { exportId }, retries: 1 });
+    const status = String(st?.exportStatus ?? st?.status ?? '').toLowerCase();
+    if (status === 'completed') {
+      const body = await client.request(`/api/sca/export/requests/${encodeURIComponent(exportId)}/download`, { accept: 'application/json, */*', retries: 1 });
+      return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+    }
+    if (status === 'failed') throw Object.assign(new Error(`Checkmarx One could not make the SBOM${st?.errorMessage ? `: ${text(st.errorMessage, 200)}` : ''}.`), { status: 502 });
+    await new Promise((r) => setTimeout(r, everyMs));
+  }
+  throw Object.assign(new Error('The SBOM is taking long: try again in a minute.'), { status: 504 });
 }
 
 /** The tenant's AI settings (GET /api/configuration/tenant): Fusion on, LLM-based scanning on, the model. */

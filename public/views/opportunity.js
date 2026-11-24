@@ -697,6 +697,8 @@ const WIRES = {
       openDialog(
         `<div class="dbody"><h2>Tenant</h2><nav class="more-list">
           ${mu ? '<button type="button" data-mu="off"><span>Turn alerts back on</span></button>' : '<button type="button" data-mu="24"><span>Mute alerts for a day</span><small class="muted">Failed scans and quiet days stop showing as needing you</small></button><button type="button" data-mu="168"><span>Mute alerts for a week</span></button>'}
+          <button type="button" data-tt="sbom" data-fmt="cyclonedx"><span>Download an SBOM (CycloneDX)</span><small class="muted">From the latest SCA scan: the evidence for the SBOM criterion</small></button>
+          <button type="button" data-tt="sbom" data-fmt="spdx"><span>Download an SBOM (SPDX)</span></button>
           ${can('tenant.logs') ? '<button type="button" data-tt="bundle"><span>Download the troubleshooting bundle</span><small class="muted">Every failed scan of the last 7 days, with its engine logs</small></button>' : ''}
           ${current.canEdit ? '<button type="button" data-tt="connect"><span>Replace the API key</span></button><button type="button" data-tt="disconnect" class="bad-t"><span>Disconnect the tenant</span><small class="muted">Deletes the stored key; nothing changes in Checkmarx One</small></button>' : ''}
         </nav><div class="dialog-actions"><button class="btn" data-close>Close</button></div></div>`,
@@ -704,6 +706,7 @@ const WIRES = {
           onOpen(dl) {
             dl.querySelector('[data-close]').addEventListener('click', () => closeDialog());
             for (const b of dl.querySelectorAll('[data-mu]')) b.addEventListener('click', () => mute(b.dataset.mu === 'off' ? null : new Date(Date.now() + Number(b.dataset.mu) * 3600e3).toISOString()));
+            for (const b of dl.querySelectorAll('[data-tt="sbom"]')) b.addEventListener('click', () => (closeDialog(), attempt(() => download(`/opportunities/${oid()}/sbom?format=${b.dataset.fmt}`), 'SBOM downloaded')));
             dl.querySelector('[data-tt="bundle"]')?.addEventListener('click', () => (closeDialog(), attempt(() => download(`/opportunities/${oid()}/troubleshoot`), 'Bundle downloaded')));
             dl.querySelector('[data-tt="connect"]')?.addEventListener('click', () => (closeDialog(), setTimeout(connectTenant, 60)));
             dl.querySelector('[data-tt="disconnect"]')?.addEventListener('click', async () => {

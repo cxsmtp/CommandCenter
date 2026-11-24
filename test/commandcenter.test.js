@@ -910,6 +910,7 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
     '/api/risk-management/summary': { summary: [{ name: 'Payments', riskScore: 8.9, riskSeverity: 'high' }, { name: 'Web', riskScore: 4.1, riskSeverity: 'medium' }] },
     '/api/risks': { metaData: { totalResults: 229 }, risks: [{ assetName: 'secret.py', origin: 'security-mcp' }, { origin: 'github' }] },
     '/api/contributors/insights': { total: 311, max: 1000, 'VS Code': { projectCount: 0, contributorCount: 90 }, 'Visual Studio_1.0.0/ASTCLI_2.3.63': { contributorCount: 1 }, 'Visual Studio': { contributorCount: 1 }, Cursor: { contributorCount: 19 }, 'Claude-cli': { contributorCount: 19 }, Kiro: { contributorCount: 0 } },
+    '/api/ai-sc/global-inventory/results': { totalCount: 7, results: [{ name: 'claude-sonnet' }] },
     '/api/projects/schedules': { schedules: [{ name: 'Nightly', active: true, frequency: 'daily' }, { active: false }], total_count: 2 },
     '/api/cnas/accounts': { data: [{ name: 'prod', lastScanDate: '2026-11-20T10:00:00Z' }], total: 2 },
     '/api/policy_management_service_uri/policies/v3': { policies: [{ name: 'Default', defaultPolicy: true, projects: [{ astProjectId: 'p1' }] }, { name: 'No new criticals', projects: [{ astProjectId: 'p1', name: 'Payments' }], tags: [], breakBuild: false, netNewBreakBuild: true }, { name: 'Draft', projects: [], tags: [] }] },
@@ -930,6 +931,7 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.equal(a.armScores.top, 8.9);
   assert.deepEqual(a.risks, { total: 229, viaMcp: 1 });
   assert.deepEqual(a.schedules, { total: 2, active: 1 });
+  assert.deepEqual(a.aiInventory, { assets: 7 });
   assert.deepEqual(a.contributors, { total: 311, tools: { 'VS Code': 90, 'Visual Studio': 2, Cursor: 19, 'Claude-cli': 19 } });
   assert.deepEqual(a.cloud, { accounts: 2, lastScanAt: '2026-11-20T10:00:00.000Z' });
   assert.deepEqual(a.feedback, { jira: { apps: 1, projects: 3 }, email: { apps: 1, projects: 2 }, slack: { apps: 1, projects: 0 } });
@@ -937,7 +939,7 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.deepEqual(a.triage, { customStates: 1, customPresets: 1 });
   assert.deepEqual(a.policies, { made: 2, applied: 1, breakBuild: 1, violations: 12 });
   assert.deepEqual(a.dast, { environments: 4, scanned: 1, lastScanAt: '2026-11-21T09:00:00.000Z' });
-  assert.ok(!/hunter2|Payments|shop\.example|secret\.py|prod|Acme Jira|AppSec|okta|corp|Accepted risk|Acme preset|Nightly/.test(JSON.stringify(a)), 'no names, no passwords');
+  assert.ok(!/hunter2|Payments|shop\.example|secret\.py|prod|Acme Jira|AppSec|okta|corp|Accepted risk|Acme preset|Nightly|claude-sonnet/.test(JSON.stringify(a)), 'no names, no passwords');
   // A tenant without ASPM answers nothing: every part is null, the read goes on.
   const none = await aspm({ request: async () => Promise.reject(new Error('403')) });
   assert.ok(Object.values(none).every((v) => v === null));
@@ -955,6 +957,20 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.deepEqual(evaluate(cap('cursor'), facts).evidence, ['19 developers use Checkmarx from Cursor']);
   assert.match(evaluate(cap('vscode'), facts).evidence[0], /90 developers use Checkmarx from VS Code/);
   assert.equal(evaluate(cap('kiro'), facts).level, 'none', 'no developers, no proof');
+  assert.deepEqual(evaluate(cap('aisc'), facts).evidence, ['AI Inventory lists 7 AI assets (models, agents, MCP servers) found in the code']);
+  // The SBOM, made the way the SCA page exports it: started, waited for, downloaded.
+  const { exportSbom } = await import('../src/collector.js');
+  const calls = [];
+  let polls = 0;
+  const sbomClient = { request: async (p, o = {}) => {
+    calls.push(`${o.method ?? 'GET'} ${p}`);
+    if (o.method === 'POST') { assert.equal(o.body.FileFormat, 'CycloneDxjson'); assert.equal(o.body.ScanId, 'scan-1'); return { exportId: 'e1' }; }
+    if (p === '/api/sca/export/requests') return { exportStatus: ++polls < 2 ? 'Exporting' : 'Completed' };
+    return { bomFormat: 'CycloneDX', components: [] };
+  } };
+  assert.match(await exportSbom(sbomClient, 'scan-1', 'cyclonedx', { everyMs: 1 }), /"bomFormat": "CycloneDX"/);
+  assert.deepEqual(calls, ['POST /api/sca/export/requests', 'GET /api/sca/export/requests', 'GET /api/sca/export/requests', 'GET /api/sca/export/requests/e1/download']);
+  await assert.rejects(exportSbom({ request: async (p, o = {}) => (o.method === 'POST' ? { exportId: 'e2' } : { exportStatus: 'Failed' }) }, 's', 'spdx', { everyMs: 1 }), /could not make the SBOM/);
   assert.deepEqual(evaluate(cap('scheduled-scans'), facts).evidence, ['1 scan schedule running by itself']);
   const { supplyChain } = await import('../src/collector.js');
   const asked = [];
