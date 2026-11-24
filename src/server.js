@@ -1023,7 +1023,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
 
     // ——— The success criteria bank ———
-    if (route === 'GET /bank') return send(res, 200, { ...bank.info(), canManage: can(user, 'catalog.manage') });
+    if (route === 'GET /bank') return send(res, 200, { ...bank.info(), canManage: can(user, 'catalog.manage'), canEdit: user.role === 'admin' });
     if (route === 'POST /bank/import') {
       need(user, 'catalog.manage');
       const buf = await readRaw(req, 5 * 1048576);
@@ -1040,6 +1040,22 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const r = bank.import(rows, user);
       audit.record(user, 'catalog', `Imported the success criteria bank: ${r.taken} criteria, ${r.goals} business goals`);
       return send(res, 200, { ...r, ...bank.info() });
+    }
+    // Editing the bank, goal by goal and criterion by criterion: Admins only.
+    if (parts[0] === 'bank' && (parts[1] === 'goals' || parts[1] === 'entries') && ['POST', 'PUT', 'DELETE'].includes(m)) {
+      if (user.role !== 'admin') throw fail(403, 'Only Admins edit the success criteria bank.');
+      const id = parts[2] ? decodeURIComponent(parts[2]) : '';
+      const goals = parts[1] === 'goals';
+      if (m === 'DELETE') {
+        if (goals) bank.removeGoal(user, id);
+        else bank.removeEntry(user, id);
+        audit.record(user, 'catalog', `Removed a ${goals ? 'business goal' : 'success criterion'} from the bank`);
+      } else {
+        const b = await readBody(req);
+        const saved = goals ? bank.saveGoal(user, id, b) : bank.saveEntry(user, id, b);
+        audit.record(user, 'catalog', `${id ? 'Changed' : 'Added'} the ${goals ? 'business goal' : 'success criterion'} “${saved.title}” in the bank`);
+      }
+      return send(res, 200, { ...bank.info(), canManage: can(user, 'catalog.manage'), canEdit: true });
     }
     if (route === 'POST /bank/reset') {
       need(user, 'catalog.manage');

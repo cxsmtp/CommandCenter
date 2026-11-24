@@ -134,17 +134,102 @@ const KIND_LABEL = { goals: 'Business goals & success criteria', capabilities: '
 function libraryPanel(lib, bankInfo) {
   const sum = lib.summary;
   const manage = lib.canManage;
-  const src = { library: 'from the SEAL library', imported: `imported${bankInfo.by ? ` by ${esc(bankInfo.by)}` : ''}`, 'built-in': 'built in' }[bankInfo.source];
+  const src = { library: 'from the SEAL library', imported: `imported${bankInfo.by ? ` by ${esc(bankInfo.by)}` : ''}`, edited: `edited${bankInfo.by ? ` by ${esc(bankInfo.by)}` : ''}${bankInfo.editedAt ? ` on ${esc(new Date(bankInfo.editedAt).toLocaleDateString())}` : ''}`, 'built-in': 'built in' }[bankInfo.source];
   return `<section class="panel" style="margin-bottom:18px"><div class="head"><h3>Business goals and the pitch</h3>${manage ? '<button class="btn primary sm" data-act="lib-import">Import SEAL files</button>' : ''}</div>
     <div class="body"><p class="small muted" style="margin-top:0">The business goals SEs pick on the first call, each with the success criteria that prove it (criterion, how it is tested, what it means for the customer), and what to say to each persona. Kept encrypted on this server.</p>
-    <p><b>${bankInfo.goals.length}</b> business goals · <b>${bankInfo.entries.length}</b> success criteria, ${src}.</p>
+    <p><b>${bankInfo.goals.length}</b> business goals · <b>${bankInfo.entries.length}</b> success criteria, ${src}.${bankInfo.canEdit ? ' <button class="btn sm" data-act="bank-edit">Edit the business goals and success criteria</button>' : ''}</p>
     ${sum ? `<div class="lib-files">${Object.entries(KIND_LABEL).map(([k, l]) => `<div class="${sum.counts[k] ? '' : 'muted'}"><b>${esc(l)}</b><span class="small">${sum.counts[k] ? `${sum.counts[k]} entries · ${esc(sum.files[k]?.name ?? '')}` : 'Not imported'}</span></div>`).join('')}</div>` : '<p class="small muted">No SEAL library yet: SEs see the built-in goals. Import the Markdown references (Business Goals & Success Criteria, Capability Reference, Value Messaging, Value Map, Use Case Cards) to give them the full bank and the talk track.</p>'}
     ${manage ? `<div class="row" style="margin-top:10px;flex-wrap:wrap">${sum ? '<button class="btn sm ghost danger" data-act="lib-remove">Remove the library</button>' : ''}<button class="btn sm ghost" data-act="bank-import">Import a criteria bank (CSV or Excel)</button>${bankInfo.custom ? '<button class="btn sm ghost" data-act="bank-reset">Back to the built-in bank</button>' : ''}</div>` : ''}
     <input type="file" id="libFiles" accept=".md,.markdown,.txt" multiple hidden><input type="file" id="bankFile" accept=".csv,.xlsx,.json" hidden></div></section>`;
 }
 
+// ——— Editing the bank (Admins): every business goal and the success criteria that prove it ———
+async function bankEditor() {
+  let info = await api('/bank');
+  const caps = (await getCatalog()).catalog ?? [];
+  const capName = (id) => caps.find((c) => c.id === id)?.name ?? '';
+  let open = null;
+  const goalForm = (g) => `<form id="bgForm" class="stack"><h3 style="margin:0">${g ? 'Edit business goal' : 'New business goal'}</h3>
+    <label class="field">Goal<input name="title" required value="${esc(g?.title ?? '')}"></label>
+    <label class="field">Statement <span class="small muted">what the customer achieves</span><textarea name="statement" rows="2">${esc(g?.statement ?? '')}</textarea></label>
+    <label class="field">Value driver<input name="driver" value="${esc(g?.driver ?? '')}"></label>
+    <label class="field">Success measures <span class="small muted">one per line</span><textarea name="measures" rows="3">${esc((g?.measures ?? []).join('\n'))}</textarea></label>
+    <div class="row"><button class="btn primary" type="submit">Save</button><button class="btn ghost" type="button" data-back>Cancel</button></div></form>`;
+  const entryForm = (e, goal) => `<form id="scForm" class="stack"><h3 style="margin:0">${e ? 'Edit success criterion' : 'New success criterion'}</h3>
+    <label class="field">Business goal<select name="goal">${info.goals.map((g) => `<option value="${esc(g.key)}" ${(e?.goal ?? goal) === g.key ? 'selected' : ''}>${esc(g.title)}</option>`).join('')}</select></label>
+    <label class="field">Criterion<input name="title" required value="${esc(e?.title ?? '')}"></label>
+    <label class="field">Test item <span class="small muted">what is done in the POV</span><textarea name="test" rows="3">${esc(e?.test ?? '')}</textarea></label>
+    <label class="field">Benefit <span class="small muted">what the customer gains</span><textarea name="benefit" rows="2">${esc(e?.benefit ?? '')}</textarea></label>
+    <label class="field">Capability that proves it in the tenant<select name="capabilityId"><option value="">— none (confirmed by the SE)</option>${caps.map((c) => `<option value="${esc(c.id)}" ${e?.capabilityId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+    <div class="row"><button class="btn primary" type="submit">Save</button><button class="btn ghost" type="button" data-back>Cancel</button></div></form>`;
+  const list = () => `<div class="dbody"><h2>Business goals and success criteria</h2>
+    <p class="small muted">The bank SEs pick from: each criterion added to a POV takes its goal, wording, test item and benefit from here. Changing the bank does not change POVs that already have the criterion. Importing the SEAL files again replaces these edits.</p>
+    ${info.goals.map((g, gi) => {
+      const es = info.entries.filter((e) => e.goal === g.key);
+      return `<div class="item" style="margin:8px 0"><div class="top"><b>${gi + 1}. ${esc(g.title)}</b><span class="small muted">${es.length} criteria</span>
+        <span style="flex:1"></span><button class="btn sm ghost" data-g-open="${esc(g.key)}">${open === g.key ? 'Hide' : 'Criteria'}</button><button class="btn sm ghost" data-g-edit="${esc(g.key)}">Edit</button><button class="btn sm ghost danger" data-g-del="${esc(g.key)}">Remove</button></div>
+        ${g.statement ? `<div class="small muted">${esc(g.statement)}</div>` : ''}
+        ${open === g.key ? `<ol style="margin:8px 0 0;padding-left:20px">${es.map((e) => `<li style="margin:6px 0"><b>${esc(e.title)}</b>${e.capabilityId ? ` <span class="small muted">· ${esc(capName(e.capabilityId))}</span>` : ''}
+          <div class="small">${esc(e.test || '')}</div><div class="small muted">${esc(e.benefit || '')}</div>
+          <div class="row" style="margin-top:4px"><button class="btn sm ghost" data-e-edit="${esc(e.id)}">Edit</button><button class="btn sm ghost danger" data-e-del="${esc(e.id)}">Remove</button></div></li>`).join('')}</ol>
+          <button class="btn sm" data-e-new="${esc(g.key)}" style="margin-top:6px">Add a success criterion</button>` : ''}</div>`;
+    }).join('')}
+    <div class="dialog-actions"><button class="btn" data-g-new>New business goal</button><span style="flex:1"></span><button class="btn primary" data-close>Done</button></div></div>`;
+  const show = (html, wire) => {
+    const d = $('#dialog');
+    d.innerHTML = html;
+    wire(d);
+  };
+  const back = () => show(list(), wireList);
+  const save = async (path, method, body) => {
+    const r = await attempt(() => api(path, { method, body }), 'Saved');
+    if (r) {
+      info = r;
+      back();
+    }
+  };
+  const form = (html, path, method) =>
+    show(`<div class="dbody">${html}</div>`, (d) => {
+      d.querySelector('[data-back]').addEventListener('click', back);
+      d.querySelector('form').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        save(path, method, formData(ev.target));
+      });
+    });
+  // A second click confirms (no browser pop-ups); POVs keep the criteria they already have.
+  const armed = (b, label) => {
+    if (b.dataset.armed) return true;
+    b.dataset.armed = '1';
+    b.textContent = label;
+    return false;
+  };
+  function wireList(d) {
+    d.querySelector('[data-close]').addEventListener('click', () => {
+      closeDialog();
+      document.dispatchEvent(new CustomEvent('cc:rerender'));
+    });
+    d.querySelector('[data-g-new]').addEventListener('click', () => form(goalForm(null), '/bank/goals', 'POST'));
+    for (const b of d.querySelectorAll('[data-g-open]')) b.addEventListener('click', () => ((open = open === b.dataset.gOpen ? null : b.dataset.gOpen), back()));
+    for (const b of d.querySelectorAll('[data-g-edit]')) b.addEventListener('click', () => form(goalForm(info.goals.find((g) => g.key === b.dataset.gEdit)), `/bank/goals/${encodeURIComponent(b.dataset.gEdit)}`, 'PUT'));
+    for (const b of d.querySelectorAll('[data-g-del]'))
+      b.addEventListener('click', async () => {
+        if (!armed(b, 'Remove the goal and its criteria?')) return;
+        await save(`/bank/goals/${encodeURIComponent(b.dataset.gDel)}`, 'DELETE');
+      });
+    for (const b of d.querySelectorAll('[data-e-new]')) b.addEventListener('click', () => form(entryForm(null, b.dataset.eNew), '/bank/entries', 'POST'));
+    for (const b of d.querySelectorAll('[data-e-edit]')) b.addEventListener('click', () => form(entryForm(info.entries.find((e) => e.id === b.dataset.eEdit)), `/bank/entries/${encodeURIComponent(b.dataset.eEdit)}`, 'PUT'));
+    for (const b of d.querySelectorAll('[data-e-del]'))
+      b.addEventListener('click', async () => {
+        if (!armed(b, 'Click again to remove')) return;
+        await save(`/bank/entries/${encodeURIComponent(b.dataset.eDel)}`, 'DELETE');
+      });
+  }
+  openDialog(list(), { wide: true, onOpen: wireList });
+}
+
 function wireLibrary(main) {
   const again = () => document.dispatchEvent(new CustomEvent('cc:rerender'));
+  main.querySelector('[data-act="bank-edit"]')?.addEventListener('click', () => attempt(bankEditor));
   const libIn = main.querySelector('#libFiles');
   main.querySelector('[data-act="lib-import"]')?.addEventListener('click', () => libIn.click());
   libIn?.addEventListener('change', async () => {

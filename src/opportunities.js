@@ -26,7 +26,7 @@ export const STAGES = {
   on_hold: 'On hold',
 };
 export const CRITERION_STATUS = { not_started: 'Not started', in_progress: 'In progress', met: 'Completed successfully', not_met: 'Not met', na: 'Not applicable' };
-export const SESSION_TYPES = { first_call: 'First call', discovery: 'Discovery', pre_pov: 'Pre-POV call', technical: 'Technical session', workshop: 'Workshop', launch: 'POV launch & setup', checkpoint: 'Check-in call', wrapup: 'Wrap-up call', readout: 'Readout' };
+export const SESSION_TYPES = { first_call: 'First call', discovery: 'Discovery', pre_pov: 'Pre-POV call', technical: 'Technical session', workshop: 'Workshop', launch: 'POV launch & setup', checkpoint: 'Check-in call', gate: 'Approval gate', wrapup: 'Wrap-up call', readout: 'Readout' };
 const HISTORY = 400;
 
 const strList = (v, n = 40, max = 120) => (Array.isArray(v) ? v : String(v ?? '').split(',')).map((x) => text(x, max)).filter(Boolean).slice(0, n);

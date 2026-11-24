@@ -117,12 +117,28 @@ export class Bank {
     return this.#db.read('bank', null);
   }
 
+  /**
+   * Which bank is in force: the SEAL library's, or the one kept here (imported, or edited by an Admin), whichever is
+   * newer; else the built-in one. An Admin's edits stand until the library is imported again.
+   */
+  #current() {
+    const lib = this.#fromLibrary();
+    const s = this.#stored();
+    if (lib && s) {
+      const libAt = this.#library.summary()?.files?.goals?.at ?? '';
+      return String(s.importedAt ?? s.editedAt ?? '') >= String(libAt) ? { ...s, source: s.edited ? 'edited' : 'imported' } : { ...lib, source: 'library' };
+    }
+    if (lib) return { ...lib, source: 'library' };
+    if (s) return { ...s, source: s.edited ? 'edited' : 'imported' };
+    return { goals: GOALS, entries: DEFAULT_BANK, source: 'built-in' };
+  }
+
   goals() {
-    return this.#fromLibrary()?.goals ?? this.#stored()?.goals ?? GOALS;
+    return this.#current().goals;
   }
 
   entries() {
-    return this.#fromLibrary()?.entries ?? this.#stored()?.entries ?? DEFAULT_BANK;
+    return this.#current().entries;
   }
 
   /** The criteria that prove a business goal. */
@@ -141,8 +157,69 @@ export class Bank {
 
   info() {
     const s = this.#stored();
-    const lib = Boolean(this.#fromLibrary());
-    return { source: lib ? 'library' : s ? 'imported' : 'built-in', custom: Boolean(s), importedAt: s?.importedAt ?? null, by: s?.by ?? '', goals: this.goals(), entries: this.entries() };
+    const cur = this.#current();
+    return { source: cur.source, custom: Boolean(s), importedAt: s?.importedAt ?? null, editedAt: s?.editedAt ?? null, by: s?.by ?? '', goals: this.goals(), entries: this.entries().map((e, i) => ({ ...e, id: e.id ?? `e${i}` })) };
+  }
+
+  // ——— Editing (Admins): the bank in force is copied here once, then changed in place ———
+  #editable(actor) {
+    const cur = this.#current();
+    const goals = cur.goals.map((g) => ({ ...g }));
+    const entries = cur.entries.map((e, i) => ({ ...e, id: e.id ?? `e${i}-${Date.now().toString(36)}` }));
+    return { goals, entries, save: () => this.#db.write('bank', { goals, entries, edited: true, editedAt: new Date().toISOString(), importedAt: null, by: actor?.name ?? '' }) };
+  }
+
+  saveGoal(actor, key, body) {
+    const b = this.#editable(actor);
+    const title = text(body.title, 160);
+    if (!title) throw fail(400, 'Give the business goal a title.');
+    let g = key ? b.goals.find((x) => x.key === key) : null;
+    if (key && !g) throw fail(404, 'No such business goal.');
+    if (!g) {
+      const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'goal';
+      let k = base;
+      for (let n = 2; b.goals.some((x) => x.key === k); n += 1) k = `${base}-${n}`;
+      g = { key: k };
+      b.goals.push(g);
+    }
+    Object.assign(g, { title, statement: text(body.statement, 400), driver: text(body.driver, 200), measures: (Array.isArray(body.measures) ? body.measures : String(body.measures ?? '').split('\n')).map((x) => text(x, 200)).filter(Boolean).slice(0, 8) });
+    b.save();
+    return g;
+  }
+
+  removeGoal(actor, key) {
+    const b = this.#editable(actor);
+    const i = b.goals.findIndex((x) => x.key === key);
+    if (i < 0) throw fail(404, 'No such business goal.');
+    b.goals.splice(i, 1);
+    for (let j = b.entries.length - 1; j >= 0; j -= 1) if (b.entries[j].goal === key) b.entries.splice(j, 1);
+    b.save();
+  }
+
+  saveEntry(actor, id, body) {
+    const b = this.#editable(actor);
+    const title = text(body.title, 200);
+    if (!title) throw fail(400, 'Give the success criterion a name.');
+    const goal = text(body.goal, 60);
+    if (!b.goals.some((g) => g.key === goal)) throw fail(400, 'Pick the business goal it proves.');
+    const capabilityId = text(body.capabilityId, 60);
+    if (capabilityId && !this.#catalog.list().some((c) => c.id === capabilityId)) throw fail(400, 'That capability is not in the catalogue.');
+    const current = this.info().entries;
+    const at = id ? current.findIndex((e) => e.id === id) : -1;
+    if (id && at < 0) throw fail(404, 'No such success criterion.');
+    const e = { ...(at >= 0 ? b.entries[at] : { id: `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}` }), goal, capabilityId, title, test: text(body.test, 1000), benefit: text(body.benefit, 600) };
+    if (at >= 0) b.entries[at] = e;
+    else b.entries.push(e);
+    b.save();
+    return e;
+  }
+
+  removeEntry(actor, id) {
+    const b = this.#editable(actor);
+    const at = this.info().entries.findIndex((e) => e.id === id);
+    if (at < 0) throw fail(404, 'No such success criterion.');
+    b.entries.splice(at, 1);
+    b.save();
   }
 
   reset() {

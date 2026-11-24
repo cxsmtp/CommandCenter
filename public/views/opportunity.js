@@ -1074,6 +1074,9 @@ function editCriterion(c) {
      <label class="field">Due<input type="date" name="due" value="${esc(c?.due ?? '')}"></label></div>
      <div class="row"><label class="field">Engine names that prove it (comma separated)<input name="engines" value="${esc((c?.engines ?? []).join(', '))}" placeholder="e.g. llm-scanner, aibom"></label><label class="field">Scan origins that prove it<input name="origins" value="${esc((c?.origins ?? []).join(', '))}" placeholder="e.g. jenkins, cursor"></label></div>
      <label class="field">Keywords that count as evidence (comma separated)<input name="keywords" value="${esc((c?.keywords ?? []).join(', '))}" placeholder="jira, ticket"></label>
+     <label class="field">Test item <span class="muted small">what is done in the POV</span><textarea name="test" rows="2">${esc(c?.test ?? '')}</textarea></label>
+     <label class="field">Benefit <span class="muted small">what the customer gains</span><textarea name="benefit" rows="2">${esc(c?.benefit ?? '')}</textarea></label>
+     <div class="row"><label class="field">Milestone<select name="milestone"><option value="">—</option>${['M1', 'M2', 'M3', 'M1 / M2'].map((m) => `<option ${c?.milestone === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label><label class="field">Customer tracker references <span class="muted small">e.g. 2, 8, 12</span><input name="refs" value="${esc(c?.refs ?? '')}"></label></div>
      <label class="field">Notes<textarea name="notes" rows="4">${esc(c?.notes ?? '')}</textarea></label>
      <label class="field">Evidence link (screenshot, document)<input name="evidenceLink" type="url" value="${esc(c?.evidenceLink ?? '')}"></label>`,
     (b) => api(`/opportunities/${oid()}/criteria${c ? `/${c.id}` : ''}`, { method: 'POST', body: { ...(c ?? { category: 'custom' }), ...b } }),

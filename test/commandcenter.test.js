@@ -658,6 +658,30 @@ test('the SEAL library: business goals become the bank, the first call fills the
   assert.equal(deck.status, 200);
   assert.ok((await deck.arrayBuffer()).byteLength > 10000);
 
+  // Admins edit the bank in Meridian: SEs may not; edits stand until the SEAL files are imported again.
+  assert.equal((await call('se1', '/api/bank/goals', { method: 'POST', body: { title: 'Nope' } })).status, 403);
+  const eid = bank.entries[0].id;
+  const ed = await call('admin', `/api/bank/entries/${eid}`, { method: 'PUT', body: { goal: 'BG-01', title: 'Find flaws before release, in hours', test: 'Scan the two pilot apps on every pull request.', benefit: 'Flaws are fixed the day they are written.', capabilityId: 'sast' } });
+  assert.equal(ed.status, 200, JSON.stringify(ed.body));
+  assert.equal(ed.body.source, 'edited');
+  assert.equal(ed.body.entries[0].title, 'Find flaws before release, in hours');
+  const ng = await call('admin', '/api/bank/goals', { method: 'POST', body: { title: 'Prove compliance on demand', statement: 'Evidence comes from the platform.', measures: 'Audit pack in a day\nNo manual evidence' } });
+  const key = ng.body.goals.find((g) => g.title === 'Prove compliance on demand').key;
+  assert.deepEqual(ng.body.goals.find((g) => g.key === key).measures, ['Audit pack in a day', 'No manual evidence']);
+  assert.equal((await call('admin', '/api/bank/entries', { method: 'POST', body: { goal: key, title: 'SBOM on demand', test: 'Export an SBOM.', benefit: 'Answers in minutes.', capabilityId: 'sbom' } })).status, 200);
+  assert.equal((await call('admin', '/api/bank/entries', { method: 'POST', body: { goal: 'no-such-goal', title: 'x' } })).status, 400);
+  // A new POV with the edited goal takes the edited wording.
+  const o2 = (await call('se1', '/api/opportunities', { method: 'POST', body: { customer: 'Initech Two', stage: 'first_call', goalIds: [key, 'BG-01'] } })).body.opportunity;
+  assert.ok(o2.criteria.some((c) => c.title === 'SBOM on demand' && c.test === 'Export an SBOM.'));
+  assert.ok(o2.criteria.some((c) => c.title === 'Find flaws before release, in hours'));
+  await call('se1', `/api/opportunities/${o2.id}`, { method: 'DELETE' });
+  assert.equal((await call('admin', `/api/bank/goals/${key}`, { method: 'DELETE' })).body.entries.some((e) => e.goal === key), false, 'its criteria go with it');
+  // Importing the SEAL files again replaces the edits.
+  await new Promise((r) => setTimeout(r, 5));
+  await call('admin', '/api/library/import', { method: 'POST', body: { files: [{ name: 'goals.md', text: LIB_GOALS }] } });
+  assert.equal((await call('se1', '/api/bank')).body.source, 'library');
+  await call('admin', '/api/bank/reset', { method: 'POST' });
+
   // Removing the library brings back the built-in goals.
   assert.equal((await call('admin', '/api/library', { method: 'DELETE' })).status, 200);
   assert.equal((await call('se1', '/api/bank')).body.source, 'built-in');
