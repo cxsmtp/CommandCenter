@@ -193,3 +193,31 @@ test('a sign-in survives a restart; sign-out and a password change end sessions 
   assert.equal(u3.fromToken(a.token), null, 'signed out stays signed out after a restart');
   u3.stop();
 });
+
+test('a changed encryption key never wipes the accounts: Meridian refuses to start and says why', async () => {
+  const dir = tmp();
+  const saved = process.env.CC_SECRET;
+  try {
+    process.env.CC_SECRET = 'the-original-secret';
+    const db = new Db(dir);
+    db.write('users', [{ id: 'u1', email: 'a@x.com' }]);
+    db.write('opportunities', [{ id: 'o1' }]);
+    assert.ok(fs.existsSync(path.join(dir, 'key.fingerprint')));
+    // Started again without its secret (or with another one).
+    process.env.CC_SECRET = 'a-different-secret';
+    assert.throws(() => new Db(dir), (e) => e.code === 'STATE' && e.exitCode === 78 && /original key/.test(e.message));
+    // Old data without the fingerprint file: the key must still open the accounts.
+    fs.rmSync(path.join(dir, 'key.fingerprint'));
+    assert.throws(() => new Db(dir), (e) => e.code === 'STATE');
+    // The right key: everything is there.
+    process.env.CC_SECRET = 'the-original-secret';
+    assert.equal(new Db(dir).read('users', []).length, 1);
+    // A damaged accounts file with no good copy stops the start instead of becoming an empty list.
+    fs.writeFileSync(path.join(dir, 'opportunities.json'), 'garbage');
+    fs.rmSync(path.join(dir, 'opportunities.json.prev'), { force: true });
+    assert.throws(() => new Db(dir).read('opportunities', []), (e) => e.code === 'STATE' && /opportunities\.json/.test(e.message));
+  } finally {
+    if (saved === undefined) delete process.env.CC_SECRET;
+    else process.env.CC_SECRET = saved;
+  }
+});

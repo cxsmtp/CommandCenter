@@ -32,6 +32,13 @@ export const email = (v) => {
   return /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/.test(s) ? s : '';
 };
 
+const CRITICAL = new Set(['users', 'opportunities', 'settings']);
+/** A problem with the data itself: restarting will not help, so the launcher waits and never rolls back (exit 78). */
+export const STATE_EXIT = 78;
+export function stateError(message) {
+  return Object.assign(new Error(message), { code: 'STATE', exitCode: STATE_EXIT });
+}
+
 export class Db {
   #dir;
   #cache = new Map();
@@ -43,6 +50,35 @@ export class Db {
     this.#dir = dir;
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.#vault = new Vault(dir);
+    this.#guardKey();
+  }
+
+  /**
+   * The data's key must be the key the data was written with. If it is not (CC_SECRET missing or changed, a lost
+   * secret.key), nothing could be read and Meridian would start empty with a new Admin: it refuses to start instead.
+   */
+  #guardKey() {
+    const mark = path.join(this.#dir, 'key.fingerprint');
+    const users = path.join(this.#dir, 'users.json');
+    let known = '';
+    try {
+      known = fs.readFileSync(mark, 'utf8').trim();
+    } catch {}
+    if (known && known !== this.#vault.fingerprint) throw stateError(`The encryption key is not the one this data was written with (expected key ${known}, got ${this.#vault.fingerprint} from ${this.#vault.source}). Start Meridian with its original key: the same CC_SECRET, CC_SECRET_FILE or data/secret.key as before. Nothing was changed.`);
+    if (!known && fs.existsSync(users)) {
+      // Data from before the fingerprint was kept: the key must at least open the accounts.
+      try {
+        this.#vault.readJson(users);
+      } catch {
+        let opened = false;
+        try {
+          this.#vault.readJson(`${users}.prev`);
+          opened = true;
+        } catch {}
+        if (!opened) throw stateError(`The encryption key (${this.#vault.source}) cannot open this data's accounts. Start Meridian with its original key: the same CC_SECRET, CC_SECRET_FILE or data/secret.key as before. Nothing was changed.`);
+      }
+    }
+    if (!known) fs.writeFileSync(mark, `${this.#vault.fingerprint}\n`, { mode: 0o600 });
   }
 
   get dir() {
@@ -85,6 +121,8 @@ export class Db {
       } catch {}
     }
     this.repairs.push({ name, from: null, at: new Date().toISOString(), error: String(error.message).slice(0, 200) });
+    // Accounts, POVs and settings are never replaced by an empty list: Meridian stops and says why instead.
+    if (CRITICAL.has(name)) throw stateError(`${name}.json cannot be read and no good copy was found (its previous copy and every backup were tried): ${error.message}. Restore a backup of the data folder, or put ${name}.json back. Nothing was changed.`);
     console.error(`Could not read ${name}.json and found no good copy (${error.message}); it was set aside.`);
     try {
       fs.renameSync(file, `${file}.damaged-${Date.now()}`);

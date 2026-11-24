@@ -1978,7 +1978,15 @@ async function defaultVerify(connection) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const host = process.env.HOST || '127.0.0.1';
   const port = Number(process.env.PORT) || 4310;
-  const app = createApp({ tls: startMode() === 'https' });
+  let app;
+  try {
+    app = createApp({ tls: startMode() === 'https' });
+  } catch (error) {
+    if (error.code !== 'STATE') throw error;
+    // A problem with the data or its key: say what and how to fix it; the launcher waits instead of rolling back.
+    console.error(`\n  Meridian did not start: ${error.message}\n`);
+    process.exit(error.exitCode);
+  }
   if (app.firstAdmin) {
     console.log(`\n  First start. Sign in as ${app.firstAdmin.email} with password: ${app.firstAdmin.password}\n  (you will be asked to change it)\n`);
   }

@@ -18,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readState, writeState, RESTART_CODE } from './updates.js';
 import { probe } from './probe.js';
-import { Db } from './db.js';
+import { Db, STATE_EXIT } from './db.js';
 
 const BUILTIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = process.env.CC_DATA_DIR || path.join(BUILTIN, 'data');
@@ -113,6 +113,13 @@ function start() {
       log('Restart requested.');
       crashes = 0;
       return start();
+    }
+    // A problem with the data or its key (the server said what): another version would not help, so no rollback.
+    if (code === STATE_EXIT) {
+      settled = true;
+      quickCrashes = 0;
+      log('The server cannot start with this data (see the message above). Trying again in 60 s; nothing was rolled back.');
+      return void setTimeout(start, 60_000);
     }
     if (!settled) {
       settled = true;
