@@ -13,7 +13,7 @@ import { platformSlide } from './deck.js';
 import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS } from './toolchain.js';
 
 const BG = '170B2B';
-const PANEL = '22123B';
+const PANEL = '1F1235';
 const LINE = '3D2860';
 const ORANGE = 'F25928';
 const VIOLET = '7A45FF';
@@ -23,6 +23,7 @@ const FONT = 'Arial';
 const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5C518'], planned: ['Planned', 'B9B0CC'], missed: ['Not met', '8A8197'] };
 const PLATFORM_CATS = new Set(['code', 'supply', 'aisc', 'runtime', 'agents', 'aspm']);
 
+const mixHex = (a, b, t) => [0, 2, 4].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) + (parseInt(b.slice(i, i + 2), 16) - parseInt(a.slice(i, i + 2), 16)) * t).toString(16).padStart(2, '0')).join('').toUpperCase();
 const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 const longDay = (d) => {
   if (!d) return '—';
@@ -67,14 +68,28 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
   // 1 — Cover
   {
     const s = add('cover');
-    s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: 'Georgia', fontSize: 34, bold: true, color: WHITE, margin: 0 });
+    s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: FONT, fontSize: 38, bold: true, color: WHITE, margin: 0 });
     s.addText('CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
     const who = [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean);
     s.addText(who.map((p) => ({ text: `${p.name} | ${p.title || ''}`, options: { breakLine: true } })), { x: 0.5, y: 5.2, w: 8, h: 0.75, fontFace: FONT, fontSize: 15, color: '8F7BFF', margin: 0, valign: 'top' });
     s.addText(longDay(today()), { x: 0.5, y: 6.3, w: 6, h: 0.35, fontFace: FONT, fontSize: 13, color: WHITE, margin: 0 });
   }
 
-  // 2 — Executive overview: the letter, written from what we know unless the SE wrote their own
+  // ——— Shared pieces, so every slide reads as one family ———
+  const L = 0.5; // left margin
+  const W = 12.33; // content width
+  const card = (s, x, y, w, h, o = {}) => s.addShape(pptx.ShapeType.roundRect, { x, y, w, h, rectRadius: 0.08, fill: { color: o.fill ?? PANEL }, line: { color: o.line ?? LINE, width: o.lineW ?? 0.75, dashType: o.dash ?? 'solid' } });
+  const label = (s, text, x, y, w, color = ORANGE) => {
+    s.addShape(pptx.ShapeType.rect, { x, y: y + 0.05, w: 0.05, h: 0.2, fill: { color }, line: { color, width: 0 } });
+    s.addText(text.toUpperCase(), { x: x + 0.13, y, w: w - 0.13, h: 0.3, fontFace: FONT, fontSize: 10, bold: true, color, charSpacing: 2, margin: 0, valign: 'middle' });
+  };
+  const pill = (s, text, x, y, w, color, o = {}) => {
+    s.addShape(pptx.ShapeType.roundRect, { x, y, w, h: o.h ?? 0.28, rectRadius: (o.h ?? 0.28) / 2, fill: { color, transparency: o.solid ? 0 : 78 }, line: { color, width: 0.75 } });
+    s.addText(text, { x, y, w, h: o.h ?? 0.28, fontFace: FONT, fontSize: o.size ?? 9, bold: true, color: o.solid ? WHITE : color, align: 'center', valign: 'middle', margin: 0 });
+  };
+  const bullets = (items, o = {}) => items.map((t) => ({ text: t, options: { bullet: { code: o.code ?? '25AA', indent: 14 }, breakLine: true, paraSpaceAfter: o.space ?? 6, color: o.color ?? WHITE } }));
+
+  // 2 — Executive overview: the letter on the left, the POV at a glance on the right
   {
     const s = add('content');
     head(s, 'Executive Overview', 'Give your developers the skills they need to increase security and', 'reduce risk right from the start.');
@@ -82,23 +97,53 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
     const letter = opp.plan?.letter
       ? opp.plan.letter.split(/\n{2,}/)
       : [
-          `Based on our recent discussions${opp.apma ? ' and the findings from the APMA assessment' : ''}, we understand that ${C} is looking to strengthen its application security posture.${pains ? ` What we heard: ${pains}.` : ''}${opp.apma?.lowest ? ` Areas such as ${opp.apma.lowest} stand out as immediate priorities to build a solid foundation.` : ''}`,
-          `With the Checkmarx One platform and its suite of security capabilities, ${C} can follow a clear, structured path to accelerate AppSec maturity: moving from a reactive approach to a proactive, developer-first security model${c.engines.length ? ` that spans ${c.engines.join(', ')}` : ''}.`,
-          `This document gives you a structured view of the value Checkmarx One brings to your organization. It covers the business goals we identified together, the agreed success criteria for evaluating the solution${opp.apma ? ', maturity recommendations based on the APMA framework' : ''}, the current status of the POV, and any additional context needed to support the process.`,
-          c.se ? `Your primary technical point of contact at Checkmarx is ${c.se.name}, available throughout the engagement to answer questions and make sure every business need and success criterion is accounted for as you make the best decision for your AppSec program.` : '',
+          `Based on our recent discussions${opp.apma ? ' and the findings from the APMA assessment' : ''}, we understand that ${C} is looking to strengthen its application security posture.${pains ? ` What we heard: ${pains}.` : ''}${opp.apma?.lowest ? ` ${opp.apma.lowest} stand out as immediate priorities to build a solid foundation.` : ''}`,
+          `With Checkmarx One, ${C} can follow a clear, structured path to AppSec maturity: from a reactive approach to a proactive, developer-first security model.`,
+          `This document gives a structured view of that value: the business goals we identified together, the agreed success criteria${opp.apma ? ', maturity recommendations from the APMA framework' : ''}, and the current status of the POV.`,
+          c.se ? `Your primary technical contact at Checkmarx is ${c.se.name}, available throughout the engagement to make sure every business need and success criterion is accounted for.` : '',
         ].filter(Boolean);
-    s.addText([{ text: `Dear ${C} Team,`, options: { breakLine: true, paraSpaceAfter: 8 } }, ...letter.map((p) => ({ text: p.trim(), options: { breakLine: true, paraSpaceAfter: 8 } })), { text: opp.plan?.quote || '“From code to confidence: building security from the ground up with Checkmarx.”', options: { bold: true, italic: true } }], {
-      x: 0.45,
-      y: 1.45,
-      w: 12.4,
-      h: 5.4,
-      fontFace: FONT,
-      fontSize: 13,
-      color: WHITE,
-      valign: 'top',
-      margin: 0,
-      fit: 'shrink',
-    });
+    s.addText(`Dear ${C} Team,`, { x: L, y: 1.55, w: 7.4, h: 0.4, fontFace: FONT, fontSize: 15, bold: true, color: WHITE, margin: 0 });
+    s.addText(letter.map((p) => ({ text: p.trim(), options: { breakLine: true, paraSpaceAfter: 10 } })), { x: L, y: 2.0, w: 7.4, h: 3.95, fontFace: FONT, fontSize: 12.5, color: 'E6E0F2', valign: 'top', margin: 0, lineSpacingMultiple: 1.12, fit: 'shrink' });
+    s.addShape(pptx.ShapeType.rect, { x: L, y: 6.15, w: 0.06, h: 0.55, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+    s.addText(opp.plan?.quote || '“From code to confidence: building security from the ground up with Checkmarx.”', { x: L + 0.2, y: 6.1, w: 7.2, h: 0.65, fontFace: FONT, fontSize: 13, italic: true, bold: true, color: WHITE, margin: 0, valign: 'middle' });
+    // At a glance
+    const gx = 8.4;
+    const gw = L + W - gx;
+    card(s, gx, 1.55, gw, 5.2);
+    label(s, 'At a glance', gx + 0.25, 1.75, gw - 0.5);
+    const goals = (story?.goals ?? []).filter((g) => g.key !== 'other').slice(0, 4);
+    let y = 2.2;
+    if (goals.length) {
+      s.addText('Business goals', { x: gx + 0.25, y, w: gw - 0.5, h: 0.28, fontFace: FONT, fontSize: 11, bold: true, color: MUTED, margin: 0 });
+      y += 0.32;
+      goals.forEach((g, i) => {
+        s.addShape(pptx.ShapeType.ellipse, { x: gx + 0.25, y: y + 0.03, w: 0.26, h: 0.26, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+        s.addText(String(i + 1), { x: gx + 0.25, y: y + 0.03, w: 0.26, h: 0.26, fontFace: FONT, fontSize: 9, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
+        s.addText(g.title, { x: gx + 0.62, y, w: gw - 0.85, h: 0.34, fontFace: FONT, fontSize: 10.5, color: WHITE, margin: 0, valign: 'middle', fit: 'shrink' });
+        y += 0.4;
+      });
+      y += 0.1;
+    }
+    s.addText('Platform in this POV', { x: gx + 0.25, y, w: gw - 0.5, h: 0.28, fontFace: FONT, fontSize: 11, bold: true, color: MUTED, margin: 0 });
+    y += 0.34;
+    let cx = gx + 0.25;
+    for (const e of c.engines.slice(0, 10)) {
+      const pw = Math.min(gw - 0.5, 0.3 + e.length * 0.075);
+      if (cx + pw > gx + gw - 0.25) {
+        cx = gx + 0.25;
+        y += 0.36;
+      }
+      if (y > 5.6) break;
+      pill(s, e, cx, y, pw, VIOLET, { size: 8.5, h: 0.27 });
+      cx += pw + 0.08;
+    }
+    y += 0.5;
+    const facts = [opp.startDate ? ['POV', `${longDay(opp.startDate)} – ${longDay(opp.endDate)}`] : null, c.se ? ['Your contact', `${c.se.name}${c.se.email ? ` · ${c.se.email}` : ''}`] : null].filter(Boolean);
+    for (const [k, v] of facts) {
+      if (y > 6.25) break;
+      s.addText([{ text: `${k}  `, options: { bold: true, color: MUTED } }, { text: v, options: { color: WHITE } }], { x: gx + 0.25, y, w: gw - 0.5, h: 0.3, fontFace: FONT, fontSize: 10, margin: 0, fit: 'shrink' });
+      y += 0.34;
+    }
   }
 
   // 3 — The platform, with this POV's engines
@@ -107,30 +152,35 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
     kinds.push('content');
   }
 
-  // 4 — Tailored to your DevSecOps: the touch points, with the customer's tools lit
+  // 4 — Tailored to your DevSecOps: the lifecycle as a pipeline, the touch points with the customer's tools lit
   {
     const s = add('content');
     head(s, 'Tailored to Your DevSecOps', 'Integrate with your SDLC and', 'secure your applications');
-    s.addShape(pptx.ShapeType.roundRect, { x: 0.45, y: 1.5, w: 9.4, h: 1.05, rectRadius: 0.08, fill: { color: PANEL }, line: { color: VIOLET, width: 1 } });
-    s.addText('DevSecOps', { x: 0.65, y: 1.5, w: 1.6, h: 1.05, fontFace: FONT, fontSize: 15, color: WHITE, valign: 'middle', margin: 0 });
+    const n = DEVSECOPS.length;
+    const sw = (W + 0.25 * (n - 1)) / n;
     DEVSECOPS.forEach((st, i) => {
-      s.addShape(pptx.ShapeType.roundRect, { x: 2.35 + i * 1.06, y: 1.65, w: 0.92, h: 0.75, rectRadius: 0.06, fill: { color: '3A2A55' }, line: { color: LINE, width: 0.75 } });
-      s.addText(st, { x: 2.35 + i * 1.06, y: 1.65, w: 0.92, h: 0.75, fontFace: FONT, fontSize: 10, color: WHITE, align: 'center', valign: 'bottom', margin: 4 });
+      const x = L + i * (sw - 0.25);
+      const color = mixHex('6B34FD', 'F25928', i / (n - 1));
+      s.addShape(i === 0 ? pptx.ShapeType.homePlate : pptx.ShapeType.chevron, { x, y: 1.5, w: sw, h: 0.62, fill: { color }, line: { color: BG, width: 1.5 } });
+      s.addText(st, { x: x + (i === 0 ? 0 : 0.2), y: 1.5, w: sw - 0.3, h: 0.62, fontFace: FONT, fontSize: 12, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
     });
     const t = opp.toolchain ?? {};
-    const w = 12.4 / TOOLCHAIN.length;
+    const cw = (W - 0.15 * (TOOLCHAIN.length - 1)) / TOOLCHAIN.length;
     TOOLCHAIN.forEach((cat, i) => {
-      const x = 0.45 + i * w;
+      const x = L + i * (cw + 0.15);
       const picked = t[cat.key]?.tools ?? [];
-      const names = [...cat.tools.map(([n]) => n), ...picked.filter((p) => !cat.tools.some(([n]) => n === p))];
-      s.addShape(pptx.ShapeType.roundRect, { x, y: 2.8, w: w - 0.12, h: 4.05, rectRadius: 0.06, fill: { color: PANEL }, line: { color: LINE, width: 0.75 } });
-      s.addText(cat.label.toUpperCase(), { x: x + 0.12, y: 2.88, w: w - 0.3, h: 0.4, fontFace: FONT, fontSize: 13, bold: true, color: WHITE, margin: 0 });
-      s.addShape(pptx.ShapeType.line, { x: x + 0.12, y: 3.3, w: w - 0.36, h: 0, line: { color: LINE, width: 0.75 } });
-      names.slice(0, 11).forEach((n, k) => {
-        const on = picked.includes(n);
-        const y = 3.42 + k * 0.31;
-        if (on) s.addShape(pptx.ShapeType.rect, { x: x + 0.1, y: y - 0.02, w: w - 0.32, h: 0.27, fill: { color: ORANGE, transparency: 85 }, line: { color: ORANGE, width: 1 } });
-        s.addText(n, { x: x + 0.16, y, w: w - 0.4, h: 0.24, fontFace: FONT, fontSize: 9.5, color: on ? WHITE : '8C82A3', bold: on, margin: 0, valign: 'middle' });
+      const names = [...picked, ...cat.tools.map(([nm]) => nm).filter((nm) => !picked.includes(nm))];
+      card(s, x, 2.45, cw, 4.35, { line: picked.length ? ORANGE : LINE, lineW: picked.length ? 1 : 0.75 });
+      s.addText(cat.label.toUpperCase(), { x: x + 0.15, y: 2.58, w: cw - 0.3, h: 0.32, fontFace: FONT, fontSize: 12.5, bold: true, color: WHITE, margin: 0, valign: 'middle' });
+      s.addText(picked.length ? `${picked.length} in use` : 'not in scope', { x: x + 0.15, y: 2.9, w: cw - 0.3, h: 0.24, fontFace: FONT, fontSize: 8.5, color: picked.length ? ORANGE : '7D7396', margin: 0 });
+      s.addShape(pptx.ShapeType.line, { x: x + 0.15, y: 3.2, w: cw - 0.3, h: 0, line: { color: LINE, width: 0.75 } });
+      names.slice(0, 10).forEach((nm, k) => {
+        const on = picked.includes(nm);
+        const y = 3.32 + k * 0.33;
+        if (on) {
+          s.addShape(pptx.ShapeType.roundRect, { x: x + 0.1, y, w: cw - 0.2, h: 0.28, rectRadius: 0.14, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+          s.addText(`✓  ${nm}`, { x: x + 0.2, y, w: cw - 0.35, h: 0.28, fontFace: FONT, fontSize: 9.5, bold: true, color: WHITE, margin: 0, valign: 'middle', fit: 'shrink' });
+        } else s.addText(nm, { x: x + 0.2, y, w: cw - 0.35, h: 0.28, fontFace: FONT, fontSize: 9.5, color: '7D7396', margin: 0, valign: 'middle' });
       });
     });
   }
@@ -141,37 +191,57 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
     const s = add('content');
     head(s, 'APMA Assessment', 'Current status and future plan for', 'AppSec process maturity');
     const dims = apma.dimensions.filter((d) => d.current != null);
-    const label = (n) => n.replace('Security Testing - Infrastructure', 'Security Testing - Architecture & Scale');
-    s.addText(`The diagram shows the result of the APMA interview assessment with ${C}, and the desired state recommended for ${C}’s AppSec program.`, { x: 0.45, y: 1.45, w: 6.6, h: 0.6, fontFace: FONT, fontSize: 11, color: MUTED, margin: 0, valign: 'top' });
-    s.addShape(pptx.ShapeType.roundRect, { x: 0.45, y: 2.1, w: 6.6, h: 4.8, rectRadius: 0.06, fill: { color: WHITE }, line: { color: LINE, width: 0.5 } });
+    const name = (n) => n.replace('Security Testing - Infrastructure', 'Security Testing - Architecture & Scale');
+    card(s, L, 1.5, 6.2, 5.3);
     s.addChart(
       pptx.charts.RADAR,
       [
-        { name: 'Initial state', labels: dims.map((d) => label(d.name)), values: dims.map((d) => d.current ?? 0) },
-        { name: 'Desired state', labels: dims.map((d) => label(d.name)), values: dims.map((d) => d.desired ?? 0) },
+        { name: 'Today', labels: dims.map((d) => name(d.name).replace('Security Testing - ', 'Testing: ')), values: dims.map((d) => d.current ?? 0) },
+        { name: 'Desired', labels: dims.map((d) => name(d.name).replace('Security Testing - ', 'Testing: ')), values: dims.map((d) => d.desired ?? 0) },
       ],
-      { x: 0.55, y: 2.2, w: 6.4, h: 4.6, radarStyle: 'standard', chartColors: ['EF5D7A', '2DBE4E'], lineSize: 2, showLegend: true, legendPos: 't', legendFontSize: 9, catAxisLabelFontSize: 9, catAxisLabelColor: '333333', valAxisMinVal: 0, valAxisMaxVal: 4, valAxisMajorUnit: 1, valAxisLabelFontSize: 7, valAxisLabelColor: '888888' },
+      {
+        x: L + 0.1, y: 1.6, w: 6.0, h: 5.1,
+        radarStyle: 'marker', chartColors: ['F0597A', '3CCF8E'], lineSize: 2.5, lineDataSymbol: 'circle', lineDataSymbolSize: 7,
+        showLegend: true, legendPos: 'b', legendFontSize: 10, legendColor: 'E6E0F2', legendFontFace: FONT,
+        catAxisLabelFontSize: 9.5, catAxisLabelColor: 'E6E0F2', catAxisLabelFontFace: FONT, catAxisLineColor: '4A3670',
+        valAxisMinVal: 0, valAxisMaxVal: 4, valAxisMajorUnit: 1, valAxisLabelFontSize: 8, valAxisLabelColor: '8C82A3', valGridLine: { color: '4A3670', size: 0.75 },
+        plotArea: { fill: { color: PANEL } }, chartArea: { fill: { color: PANEL } },
+      },
     );
-    const rows = [
-      ['Dimension', 'Today', 'Desired'].map((h) => ({ text: h, options: { bold: true, color: WHITE, fill: { color: ORANGE }, fontSize: 10 } })),
-      ...dims.map((d) => [{ text: label(d.name), options: { color: WHITE, fontSize: 10 } }, { text: String(d.current ?? '—'), options: { color: 'EF5D7A', bold: true, fontSize: 11, align: 'center' } }, { text: String(d.desired ?? '—'), options: { color: '2DBE4E', bold: true, fontSize: 11, align: 'center' } }]),
-    ];
-    s.addTable(rows, { x: 7.35, y: 1.5, w: 5.5, colW: [3.5, 1, 1], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, fill: { color: PANEL }, rowH: 0.34, valign: 'middle' });
-    const recY = 1.6 + 0.36 * (dims.length + 1) + 0.25;
-    if (apma.overall) s.addText([{ text: 'Overall maturity: ', options: { bold: true, color: WHITE } }, { text: apma.overall, options: { color: MUTED } }], { x: 7.35, y: recY, w: 5.5, h: 0.45, fontFace: FONT, fontSize: 10, margin: 0, valign: 'top' });
+    const rx = 7.05;
+    const rw = L + W - rx;
+    label(s, 'Maturity by dimension', rx, 1.5, rw);
+    s.addText([{ text: '●', options: { color: 'F0597A' } }, { text: ' Today   ', options: { color: MUTED } }, { text: '●', options: { color: '3CCF8E' } }, { text: ' Desired', options: { color: MUTED } }], { x: rx + rw - 1.8, y: 1.5, w: 1.8, h: 0.3, fontFace: FONT, fontSize: 9, align: 'right', margin: 0 });
+    dims.forEach((d, i) => {
+      const y = 1.95 + i * 0.5;
+      const track = rw - 1.1;
+      s.addText(name(d.name), { x: rx, y, w: rw - 1.1, h: 0.22, fontFace: FONT, fontSize: 10, color: WHITE, margin: 0 });
+      s.addText(`${d.current} → ${d.desired ?? '—'}`, { x: rx + rw - 1.05, y: y + 0.08, w: 1.05, h: 0.3, fontFace: FONT, fontSize: 11, bold: true, color: WHITE, align: 'right', margin: 0 });
+      s.addShape(pptx.ShapeType.roundRect, { x: rx, y: y + 0.26, w: track, h: 0.16, rectRadius: 0.08, fill: { color: '2E1D4A' }, line: { color: '2E1D4A', width: 0 } });
+      if (d.desired) s.addShape(pptx.ShapeType.roundRect, { x: rx, y: y + 0.26, w: (track * Math.min(4, d.desired)) / 4, h: 0.16, rectRadius: 0.08, fill: { color: '3CCF8E', transparency: 55 }, line: { color: '3CCF8E', width: 0.75 } });
+      s.addShape(pptx.ShapeType.roundRect, { x: rx, y: y + 0.26, w: Math.max(0.16, (track * Math.min(4, d.current)) / 4), h: 0.16, rectRadius: 0.08, fill: { color: 'F0597A' }, line: { color: 'F0597A', width: 0 } });
+    });
+    let y = 1.95 + dims.length * 0.5 + 0.15;
+    if (apma.overall) {
+      s.addText([{ text: 'Overall maturity  ', options: { bold: true, color: MUTED } }, { text: apma.overall.replace(/^./, (x) => x.toUpperCase()), options: { color: WHITE } }], { x: rx, y, w: rw, h: 0.3, fontFace: FONT, fontSize: 10, margin: 0, fit: 'shrink' });
+      y += 0.45;
+    }
     if (apma.recommendations?.length) {
-      s.addText('RECOMMENDED FIRST STEPS', { x: 7.35, y: recY + 0.55, w: 5.5, h: 0.3, fontFace: FONT, fontSize: 10, color: ORANGE, charSpacing: 2, margin: 0 });
-      s.addText(
-        apma.recommendations.slice(0, 4).map((r) => ({ text: `${r.title}${r.dimension ? ` (${r.dimension})` : ''}`, options: { bullet: { code: '25B8' }, breakLine: true, paraSpaceAfter: 5 } })),
-        { x: 7.35, y: recY + 0.9, w: 5.5, h: Math.max(1, 6.9 - recY - 0.9), fontFace: FONT, fontSize: 10, color: WHITE, valign: 'top', margin: 0, fit: 'shrink' },
-      );
+      label(s, 'Recommended first steps', rx, y, rw);
+      y += 0.4;
+      apma.recommendations.slice(0, 3).forEach((r, i) => {
+        s.addShape(pptx.ShapeType.ellipse, { x: rx, y: y + 0.02, w: 0.28, h: 0.28, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+        s.addText(String(i + 1), { x: rx, y: y + 0.02, w: 0.28, h: 0.28, fontFace: FONT, fontSize: 10, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
+        s.addText([{ text: r.title, options: { color: WHITE, breakLine: true } }, { text: r.dimension, options: { color: MUTED, fontSize: 8.5 } }], { x: rx + 0.4, y: y - 0.02, w: rw - 0.4, h: 0.55, fontFace: FONT, fontSize: 10, margin: 0, valign: 'top', fit: 'shrink' });
+        y += 0.6;
+      });
     }
   }
 
   // 6 — Plan and timeline
   {
     const s = add('content');
-    head(s, 'POV Plan & Timeline');
+    head(s, 'POV Plan & Timeline', 'Mapped to', `${C}’s goals`);
     const plan = opp.plan ?? {};
     const scope = plan.scope?.length ? plan.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title).slice(0, 5);
     const cards = [
@@ -179,26 +249,31 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
       ['Support', 'Ensuring a smooth POV', plan.support?.length ? plan.support : PLAN_DEFAULTS.support],
       ['Success', 'Real-world outcomes', plan.success?.length ? plan.success : PLAN_DEFAULTS.success],
     ];
+    const kw = (W - 0.3) / 3;
     cards.forEach(([t, sub, items], i) => {
-      const x = 0.45 + i * 4.2;
-      s.addShape(pptx.ShapeType.roundRect, { x, y: 1.2, w: 4.0, h: 3.0, rectRadius: 0.06, fill: { color: PANEL }, line: { color: VIOLET, width: 0.75 } });
-      s.addText(t, { x: x + 0.2, y: 1.3, w: 3.6, h: 0.4, fontFace: FONT, fontSize: 16, color: WHITE, margin: 0 });
-      s.addText(sub, { x: x + 0.2, y: 1.7, w: 3.6, h: 0.28, fontFace: FONT, fontSize: 10, color: MUTED, margin: 0 });
-      s.addText(items.slice(0, 6).map((it) => ({ text: it, options: { bullet: { code: '00BB' }, breakLine: true, paraSpaceAfter: 4 } })), { x: x + 0.2, y: 2.05, w: 3.6, h: 2.05, fontFace: FONT, fontSize: 10, color: WHITE, valign: 'top', margin: 0, fit: 'shrink' });
+      const x = L + i * (kw + 0.15);
+      card(s, x, 1.5, kw, 2.7);
+      s.addShape(pptx.ShapeType.rect, { x: x + 0.25, y: 1.72, w: 0.4, h: 0.05, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+      s.addText(t, { x: x + 0.25, y: 1.82, w: kw - 0.5, h: 0.38, fontFace: FONT, fontSize: 17, bold: true, color: WHITE, margin: 0 });
+      s.addText(sub, { x: x + 0.25, y: 2.2, w: kw - 0.5, h: 0.26, fontFace: FONT, fontSize: 10, color: MUTED, margin: 0 });
+      s.addText(bullets(items.slice(0, 5), { space: 4 }), { x: x + 0.25, y: 2.55, w: kw - 0.45, h: 1.55, fontFace: FONT, fontSize: 10.5, valign: 'top', margin: 0, fit: 'shrink' });
     });
     const meetings = [...(opp.sessions ?? [])].sort((a, b) => a.date.localeCompare(b.date)).slice(-9);
-    s.addShape(pptx.ShapeType.rect, { x: 0, y: 5.05, w: 12.9, h: 0.16, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
-    s.addShape(pptx.ShapeType.triangle, { x: 12.85, y: 4.93, w: 0.4, h: 0.4, rotate: 90, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
-    if (!meetings.length) s.addText('Meetings appear here as they are planned.', { x: 0.45, y: 5.4, w: 12, h: 0.4, fontFace: FONT, fontSize: 12, color: MUTED });
-    const step = Math.min(1.45, 12.2 / Math.max(1, meetings.length));
+    const ly = 5.05;
+    s.addShape(pptx.ShapeType.rect, { x: L, y: ly - 0.03, w: W - 0.25, h: 0.06, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+    s.addShape(pptx.ShapeType.triangle, { x: L + W - 0.3, y: ly - 0.16, w: 0.3, h: 0.32, rotate: 90, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+    if (!meetings.length) s.addText('Meetings appear here as they are planned.', { x: L, y: 5.5, w: W, h: 0.4, fontFace: FONT, fontSize: 12, color: MUTED, align: 'center' });
+    const step = (W - 0.4) / Math.max(1, meetings.length);
     meetings.forEach((m, i) => {
-      const x = 0.45 + i * step;
+      const cxm = L + step * (i + 0.5);
       const d = new Date(`${m.date}T12:00:00Z`);
       const done = statusOf(m) === 'done';
-      s.addShape(pptx.ShapeType.roundRect, { x: x + 0.15, y: 4.5, w: 0.95, h: 1.05, rectRadius: 0.06, fill: { color: WHITE }, line: { color: done ? ORANGE : '9E94B8', width: 1.5 } });
-      s.addText([{ text: String(d.getUTCDate()), options: { fontSize: 22, bold: true, color: ORANGE, breakLine: true } }, { text: d.toLocaleString('en-GB', { month: 'long', timeZone: 'UTC' }), options: { fontSize: 8, color: '5B4A7A' } }], { x: x + 0.15, y: 4.55, w: 0.95, h: 0.95, fontFace: FONT, align: 'center', valign: 'middle', margin: 0 });
-      s.addText(m.title || SESSION_TYPES[m.type] || 'Meeting', { x, y: 5.65, w: step - 0.05, h: 0.45, fontFace: FONT, fontSize: 8.5, color: WHITE, align: 'center', valign: 'top', margin: 0, fit: 'shrink' });
-      s.addText(done ? 'Completed' : 'Planned', { x, y: 6.15, w: step - 0.05, h: 0.3, fontFace: FONT, fontSize: 10, bold: true, color: done ? '3CCF8E' : 'F5C518', align: 'center', margin: 0 });
+      const bw = 0.98;
+      if (done) card(s, cxm - bw / 2, ly - 0.55, bw, 1.0, { fill: WHITE, line: ORANGE, lineW: 1.5 });
+      else card(s, cxm - bw / 2, ly - 0.55, bw, 1.0, { fill: '24163C', line: '9E94B8', lineW: 1, dash: 'dash' });
+      s.addText([{ text: String(d.getUTCDate()), options: { fontSize: 24, bold: true, color: done ? ORANGE : WHITE, breakLine: true } }, { text: d.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' }).toUpperCase(), options: { fontSize: 9, bold: true, color: done ? '5B4A7A' : MUTED, charSpacing: 1 } }], { x: cxm - bw / 2, y: ly - 0.53, w: bw, h: 0.96, fontFace: FONT, align: 'center', valign: 'middle', margin: 0 });
+      s.addText(m.title || SESSION_TYPES[m.type] || 'Meeting', { x: cxm - step / 2 + 0.05, y: ly + 0.55, w: step - 0.1, h: 0.45, fontFace: FONT, fontSize: 10, color: WHITE, align: 'center', valign: 'top', margin: 0, fit: 'shrink' });
+      pill(s, done ? 'Completed' : 'Planned', cxm - 0.5, ly + 1.05, 1.0, done ? '3CCF8E' : 'F5C518', { size: 8.5, h: 0.26 });
     });
   }
 
@@ -206,30 +281,35 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
   {
     const s = add('content');
     head(s, 'POV Environment Details');
-    const H = (t, color = VIOLET) => ({ text: t, options: { bold: true, color: WHITE, fill: { color }, fontSize: 10 } });
-    const cell = (t, o = {}) => ({ text: String(t ?? '') || '—', options: { color: WHITE, fontSize: 9, ...o } });
-    const ppl = c.people.slice(0, 8);
-    s.addTable([[H('Name'), H('Title'), H('POV role'), H('Email address')], ...ppl.map((p) => [cell(p.name), cell(p.title), cell(p.povRole), cell(p.email)])], { x: 0.45, y: 1.15, w: 12.4, colW: [2.6, 3.2, 2.8, 3.8], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, fill: { color: PANEL }, rowH: 0.28, valign: 'middle' });
-    const top = 1.15 + 0.3 * (ppl.length + 1) + 0.25;
+    const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: VIOLET }, fontSize: 10.5 } });
+    const zebra = (i) => (i % 2 ? '1A0F2E' : PANEL);
+    const cell = (t, i, o = {}) => ({ text: String(t ?? '') || '—', options: { color: WHITE, fontSize: 10, fill: { color: zebra(i) }, ...o } });
+    const opts = { fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, valign: 'middle', autoPage: false, margin: [3, 6, 3, 6] };
+    const ppl = c.people.slice(0, 6);
+    label(s, 'People', L, 1.3, 4);
+    s.addTable([[H('Name'), H('Title'), H('POV role'), H('Email address')], ...ppl.map((p, i) => [cell(p.name, i, { bold: true }), cell(p.title, i), cell(p.povRole, i, { color: p.povRole ? ORANGE : MUTED }), cell(p.email, i, { color: MUTED })])], { ...opts, x: L, y: 1.65, w: W, colW: [2.6, 3.3, 2.7, 3.73], rowH: 0.32 });
+    const top = 1.65 + 0.36 * (ppl.length + 1) + 0.55;
     const t = opp.tenant;
     const weeks = opp.startDate && opp.endDate ? Math.max(1, Math.round((new Date(opp.endDate) - new Date(opp.startDate)) / (7 * 864e5))) : null;
     const env = [
-      ['POV dates', opp.startDate ? `${longDay(opp.startDate)} to ${longDay(opp.endDate)}` : '—'],
-      ['POV duration', weeks ? `${weeks} week${weeks > 1 ? 's' : ''}` : '—'],
+      ['POV dates', opp.startDate ? `${longDay(opp.startDate)} – ${longDay(opp.endDate)}` : ''],
+      ['Duration', weeks ? `${weeks} week${weeks > 1 ? 's' : ''}` : ''],
       ['Solutions for testing', c.engines.join(', ')],
-      ['Tenant instance', t ? `${t.regionLabel || t.region || ''}`.trim() : ''],
+      ['Tenant region', t ? `${t.regionLabel || t.region || ''}`.trim() : ''],
       ['Account name', opp.plan?.accountName || t?.tenant || ''],
       ['Tenant URL', t?.baseUrl ?? ''],
-      ['Out of scope', opp.plan?.outOfScope || '—'],
+      ['Out of scope', opp.plan?.outOfScope || ''],
     ];
-    s.addTable([[H('Environment details', '8C3DF8'), H('', '8C3DF8')], ...env.map(([k, v]) => [cell(k, { color: MUTED }), cell(v)])], { x: 0.45, y: top, w: 5.9, colW: [2.0, 3.9], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, fill: { color: PANEL }, rowH: 0.27, valign: 'middle', autoPage: false });
+    label(s, 'Environment', L, top - 0.35, 4);
+    s.addTable(env.map(([k, v], i) => [cell(k, i, { color: MUTED, bold: true }), cell(v, i)]), { ...opts, x: L, y: top, w: 5.9, colW: [1.9, 4.0], rowH: 0.31 });
     const tc = opp.toolchain ?? {};
     const capIds = new Set(c.caps.map((x) => x.id));
     const integ = TOOLCHAIN.filter((cat) => tc[cat.key]?.tools?.length).map((cat) => [cat.label, tc[cat.key].access || cat.access, tc[cat.key].tools.join(', ')]);
-    integ.push(['Languages & frameworks', '', tc.languages || opp.discovery?.languages || '—']);
-    integ.push(['Developer Assist', '', capIds.has('dev-assist') ? (tc.ide?.tools ?? []).join(', ') || 'Yes' : '—']);
-    integ.push(['Triage & Remediation Assist', '', capIds.has('ai-triage') || capIds.has('ai-remediation') ? 'Yes' : '—']);
-    s.addTable([[H('Integration', '8C3DF8'), H('Access needed', '8C3DF8'), H('Tools', '8C3DF8')], ...integ.map(([a, b, d]) => [cell(a, { color: MUTED }), cell(b), cell(d)])], { x: 6.6, y: top, w: 6.25, colW: [2.0, 1.9, 2.35], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, fill: { color: PANEL }, rowH: 0.27, valign: 'middle', autoPage: false });
+    integ.push(['Languages', '', tc.languages || opp.discovery?.languages || '']);
+    integ.push(['Developer Assist', '', capIds.has('dev-assist') ? (tc.ide?.tools ?? []).join(', ') || 'Yes' : '']);
+    integ.push(['Triage & Remediation', '', capIds.has('ai-triage') || capIds.has('ai-remediation') ? 'Yes' : '']);
+    label(s, 'Integrations', 6.75, top - 0.35, 4);
+    s.addTable([[H('Touch point'), H('Access needed'), H('Tools')], ...integ.map(([a, b2, d], i) => [cell(a, i, { color: MUTED, bold: true }), cell(b2, i), cell(d, i)])], { ...opts, x: 6.75, y: top, w: L + W - 6.75, colW: [1.75, 1.9, L + W - 6.75 - 3.65], rowH: 0.31 });
   }
 
   // 8… — The test plan, one business goal at a time
@@ -237,29 +317,49 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
     const crit = Object.fromEntries((story?.criteria ?? []).map((x) => [x.id, x]));
     let goals = (story?.goals ?? []).filter((g) => g.ids.length);
     if (!goals.length && story?.criteria?.length) goals = [{ key: 'all', title: 'Success criteria', statement: 'Agreed with the team for this POV.', ids: story.criteria.map((x) => x.id) }];
+    const rowH = (x) => Math.max(0.62, 0.2 + 0.17 * Math.max(Math.ceil(String(x.benefit || x.statement || '').length / 62), Math.ceil(String(x.test || '').length / 62), Math.ceil(String(x.title).length / 26) + 1));
     goals.forEach((g, gi) => {
       const ids = g.ids.filter((id) => crit[id]);
-      for (let k = 0; k < ids.length; k += 4) {
-        const s = add('table');
-        s.addText('Test Plan Overview', { x: 0.45, y: 0.25, w: 12, h: 0.5, fontFace: FONT, fontSize: 26, color: WHITE, margin: 0 });
-        s.addText([{ text: 'Business Goals', options: { color: ORANGE } }, { text: ' and ', options: { color: WHITE } }, { text: 'Success Criteria', options: { color: ORANGE } }], { x: 0.45, y: 0.72, w: 12, h: 0.3, fontFace: FONT, fontSize: 13, margin: 0 });
-        s.addShape(pptx.ShapeType.roundRect, { x: 0.45, y: 1.2, w: 12.4, h: 5.75, rectRadius: 0.06, fill: { color: PANEL }, line: { color: VIOLET, width: 0.75 } });
-        s.addShape(pptx.ShapeType.roundRect, { x: 0.6, y: 1.35, w: 0.9, h: 0.5, rectRadius: 0.08, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
-        s.addText(`BG${gi + 1}`, { x: 0.6, y: 1.35, w: 0.9, h: 0.5, fontFace: FONT, fontSize: 18, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
-        s.addText([{ text: `${g.title}${ids.length > 4 ? ` (${k / 4 + 1} of ${Math.ceil(ids.length / 4)})` : ''}`, options: { bold: true } }, { text: g.statement ? ` - ${g.statement}` : '' }], { x: 1.65, y: 1.3, w: 11.05, h: 0.65, fontFace: FONT, fontSize: 12, color: WHITE, margin: 0, valign: 'middle', fit: 'shrink' });
-        const H = (t) => ({ text: t, options: { bold: true, color: WHITE, fill: { color: ORANGE }, fontSize: 10, align: 'center' } });
-        const rows = ids.slice(k, k + 4).map((id, i) => {
+      // As many criteria as fit on the slide, never squeezed.
+      const pages = [];
+      let cur = [];
+      let h = 0;
+      for (const id of ids) {
+        const rh = rowH(crit[id]);
+        if (cur.length && h + rh > 4.3) {
+          pages.push(cur);
+          cur = [];
+          h = 0;
+        }
+        cur.push(id);
+        h += rh;
+      }
+      if (cur.length) pages.push(cur);
+      let n = 0;
+      pages.forEach((page, pi) => {
+        const s = add('content');
+        s.addText('Test Plan Overview', { x: L, y: 0.3, w: 9, h: 0.55, fontFace: FONT, fontSize: 26, bold: true, color: WHITE, margin: 0 });
+        s.addText([{ text: 'Business Goals', options: { color: ORANGE } }, { text: ' and ', options: { color: WHITE } }, { text: 'Success Criteria', options: { color: ORANGE } }], { x: L, y: 0.85, w: 9, h: 0.3, fontFace: FONT, fontSize: 13, margin: 0 });
+        if (pages.length > 1) s.addText(`${pi + 1} of ${pages.length}`, { x: L + W - 2, y: 0.4, w: 2, h: 0.3, fontFace: FONT, fontSize: 10, color: MUTED, align: 'right', margin: 0 });
+        card(s, L, 1.4, W, 0.85, { line: VIOLET });
+        s.addShape(pptx.ShapeType.roundRect, { x: L + 0.18, y: 1.55, w: 0.95, h: 0.55, rectRadius: 0.1, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+        s.addText(`BG${gi + 1}`, { x: L + 0.18, y: 1.55, w: 0.95, h: 0.55, fontFace: FONT, fontSize: 18, bold: true, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
+        s.addText([{ text: g.title, options: { bold: true, fontSize: 14, color: WHITE, breakLine: Boolean(g.statement) } }, ...(g.statement ? [{ text: g.statement, options: { fontSize: 10.5, color: MUTED } }] : [])], { x: L + 1.3, y: 1.45, w: W - 1.5, h: 0.75, fontFace: FONT, margin: 0, valign: 'middle', fit: 'shrink' });
+        const H = (t, al = 'left') => ({ text: t, options: { bold: true, color: WHITE, fill: { color: ORANGE }, fontSize: 10, align: al } });
+        const rows = page.map((id, i) => {
           const x = crit[id];
-          const [label, color] = STATE[x.state] ?? ['—', MUTED];
+          const [lab, color] = STATE[x.state] ?? ['—', MUTED];
+          const f = { fill: { color: i % 2 ? '1A0F2E' : PANEL } };
+          n += 1;
           return [
-            { text: [{ text: `SC${k + i + 1}:`, options: { bold: true, breakLine: true } }, { text: x.title }], options: { color: WHITE, fontSize: 10, align: 'center' } },
-            { text: x.benefit || x.statement || '', options: { color: WHITE, fontSize: 9 } },
-            { text: x.test || '', options: { color: WHITE, fontSize: 9 } },
-            { text: label, options: { color, bold: true, fontSize: 10, align: 'center' } },
+            { text: [{ text: `SC${n}  `, options: { bold: true, color: ORANGE } }, { text: x.title, options: { bold: true, color: WHITE } }], options: { fontSize: 10.5, ...f } },
+            { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
+            { text: x.test || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
+            { text: `●  ${lab}`, options: { color, bold: true, fontSize: 10, align: 'left', ...f } },
           ];
         });
-        s.addTable([[H('Success Criteria'), H('Description'), H('How to measure'), H('Result')], ...rows], { x: 0.6, y: 2.05, w: 12.1, colW: [2.2, 4.2, 4.2, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.32, ...rows.map(() => 1.1)], valign: 'middle', autoPage: false });
-      }
+        s.addTable([[H('Success criterion'), H('What it means for you'), H('How we measure it'), H('Result')], ...rows], { x: L, y: 2.45, w: W, colW: [2.75, 4.0, 4.08, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.36, ...page.map((id) => rowH(crit[id]))], valign: 'middle', autoPage: false, margin: [4, 8, 4, 8] });
+      });
     });
   }
 
@@ -276,9 +376,31 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
     s.addText('Appendix', { x: 0.8, y: 3.1, w: 11, h: 1, fontFace: FONT, fontSize: 44, bold: true, color: WHITE, margin: 0 });
     for (const m of held) {
       const n = add('notes');
-      n.addText([{ text: 'Meeting Notes', options: { bold: true, color: WHITE, fontSize: 26 } }, { text: `  Date: ${longDay(m.date)}`, options: { color: ORANGE, fontSize: 16 } }], { x: 0.45, y: 0.3, w: 12.4, h: 0.6, fontFace: FONT, margin: 0 });
-      const block = (title, body) => (lines(body).length ? [{ text: title, options: { bold: true, color: ORANGE, fontSize: 13, breakLine: true, paraSpaceBefore: 6 } }, ...lines(body).map((l) => ({ text: l, options: { bullet: true, color: WHITE, fontSize: 11, breakLine: true, paraSpaceAfter: 3 } }))] : []);
-      n.addText([...block('What we did today', m.did || m.notes), ...block(`Next steps from ${C}`, m.theirNext), ...block('From the Checkmarx side', m.ourNext || m.followUps)], { x: 0.45, y: 1.1, w: 12.4, h: 5.8, fontFace: FONT, valign: 'top', margin: 0, fit: 'shrink' });
+      n.addText([{ text: 'Meeting Notes', options: { bold: true, color: WHITE, fontSize: 26 } }, { text: `   ${longDay(m.date)}`, options: { color: ORANGE, fontSize: 15 } }], { x: 0.5, y: 0.3, w: 12.3, h: 0.6, fontFace: FONT, margin: 0, valign: 'middle' });
+      n.addText(m.title || SESSION_TYPES[m.type] || '', { x: 0.5, y: 0.88, w: 12.3, h: 0.3, fontFace: FONT, fontSize: 12, color: MUTED, margin: 0 });
+      if (!templated) n.addShape(pptx.ShapeType.roundRect, { x: 0.63, y: 1.37, w: 12.03, h: 5.58, rectRadius: 0.08, fill: { color: PANEL }, line: { color: LINE, width: 0.75 } });
+      const did = lines(m.did || m.notes);
+      const theirs = lines(m.theirNext);
+      const ours = lines(m.ourNext || m.followUps);
+      const head2 = (t, x, y, w) => {
+        n.addShape(pptx.ShapeType.rect, { x, y: y + 0.06, w: 0.05, h: 0.22, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
+        n.addText(t, { x: x + 0.15, y, w: w - 0.15, h: 0.34, fontFace: FONT, fontSize: 14, bold: true, color: WHITE, margin: 0, valign: 'middle' });
+      };
+      const two = theirs.length || ours.length;
+      const lw = two ? 6.6 : 11.4;
+      head2('What we did', 0.95, 1.65, lw);
+      n.addText(bullets(did.length ? did : ['—'], { code: '25B8', space: 7 }), { x: 0.95, y: 2.1, w: lw, h: 4.6, fontFace: FONT, fontSize: 12, color: WHITE, valign: 'top', margin: 0, fit: 'shrink' });
+      if (two) {
+        n.addShape(pptx.ShapeType.line, { x: 7.85, y: 1.7, w: 0, h: 5.0, line: { color: LINE, width: 0.75 } });
+        let y = 1.65;
+        for (const [t, list] of [[`Next steps from ${C}`, theirs], ['From the Checkmarx side', ours]]) {
+          if (!list.length) continue;
+          head2(t, 8.1, y, 4.3);
+          const h = Math.min(2.2, 0.3 + list.length * 0.42);
+          n.addText(bullets(list, { code: '25B8', space: 6 }), { x: 8.1, y: y + 0.45, w: 4.3, h, fontFace: FONT, fontSize: 11.5, color: WHITE, valign: 'top', margin: 0, fit: 'shrink' });
+          y += 0.45 + h + 0.3;
+        }
+      }
     }
   }
 
