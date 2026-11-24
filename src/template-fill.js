@@ -106,8 +106,8 @@ export function fillPlan(xml, { customer, scope = [], support = [], success = []
     26: month(launch),
     27: day(launch),
   };
-  // The template's "[customer]" and "[champion]" are red placeholders: the filled names take the text's colour.
-  return replaceRuns(xml, (i) => map[i]).replace(/<a:solidFill><a:srgbClr val="FF0000"\/><\/a:solidFill>/g, '');
+  // The template's "[customer]" and "[champion]" are red placeholders: the filled names take the template's orange.
+  return replaceRuns(xml, (i) => map[i]).replace(/<a:srgbClr val="(?:FF0000|C00000|E00000)"\s*\/>/g, '<a:srgbClr val="F25928"/>');
 }
 
 /** Environment details: the people, the environment, and the integrations, in the template's three tables. */

@@ -194,13 +194,82 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   }
   };
 
+  // CheckmarxOne: components of the platform activated in this POV. Drawn in the team template's own language (the
+  // same sections, colours and frame), with every product in the catalogue in its section, each a chip of known size,
+  // so a highlight always fits: activated in orange, met with a tick.
   const sPlatform = () => {
-  // 3 — The platform, with this POV's engines
-  if (story?.platform) {
+    const s = add('content');
+    s.addText('CheckmarxOne', { x: L, y: 0.32, w: 9, h: 0.6, fontFace: FONT, fontSize: 30, bold: true, color: WHITE, margin: 0 });
+    s.addText([{ text: 'Components of the platform ', options: { color: WHITE } }, { text: 'activated in this POV', options: { color: ORANGE } }], { x: L, y: 0.92, w: 10, h: 0.36, fontFace: FONT, fontSize: 16, margin: 0 });
+    const inPov = new Map((opp.criteria ?? []).map((x) => [x.capabilityId || x.capRef, x]).filter(([k]) => k));
+    const hasIntegrations = TOOLCHAIN.some((t) => (opp.toolchain?.[t.key]?.tools ?? []).length) || (opp.criteria ?? []).some((x) => ['scm', 'ci', 'ide', 'tracking'].includes(catalog?.get(x.capabilityId)?.category));
+    const BAND = '1C1238';
+    const BLUE = '1F6FE5';
+    const MAGENTA = 'A322C9';
+    const DIMTXT = 'B8B0CC';
+    const chip = (x, y, w, label, id, { fixed = false } = {}) => {
+      const crit = id ? inPov.get(id) : null;
+      const on = Boolean(crit) || (id === '*integrations' && hasIntegrations);
+      const met = crit && ['met'].includes(crit.status);
+      const h = 0.27;
+      if (on) s.addShape(pptx.ShapeType.roundRect, { x, y, w, h, rectRadius: 0.07, fill: { color: ORANGE, transparency: 82 }, line: { color: ORANGE, width: 1 } });
+      s.addShape(pptx.ShapeType.ellipse, { x: x + 0.09, y: y + 0.085, w: 0.1, h: 0.1, fill: { color: on ? ORANGE : '5A4C78' }, line: { color: on ? ORANGE : '5A4C78', width: 0 } });
+      s.addText([{ text: label, options: { color: on ? WHITE : fixed ? DIMTXT : DIMTXT, bold: on } }, ...(met ? [{ text: '  ✓', options: { color: '3CCF8E', bold: true } }] : [])], { x: x + 0.26, y, w: w - 0.3, h, fontFace: FONT, fontSize: 10, margin: 0, valign: 'middle', fit: 'shrink' });
+    };
+    const pill = (x, y, w, text, color) => {
+      s.addShape(pptx.ShapeType.roundRect, { x, y, w, h: 0.32, rectRadius: 0.05, fill: { color }, line: { color, width: 0 } });
+      s.addText(text, { x, y, w, h: 0.32, fontFace: FONT, fontSize: 12, color: WHITE, align: 'center', valign: 'middle', margin: 0 });
+    };
+    const textW = (t) => 0.42 + String(t).length * 0.078;
+    // The frame
+    s.addShape(pptx.ShapeType.roundRect, { x: L, y: 1.45, w: W, h: 5.45, rectRadius: 0.1, fill: { color: BG, transparency: 100 }, line: { color: VIOLET, width: 1 } });
+    const X0 = L + 0.15;
+    const RW = W - 0.3;
+    // A full-width row: its label, then its items in a line
+    const row = (y, label, color, items, { band = BAND } = {}) => {
+      s.addShape(pptx.ShapeType.roundRect, { x: X0, y, w: RW, h: 0.46, rectRadius: 0.05, fill: { color: band }, line: { color: band, width: 0 } });
+      pill(X0 + 0.1, y + 0.07, 1.45, label, color);
+      let x = X0 + 1.8;
+      for (const [t, id] of items) {
+        const w = textW(t);
+        chip(x, y + 0.095, w, t, id, { fixed: !id });
+        x += w + 0.18;
+      }
+    };
+    row(1.6, 'Insights', '6B34FD', [['Unified dashboard & reporting', 'analytics'], ['Cloud Insights', null]]);
+    row(2.14, 'Posture', '6B34FD', [['Application Security Posture Management (ASPM)', 'risk-orchestration'], ['Policy management', 'policy']]);
+    row(2.68, 'Agentic AI', ORANGE, [['Developer Assist', 'dev-assist'], ['Triage Assist', 'ai-triage'], ['Remediation Assist', 'ai-remediation'], ['Checkmarx MCP', 'mcp']], { band: '2A1A5E' });
+    // The engines, in their families
+    const blocks = [
+      ['Code Security', BLUE, 2.45, [['SAST', 'sast'], ['Fusion SAST', 'fusion'], ['LLM-based SAST (LAST)', 'last'], ['Secrets Detection', 'secrets'], ['IaC Security', 'iac'], ['API Security', 'apisec']]],
+      ['Supply Chain', BLUE, 2.45, [['SCA', 'sca'], ['Malicious Packages', 'malicious'], ['Container Security', 'containers'], ['Repository Health', 'scorecard'], ['SBOM', 'sbom']]],
+      ['AI Supply Chain', BLUE, 2.45, [['AI Inventory', 'aisc'], ['MCP Scanner', 'mcp-scanner'], ['LLM Scanner', 'llm-scanner'], ['Skills Scanner', 'skills-scanner']]],
+      ['Runtime', BLUE, 1.85, [['DAST', 'dast'], ['DAST for AI', 'dast-ai']]],
+    ];
+    const by = 3.22;
+    const bh = 2.36;
+    let bx = X0;
+    for (const [label, color, w, items] of blocks) {
+      s.addShape(pptx.ShapeType.roundRect, { x: bx, y: by, w, h: bh, rectRadius: 0.05, fill: { color: BAND }, line: { color: BAND, width: 0 } });
+      pill(bx + 0.1, by + 0.1, Math.min(w - 0.2, textW(label) + 0.2), label, color);
+      items.forEach(([t, id], i) => chip(bx + 0.1, by + 0.52 + i * 0.3, w - 0.2, t, id));
+      bx += w + 0.13;
+    }
+    // Partners, as the template shows them
+    const pw = X0 + RW - bx;
+    s.addShape(pptx.ShapeType.roundRect, { x: bx, y: by, w: pw, h: bh, rectRadius: 0.05, fill: { color: BAND }, line: { color: '3A3A8C', width: 0.75, dashType: 'dash' } });
+    s.addText('Partners', { x: bx + 0.15, y: by + 0.1, w: pw - 0.3, h: 0.32, fontFace: FONT, fontSize: 12, bold: true, color: '5EE0D2', margin: 0, valign: 'middle' });
+    [['Cloud security', null], ['Runtime protection', null]].forEach(([t], i) => chip(bx + 0.1, by + 0.52 + i * 0.3, pw - 0.2, t, null, { fixed: true }));
+    row(5.7, 'Dev Enablement', MAGENTA, [['Codebashing', null], ['IDE Remediation Guidance', null]]);
+    row(6.24, 'DevSecOps', MAGENTA, [['75+ technologies and languages, 100+ frameworks', null], ['SDLC integrations', '*integrations']]);
+  };
+
+  // The Classic deck's first slide (AppSec for the Age of AI-Generated Risk: this POV's engines with their status),
+  // right after the cover; the template's footer shows instead of its own band.
+  const sAge = () => {
+    if (!story?.platform) return;
     platformSlide(pptx, story.platform, { band: false });
-    // The template's own components slide is used instead when it has one, with this POV's engines boxed.
-    kinds.push({ kind: 'content', reuse: 'components', marks: [...new Set(c.caps.flatMap((x) => COMPONENT_LABELS[x.id] ?? []))] });
-  }
+    kinds.push('content');
   };
 
   const sDevSecOps = () => {
@@ -651,8 +720,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   // The main deck is the team template's own story, in its order: cover, toolchain, platform, plan, environment, the
   // test plan per business goal, closing. Everything Meridian adds goes to the appendix.
   const order = results
-    ? [sCover, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sChallenges, sGlance, sExpansion, sNext, sApma, sTenant, ...(use.env ? [() => sEnv(false)] : []), sEvidence, sNotes]
-    : [sCover, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sOverview, sApma, ...(use.env ? [() => sEnv(false)] : []), ...(heldNotes ? [sNotes] : [])];
+    ? [sCover, sAge, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sChallenges, sGlance, sExpansion, sNext, sApma, sTenant, ...(use.env ? [() => sEnv(false)] : []), sEvidence, sNotes]
+    : [sCover, sAge, sDevSecOps, sPlatform, sPlan, sEnv, sTests, sClosing, sAppendix, sOverview, sApma, ...(use.env ? [() => sEnv(false)] : []), ...(heldNotes ? [sNotes] : [])];
   for (const make of order) make();
 
   const out = await pptx.write({ outputType: 'nodebuffer' });
