@@ -261,12 +261,14 @@ async function credits(client, projectNames) {
  *                 in /api/scans). Its answer carries each environment's login settings: never kept, only counts and dates.
  *   policies      GET /api/policy_management_service_uri/policies/v3: the policies made (not the default one), on how
  *                 many projects or tags, how many break the build; .../incidents/total: violations raised
+ *   feedback      GET /api/feedback-app/v2/apps and /v3/profiles: the feedback apps set up (Jira, Azure Boards,
+ *                 ServiceNow, email, Slack, Teams) and how many projects a profile sends to each
  * No names are kept: only counts, scores and dates.
  */
 export async function aspm(client) {
   // Each part on its own: a page this tenant lacks, or one that fails, leaves the others standing.
   const soft = (fn) => fn().catch(() => null);
-  const [apps, arm, risks, cloud, dast, pol, incidents] = await Promise.all([
+  const [apps, arm, risks, cloud, dast, pol, incidents, fbApps, fbProfiles] = await Promise.all([
     soft(() => client.request('/api/applications', { query: { limit: 100, offset: 0 }, retries: 1 })),
     soft(() => client.request('/api/risk-management/summary', { retries: 1 })),
     soft(() => client.request('/api/risks', { query: { limit: 1, offset: 0 }, retries: 1 })),
@@ -274,10 +276,13 @@ export async function aspm(client) {
     soft(() => client.request('/api/dast/scans/environments', { query: { from: 1, to: 100 }, retries: 1 })),
     soft(() => client.request('/api/policy_management_service_uri/policies/v3', { query: { limit: 100, page: 1 }, retries: 1 })),
     soft(() => client.request('/api/policy_management_service_uri/incidents/total', { retries: 1 })),
+    soft(() => client.request('/api/feedback-app/v2/apps', { query: { limit: 100, page: 1 }, retries: 1 })),
+    soft(() => client.request('/api/feedback-app/v3/profiles', { query: { limit: 100, page: 1, includeProjects: true }, retries: 1 })),
   ]);
   // The list's wrapper differs between releases ({ policies }, { data }, a bare array): the first array of policies.
   const policies = Array.isArray(pol) ? pol : [pol?.policies, pol?.data, pol?.items, pol?.results].find(Array.isArray) ?? null;
   const made = policies?.filter((x) => x && !x.defaultPolicy) ?? [];
+  const feedback = feedbackOf(fbApps, fbProfiles);
   const violations = n0(typeof incidents === 'object' && incidents ? incidents.total ?? incidents.count ?? incidents.totalCount : incidents);
   const envs = Array.isArray(dast?.environments) ? dast.environments : null;
   const dastScans = envs?.map((e) => Date.parse(e?.lastScanTime)).filter(Number.isFinite).sort((a, b) => b - a) ?? [];
@@ -289,10 +294,38 @@ export async function aspm(client) {
     applications: list ? { total: n0(apps?.totalCount) ?? list.length, withRules: list.filter((a) => a?.rules?.length).length, projects: new Set(list.flatMap((a) => a?.projectIds ?? [])).size } : null,
     armScores: scored ? { scored: scored.length, top: scored.length ? Math.max(...scored.map((a) => Number(a.riskScore))) : null, highOrAbove: scored.filter((a) => /critical|high/i.test(a?.riskSeverity ?? '')).length } : null,
     risks: risks?.metaData ? { total: n0(risks.metaData.totalResults) ?? 0 } : null,
+    feedback,
     policies: policies ? { made: made.length, applied: made.filter((x) => x.projects?.length || x.tags?.length).length, breakBuild: made.filter((x) => x.breakBuild || x.netNewBreakBuild).length, violations } : null,
     dast: envs ? { environments: n0(dast?.totalItems) ?? envs.length, scanned: dastScans.length, lastScanAt: dastScans[0] ? new Date(dastScans[0]).toISOString() : null } : null,
     cloud: accounts ? { accounts: n0(cloud?.total) ?? accounts.length, lastScanAt: last ? new Date(last).toISOString() : null } : null,
   };
+}
+
+const arrayIn = (body, keys) => (Array.isArray(body) ? body : keys.map((k) => body?.[k]).find(Array.isArray) ?? null);
+/** A feedback app's kind from whatever its type field is called: jira, azure, servicenow, email, slack, teams. */
+export function feedbackKind(app) {
+  const t = [app?.type, app?.applicationType, app?.appType, app?.applicationTypeName, app?.typeName, app?.applicationType?.name].filter((x) => typeof x === 'string').join(' ').toLowerCase();
+  return [['jira', /jira/], ['azure', /azure|ado|boards/], ['servicenow', /servicenow|snow/], ['email', /e-?mail|smtp/], ['slack', /slack/], ['teams', /teams/]].find(([, re]) => re.test(t))?.[0] ?? null;
+}
+/** { jira: { apps, projects }, … } from the apps and the profiles that send projects to them. Null when unreadable. */
+function feedbackOf(appsBody, profilesBody) {
+  const apps = arrayIn(appsBody, ['apps', 'applications', 'data', 'items', 'results', 'feedbackApps']);
+  if (!apps) return null;
+  const kindOf = new Map(apps.map((a) => [String(a?.id), feedbackKind(a)]));
+  const out = {};
+  for (const k of kindOf.values()) if (k) out[k] = { apps: (out[k]?.apps ?? 0) + 1, projects: 0 };
+  const seen = {};
+  for (const p of arrayIn(profilesBody, ['profiles', 'data', 'items', 'results']) ?? []) {
+    const projects = (p?.projectsIds ?? p?.projectIds ?? p?.projects ?? []).map((x) => (typeof x === 'string' ? x : x?.id ?? x?.projectId)).filter(Boolean);
+    for (const id of p?.appsIds ?? p?.appIds ?? (p?.apps ?? []).map((a) => a?.id)) {
+      const k = kindOf.get(String(id));
+      if (!k) continue;
+      seen[k] ??= new Set();
+      projects.forEach((x) => seen[k].add(x));
+    }
+  }
+  for (const [k, set] of Object.entries(seen)) out[k].projects = set.size;
+  return out;
 }
 
 /** The tenant's AI settings (GET /api/configuration/tenant): Fusion on, LLM-based scanning on, the model. */

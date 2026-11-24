@@ -10,7 +10,8 @@
  *   actions    AI actions Checkmarx One counted on the credits (triage, remediation)
  *   aspm       what the ASPM pages hold: applications, risk-scores (Application Risk Management), risks (Risk
  *              Orchestration), cloud (Cloud Insights accounts), dast (a DAST environment scanned),
- *              policy (a policy applied), violations (policy violations raised)
+ *              policy (a policy applied), violations (policy violations raised), feedback:jira|azure|servicenow|
+ *              email|slack|teams (a feedback app of that kind set up)
  *   keywords   words looked for in the opportunity's own notes, discovery and sessions (a hint, never proof)
  *
  * Evidence only ever suggests: the SE confirms a criterion is met. An Admin (or anyone with catalog.manage) edits
@@ -114,11 +115,11 @@ export const DEFAULT_CATALOG = [
     ['kiro', 'Kiro', ['kiro'], ['kiro']],
   ].map(([id, name, origins, keywords]) => c(id, 'ide', `${name} (AI coding agent)`, `Checkmarx One Developer Assist in ${name}`, { origins, keywords }, { proof: `In ${name}, show Developer Assist (or the Checkmarx MCP server) catching a vulnerability in AI-written code and the fix it proposes.`, tech: `Scans whose origin or user agent names ${name} (GET /api/scans). Prevention in the agent alone leaves no scan: confirmed by the SE then.` })),
   // ——— Tracking ———
-  c('jira', 'tracking', 'Jira ticketing', 'Feedback Apps — Jira', { keywords: ['jira'] }, { proof: 'Create Jira tickets from findings (by hand and by the feedback app’s rules); show them closing when fixed.', tech: MANUAL }),
-  c('azure-boards', 'tracking', 'Azure Boards', 'Feedback Apps — Azure Boards', { keywords: ['azure boards', 'work item'] }, { proof: 'Create work items from findings.', tech: MANUAL }),
-  c('servicenow', 'tracking', 'ServiceNow', 'ServiceNow integration', { keywords: ['servicenow'] }, { proof: 'Create ServiceNow tickets from findings.', tech: MANUAL }),
-  c('email-feedback', 'tracking', 'Email notifications', 'Feedback Apps — Email', { keywords: ['email notification', 'feedback app'] }, { proof: 'Show the notification email a team gets for new findings.', tech: MANUAL }),
-  c('chat', 'tracking', 'Slack / Teams notifications', 'Notifications', { keywords: ['slack', 'teams'] }, { proof: 'Show the notification in the team’s channel.', tech: MANUAL }),
+  c('jira', 'tracking', 'Jira ticketing', 'Feedback Apps — Jira', { aspm: ['feedback:jira'], keywords: ['jira'] }, { proof: 'Create Jira tickets from findings (by hand and by the feedback app’s rules); show them closing when fixed.', tech: 'GET /api/feedback-app/v2/apps: a Jira feedback app set up; GET /api/feedback-app/v3/profiles: the projects it serves. Tickets made by hand are shown by the SE.' }),
+  c('azure-boards', 'tracking', 'Azure Boards', 'Feedback Apps — Azure Boards', { aspm: ['feedback:azure'], keywords: ['azure boards', 'work item'] }, { proof: 'Create work items from findings.', tech: 'GET /api/feedback-app/v2/apps: a Azure Boards feedback app set up; GET /api/feedback-app/v3/profiles: the projects it serves. Tickets made by hand are shown by the SE.' }),
+  c('servicenow', 'tracking', 'ServiceNow', 'ServiceNow integration', { aspm: ['feedback:servicenow'], keywords: ['servicenow'] }, { proof: 'Create ServiceNow tickets from findings.', tech: 'GET /api/feedback-app/v2/apps: a ServiceNow feedback app set up; GET /api/feedback-app/v3/profiles: the projects it serves. Tickets made by hand are shown by the SE.' }),
+  c('email-feedback', 'tracking', 'Email notifications', 'Feedback Apps — Email', { aspm: ['feedback:email'], keywords: ['email notification', 'feedback app'] }, { proof: 'Show the notification email a team gets for new findings.', tech: 'GET /api/feedback-app/v2/apps: a email feedback app set up; GET /api/feedback-app/v3/profiles: the projects it serves. Tickets made by hand are shown by the SE.' }),
+  c('chat', 'tracking', 'Slack / Teams notifications', 'Notifications', { aspm: ['feedback:slack', 'feedback:teams'], keywords: ['slack', 'teams'] }, { proof: 'Show the notification in the team’s channel.', tech: 'GET /api/feedback-app/v2/apps: a Slack or Teams feedback app set up; GET /api/feedback-app/v3/profiles: the projects it serves. Tickets made by hand are shown by the SE.' }),
   // ——— Platform ———
   c('sso', 'platform', 'Single sign-on (SAML / OIDC)', 'Identity & Access Management — SSO', { keywords: ['sso', 'saml', 'okta', 'entra', 'azure ad'] }, { proof: 'Sign in through the customer’s identity provider; show group mapping.', tech: MANUAL }),
   c('rbac', 'platform', 'Roles, groups & access control', 'Identity & Access Management — roles and groups', { keywords: ['rbac', 'roles', 'groups', 'permissions'] }, { proof: 'Show a developer seeing only their team’s projects.', tech: MANUAL }),
@@ -162,7 +163,7 @@ export class Catalog {
     const out = saved.map((x) => {
       const moved = MOVED[x.category]?.[x.id];
       const def = DEFAULT_CATALOG.find((d) => d.id === x.id);
-      return { ...x, detect: { ...x.detect, aspm: x.detect?.aspm ?? def?.detect?.aspm ?? [] }, category: groups.has(x.category) ? x.category : moved ?? def?.category ?? 'platform', proof: x.proof ?? def?.proof ?? '', tech: x.tech && !/does not count them yet/.test(x.tech) ? x.tech : def?.tech ?? x.tech ?? '', isNew: x.isNew ?? def?.isNew ?? false };
+      return { ...x, detect: { ...x.detect, aspm: x.detect?.aspm ?? def?.detect?.aspm ?? [] }, category: groups.has(x.category) ? x.category : moved ?? def?.category ?? 'platform', proof: x.proof ?? def?.proof ?? '', tech: x.tech && !(/does not count them yet/.test(x.tech) || (x.tech === MANUAL && def?.detect?.aspm?.length)) ? x.tech : def?.tech ?? x.tech ?? '', isNew: x.isNew ?? def?.isNew ?? false };
     });
     for (const d of DEFAULT_CATALOG) if (!out.some((x) => x.id === d.id) && !deleted.has(d.id)) out.push(d);
     return out;
@@ -232,6 +233,8 @@ function aspmFacts(a) {
   if (a.dast?.scanned > 0) out.set('dast', `DAST scanned ${n(a.dast.scanned, 'environment')}${a.dast.lastScanAt ? `, last on ${new Date(a.dast.lastScanAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : ''}`);
   if (a.policies?.applied > 0) out.set('policy', `${n(a.policies.applied, 'policy', 'policies')} applied to projects${a.policies.breakBuild ? `, ${a.policies.breakBuild} breaking the build` : ''}`);
   if (a.policies?.violations > 0) out.set('violations', `Policies raised ${n(a.policies.violations, 'violation')}`);
+  const NAMES = { jira: 'Jira', azure: 'Azure Boards', servicenow: 'ServiceNow', email: 'email', slack: 'Slack', teams: 'Teams' };
+  for (const [k, f] of Object.entries(a.feedback ?? {})) if (f?.apps > 0) out.set(`feedback:${k}`, `${f.apps === 1 ? 'A' : f.apps} ${NAMES[k] ?? k} feedback app${f.apps === 1 ? ' is' : 's are'} set up${f.projects ? `, used by ${n(f.projects, 'project')}` : ', not yet on a project'}`);
   if (a.cloud?.accounts > 0) out.set('cloud', `Cloud Insights has ${n(a.cloud.accounts, 'cloud account')} connected${a.cloud.lastScanAt ? `, last scanned ${new Date(a.cloud.lastScanAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : ''}`);
   return out;
 }
