@@ -64,10 +64,40 @@ export const passwordProblem = (p) => (String(p ?? '').length < 10 ? 'Use at lea
 export class Users {
   #db;
   #sessions = new Map();
+  #dirty = false;
+  #timer = null;
   sessionMs = SESSION_MS;
+  // However active, a sign-in lasts at most this long.
+  static MAX_SESSION_MS = 30 * 86_400_000;
 
   constructor(db) {
     this.#db = db;
+    // Sessions are kept (encrypted, like everything else) so that a restart, an update or a crash signs nobody out.
+    const now = Date.now();
+    for (const [k, v] of Object.entries(db.read('sessions', {}) ?? {})) if (v?.userId && v.exp > now && (v.created ?? now) + Users.MAX_SESSION_MS > now) this.#sessions.set(k, v);
+    this.#timer = setInterval(() => this.flush(), 30_000);
+    this.#timer.unref?.();
+  }
+
+  /** Save the sessions now (sign-in, sign-out and shutdown save at once; a session's renewal within 30 s). */
+  flush(force = false) {
+    if (!this.#dirty && !force) return;
+    const now = Date.now();
+    const out = {};
+    for (const [k, v] of this.#sessions) if (v.exp > now) out[k] = v;
+    try {
+      this.#db.write('sessions', out);
+      this.#dirty = false;
+    } catch {}
+  }
+
+  stop() {
+    clearInterval(this.#timer);
+    this.flush(true);
+  }
+
+  get sessionCount() {
+    return this.#sessions.size;
   }
 
   #all() {
@@ -229,7 +259,7 @@ export class Users {
     return publicUser(user);
   }
 
-  changePassword(id, current, next) {
+  changePassword(id, current, next, keepToken = null) {
     const all = this.#all();
     const user = all.find((u) => u.id === id);
     if (!user || !checkPassword(current, user.password)) throw fail(400, 'The current password is not right.');
@@ -238,6 +268,8 @@ export class Users {
     user.password = hashPassword(next);
     user.mustChangePassword = false;
     this.#save(all);
+    // Signed in elsewhere with the old password: those sessions end; this one goes on.
+    this.endSessions(id, keepToken);
   }
 
   /** Remove a person: their reports move up to their manager, their opportunities are handed over by the caller. */
@@ -261,25 +293,44 @@ export class Users {
     const ok = checkPassword(password, user?.password ?? 'scrypt$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
     if (!user || !ok || user.active === false) throw fail(401, 'That email and password do not match.');
     const token = randomBytes(32).toString('base64url');
-    this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs });
+    this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs, created: Date.now() });
+    this.#dirty = true;
+    this.flush();
     return { token, user: publicUser(user) };
   }
 
   fromToken(token) {
     if (!token) return null;
     const s = this.#sessions.get(hashToken(token));
-    if (!s || s.exp < Date.now()) return null;
-    s.exp = Date.now() + this.sessionMs;
+    const now = Date.now();
+    if (!s || s.exp < now || (s.created ?? now) + Users.MAX_SESSION_MS < now) return null;
+    // Slide the expiry, saved within 30 s (a minute's renewals are one write).
+    if (now + this.sessionMs - s.exp > 60_000) {
+      s.exp = now + this.sessionMs;
+      this.#dirty = true;
+    }
     const user = this.#all().find((u) => u.id === s.userId);
     return user && user.active !== false ? publicUser(user) : null;
   }
 
-  signOut(token) {
-    this.#sessions.delete(hashToken(token ?? ''));
+  /** When the current session ends (for the browser's warning). */
+  expiresAt(token) {
+    const s = this.#sessions.get(hashToken(token ?? ''));
+    return s ? new Date(Math.min(s.exp, (s.created ?? Date.now()) + Users.MAX_SESSION_MS)).toISOString() : null;
   }
 
-  endSessions(userId) {
-    for (const [k, s] of this.#sessions) if (s.userId === userId) this.#sessions.delete(k);
+  signOut(token) {
+    this.#sessions.delete(hashToken(token ?? ''));
+    this.#dirty = true;
+    this.flush();
+  }
+
+  /** End a person's sessions (all but `keepToken`'s, when given). */
+  endSessions(userId, keepToken = null) {
+    const keep = keepToken ? hashToken(keepToken) : null;
+    for (const [k, s] of this.#sessions) if (s.userId === userId && k !== keep) this.#sessions.delete(k);
+    this.#dirty = true;
+    this.flush();
   }
 }
 

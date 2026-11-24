@@ -89,7 +89,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const ai = new AiActions({ db });
   const orgRates = () => ratesFor(db.read('settings', {}).valueRates ?? {});
   const valueFor = (opp, live = opp.tenant ? monitor.live(opp.id) : null) => (live?.summary ? valueOf({ credits: monitor.snapshot(opp.id)?.credits, summary: live.summary, backlog: monitor.snapshot(opp.id)?.findings?.ai ?? null, ledger: ai.ledger(opp.id), rates: ratesFor(db.read('settings', {}).valueRates ?? {}, opp.valueRates ?? {}) }) : null);
-  const updater = new Updater({ dataDir, currentVersion: VERSION, ...(updaterOptions ?? {}) });
+  const updater = new Updater({ dataDir, currentVersion: VERSION, restart: () => gracefulExit(RESTART_CODE, 'update'), ...(updaterOptions ?? {}) });
   users.sessionMs = (settings().security.sessionHours || 12) * 3600e3;
   const backupStore = new Backups({ dataDir, vault: db.vault, ...(backupOptions ?? {}) });
 
@@ -168,10 +168,31 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     return { rows: summary.rows, matched: summary.matched.length, unmatched: summary.unmatched.length, detail: summary };
   }
   const sfMailbox = new SfMailbox({ settings: () => sfSettings().mailbox ?? {}, open: (x) => db.open(x), importFile: (buf, meta) => importReport(buf, meta) });
+  // ——— Restarting without dropping anyone ———
+  // New requests are answered "restarting, try again in 3 s" (the browser waits and retries), requests under way
+  // finish, then sign-ins and the audit queue are saved before the process ends.
+  let draining = false;
+  let inFlight = 0;
+  function gracefulExit(code, why = '') {
+    if (draining) return;
+    draining = true;
+    if (why) console.log(`[meridian] Stopping (${why}): finishing ${inFlight} request(s) first.`);
+    const end = Date.now() + 6000;
+    const finish = () => {
+      for (const f of [() => users.stop(), () => trail.stop(), () => monitor.stop()]) {
+        try {
+          f();
+        } catch {}
+      }
+      process.exit(code);
+    };
+    const wait = () => (inFlight > 0 && Date.now() < end ? setTimeout(wait, 100) : finish());
+    setTimeout(wait, 150);
+  }
   const restartServer = (actor, why) => {
     if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start Meridian with "npm start" or the container image.');
     audit.record(actor, 'system', `Restarted the server (${why})`);
-    setTimeout(() => process.exit(RESTART_CODE), 300);
+    gracefulExit(RESTART_CODE, why);
   };
 
   const monitor = new Monitor({
@@ -506,11 +527,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       res.auditEmail = text(body.email, 254).toLowerCase();
       throttle(`${req.socket.remoteAddress}|${res.auditEmail}`);
       const { token, user } = users.signIn(body.email, body.password);
-      return send(res, 200, { user }, { 'Set-Cookie': sessionCookie(token, 12 * 3600) });
+      return send(res, 200, { user, expiresAt: users.expiresAt(token) }, { 'Set-Cookie': sessionCookie(token, 30 * 86400) });
     }
     const user = users.fromToken(cookie(req, 'cc_session'));
     if (route === 'GET /session') {
-      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode }, version: VERSION });
+      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode }, version: VERSION });
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
@@ -604,7 +625,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (route === 'PATCH /me') return send(res, 200, { user: users.update(user, user.id, await readBody(req)) });
     if (route === 'POST /me/password') {
       const b = await readBody(req);
-      users.changePassword(user.id, b.current, b.next);
+      users.changePassword(user.id, b.current, b.next, cookie(req, 'cc_session'));
       return send(res, 200, { ok: true });
     }
 
@@ -865,7 +886,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const b = await readBody(req);
       const r = backupStore.restore(text(b.name, 200), { version: VERSION });
       audit.record(user, 'system', `Restored the backup ${r.restored} (the data before it is in ${r.undo})`);
-      setTimeout(() => process.exit(RESTART_CODE), 300);
+      gracefulExit(RESTART_CODE, 'restore');
       return send(res, 202, { ...r, restarting: true });
     }
     if (route === 'GET /system/backup/download') {
@@ -1637,6 +1658,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (draining && url.pathname.startsWith('/api/')) return send(res, 503, { error: 'Meridian is restarting. Try again in a few seconds.', restarting: true }, { 'Retry-After': '3' });
+    if (url.pathname !== '/api/stream') {
+      inFlight += 1;
+      res.once('close', () => (inFlight -= 1));
+    }
     if (url.pathname.startsWith('/api/')) logAccess(req, res, url);
     try {
       if (url.pathname === '/healthz') return send(res, 200, { ok: true, version: VERSION, reading: monitor.load(), memoryMb: Math.round(process.memoryUsage().rss / 1048576) });
@@ -1868,11 +1894,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     setTimeout(() => trail.maintain(), 20_000).unref();
     setInterval(() => trail.maintain(), 6 * 3_600_000).unref();
   }
-  const watchdog = new Watchdog({ monitor, launched: updater.launched, restart: () => setTimeout(() => process.exit(RESTART_CODE), 300) });
+  const watchdog = new Watchdog({ monitor, launched: updater.launched, restart: () => gracefulExit(RESTART_CODE, 'watchdog') });
   if (startBackground) watchdog.start();
   if (startBackground) sfMailbox.start();
 
   server.on('close', () => {
+    users.stop();
     updater.stop();
     backupStore.stop();
     trail.stop();
@@ -1963,6 +1990,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   // A clean stop within seconds: open live-update streams are closed rather than waited for (Podman and Docker give
   // 10 seconds before they kill). Records are written atomically, so nothing is ever half-saved.
   const stop = () => {
+    // Sign-ins and the audit queue are saved first: a stop or an update signs nobody out.
+    for (const f of [() => app.users.stop(), () => app.trail.stop()]) {
+      try {
+        f();
+      } catch {}
+    }
     app.server.close(() => process.exit(0));
     app.server.closeAllConnections?.();
     setTimeout(() => process.exit(0), 3000).unref();
@@ -1972,6 +2005,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   process.on('unhandledRejection', (error) => console.error('Unhandled rejection:', error));
   process.on('uncaughtException', (error) => {
     console.error('Uncaught exception, restarting:', error);
+    try {
+      app.users.stop();
+      app.trail.stop();
+    } catch {}
     process.exit(1);
   });
   process.on('SIGINT', stop);

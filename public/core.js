@@ -27,16 +27,144 @@ export const local = {
 };
 
 export class ApiError extends Error {}
-export async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`/api${path}`, { method, headers: { 'X-Requested-With': 'Meridian', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
-  const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && path !== '/login') {
-    document.dispatchEvent(new CustomEvent('cc:signed-out'));
-    throw new ApiError('Sign in first.');
+
+// ——— Staying connected ———
+// While Meridian restarts (an update, a restore) requests wait and try again for up to 45 s, with a small notice,
+// instead of failing. A session that ended opens a sign-in box over the page: nothing on screen is lost, and the
+// request that met the end runs again once signed in.
+const RETRY_MS = 45_000;
+let reconnecting = 0;
+function reconnectNotice(on) {
+  reconnecting = Math.max(0, reconnecting + (on ? 1 : -1));
+  let el = document.getElementById('reconnect');
+  if (!reconnecting) return el?.remove();
+  if (!el) {
+    el = Object.assign(document.createElement('div'), { id: 'reconnect', role: 'status', textContent: 'Meridian is restarting — reconnecting…' });
+    document.body.append(el);
   }
-  if (!res.ok) throw new ApiError(data.error || `${res.status} ${res.statusText}`);
-  return data;
 }
+let reauth = null;
+function signInAgain() {
+  reauth ??= new Promise((resolve) => {
+    const d = document.createElement('dialog');
+    d.className = 'dialog reauth';
+    d.innerHTML = `<form class="dbody" id="reauthF" data-no-draft><h2>Your session ended</h2><p class="muted" style="margin:0">Sign in to carry on. Everything on this page stays as it is.</p>
+      <label class="field">Email<input name="email" type="email" autocomplete="username" required value="${esc(state.session?.user?.email ?? '')}"></label>
+      <label class="field">Password<input name="password" type="password" autocomplete="current-password" required autofocus></label>
+      <p class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-out>Go to the sign-in page</button><span class="spacer"></span><button class="btn primary">Sign in</button></div></form>`;
+    document.body.append(d);
+    d.showModal();
+    const done = (ok) => {
+      d.close();
+      d.remove();
+      reauth = null;
+      resolve(ok);
+    };
+    d.addEventListener('cancel', (e) => e.preventDefault());
+    d.querySelector('[data-out]').addEventListener('click', () => done(false));
+    d.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const r = await fetch('/api/login', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: f.email.value, password: f.password.value }) }).catch(() => null);
+      const j = (await r?.json().catch(() => ({}))) ?? {};
+      if (r?.ok) {
+        if (state.session) state.session.expiresAt = j.expiresAt;
+        return done(true);
+      }
+      f.querySelector('.form-error').textContent = j.error || 'Meridian cannot be reached right now.';
+    });
+  });
+  return reauth;
+}
+
+export async function api(path, { method = 'GET', body } = {}) {
+  const started = Date.now();
+  let waiting = false;
+  try {
+    for (;;) {
+      let res;
+      try {
+        res = await fetch(`/api${path}`, { method, headers: { 'X-Requested-With': 'Meridian', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+      } catch {
+        // Not reached at all (the server is between processes): nothing was done, so it is safe to try again.
+        if (Date.now() - started < RETRY_MS) {
+          if (!waiting) reconnectNotice((waiting = true));
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        throw new ApiError('Meridian cannot be reached. Check your connection, then try again.');
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 503 && data.restarting && Date.now() - started < RETRY_MS) {
+        if (!waiting) reconnectNotice((waiting = true));
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      if (res.status === 401 && path !== '/login') {
+        if (state.session?.user && (await signInAgain())) continue;
+        document.dispatchEvent(new CustomEvent('cc:signed-out'));
+        throw new ApiError('Sign in first.');
+      }
+      if (!res.ok) throw new ApiError(data.error || `${res.status} ${res.statusText}`);
+      return data;
+    }
+  } finally {
+    if (waiting) reconnectNotice(false);
+  }
+}
+
+// ——— Drafts: what someone is typing is kept until it is saved ———
+// Any form with an id keeps its typed values (not passwords or files) per page, for a day. If the page reloads or the
+// form opens again before it was saved, they are put back.
+const DRAFT_DAY = 86_400_000;
+const draftKey = (f) => `cc.draft.${state.session?.user?.id ?? ''}.${location.hash.split('?')[0]}.${f.id}`;
+const draftable = (el) => el.name && !['password', 'file', 'hidden', 'submit', 'button'].includes(el.type);
+let draftTimer;
+document.addEventListener('input', (e) => {
+  const f = e.target.closest?.('form[id]');
+  if (!f || f.dataset.noDraft != null || !draftable(e.target)) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    const values = {};
+    for (const el of f.elements) if (draftable(el)) values[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+    try {
+      localStorage.setItem(draftKey(f), JSON.stringify({ at: Date.now(), values }));
+    } catch {}
+  }, 400);
+});
+document.addEventListener('submit', (e) => {
+  const f = e.target;
+  if (f.id) setTimeout(() => !document.contains(f) && localStorage.removeItem(draftKey(f)), 1500);
+}, true);
+new MutationObserver(() => {
+  for (const f of document.querySelectorAll('form[id]:not([data-draft-checked])')) {
+    f.dataset.draftChecked = '1';
+    let d;
+    try {
+      d = JSON.parse(localStorage.getItem(draftKey(f)) ?? 'null');
+    } catch {}
+    if (!d || Date.now() - d.at > DRAFT_DAY) continue;
+    let changed = 0;
+    for (const el of f.elements) {
+      if (!draftable(el) || !(el.name in d.values)) continue;
+      const v = d.values[el.name];
+      if (el.type === 'checkbox' ? el.checked !== v : el.value !== v) {
+        el.type === 'checkbox' ? (el.checked = v) : (el.value = v);
+        changed += 1;
+      }
+    }
+    if (changed) {
+      const note = Object.assign(document.createElement('p'), { className: 'small draft-note', innerHTML: 'Put back what you were typing. <button type="button" class="linkish">Discard it</button>' });
+      note.querySelector('button').addEventListener('click', () => {
+        localStorage.removeItem(draftKey(f));
+        note.remove();
+        f.reset();
+      });
+      f.prepend(note);
+    }
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
 
 /** POST that returns a file: saved through a temporary link. */
 export async function download(path, body, fallbackName = 'download') {

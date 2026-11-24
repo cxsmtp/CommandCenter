@@ -209,7 +209,8 @@ function connectStream() {
   });
   es.onerror = () => {
     es.close();
-    setTimeout(() => state.session?.user && connectStream(), 5000);
+    // Find out at once whether this was a restart (api() waits it out) or the end of the session (it asks to sign in).
+    setTimeout(() => state.session?.user && api('/session').then(() => connectStream()).catch(() => {}), 2000);
   };
 }
 

@@ -167,3 +167,29 @@ test('the audit trail starts the next day: yesterday’s records carry the chain
   assert.equal(v.ok, true);
   assert.equal(v.records, 2);
 });
+
+test('a sign-in survives a restart; sign-out and a password change end sessions everywhere else', async () => {
+  const { Users } = await import('../src/users.js');
+  const dir = tmp();
+  process.env.CC_ADMIN_PASSWORD = 'admin-password-123';
+  const db1 = new Db(dir);
+  const u1 = new Users(db1);
+  u1.ensureAdmin?.();
+  const admin = db1.read('users', [])[0];
+  const a = u1.signIn(admin.email, 'admin-password-123');
+  const b = u1.signIn(admin.email, 'admin-password-123');
+  u1.stop();
+  // The server restarts (an update, a crash): the same browser is still signed in.
+  const u2 = new Users(new Db(dir));
+  assert.equal(u2.fromToken(a.token)?.id, admin.id);
+  assert.ok(u2.expiresAt(a.token));
+  // A password change keeps this session and ends the other.
+  u2.changePassword(admin.id, 'admin-password-123', 'a-brand-new-password', a.token);
+  assert.ok(u2.fromToken(a.token));
+  assert.equal(u2.fromToken(b.token), null);
+  u2.signOut(a.token);
+  u2.stop();
+  const u3 = new Users(new Db(dir));
+  assert.equal(u3.fromToken(a.token), null, 'signed out stays signed out after a restart');
+  u3.stop();
+});
