@@ -908,7 +908,9 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   const answers = {
     '/api/applications': { totalCount: 3, applications: [{ name: 'Payments', criticality: 5, rules: [{ type: 'project.name.in', value: 'pay' }], projectIds: ['p1', 'p2'] }, { name: 'Web', projectIds: ['p2'] }] },
     '/api/risk-management/summary': { summary: [{ name: 'Payments', riskScore: 8.9, riskSeverity: 'high' }, { name: 'Web', riskScore: 4.1, riskSeverity: 'medium' }] },
-    '/api/risks': { metaData: { totalResults: 229 }, risks: [{ assetName: 'secret.py' }] },
+    '/api/risks': { metaData: { totalResults: 229 }, risks: [{ assetName: 'secret.py', origin: 'security-mcp' }, { origin: 'github' }] },
+    '/api/contributors/insights': { total: 311, max: 1000, 'VS Code': { projectCount: 0, contributorCount: 90 }, 'Visual Studio_1.0.0/ASTCLI_2.3.63': { contributorCount: 1 }, 'Visual Studio': { contributorCount: 1 }, Cursor: { contributorCount: 19 }, 'Claude-cli': { contributorCount: 19 }, Kiro: { contributorCount: 0 } },
+    '/api/projects/schedules': { schedules: [{ name: 'Nightly', active: true, frequency: 'daily' }, { active: false }], total_count: 2 },
     '/api/cnas/accounts': { data: [{ name: 'prod', lastScanDate: '2026-11-20T10:00:00Z' }], total: 2 },
     '/api/policy_management_service_uri/policies/v3': { policies: [{ name: 'Default', defaultPolicy: true, projects: [{ astProjectId: 'p1' }] }, { name: 'No new criticals', projects: [{ astProjectId: 'p1', name: 'Payments' }], tags: [], breakBuild: false, netNewBreakBuild: true }, { name: 'Draft', projects: [], tags: [] }] },
     '/api/policy_management_service_uri/incidents/total': 12,
@@ -926,14 +928,16 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.deepEqual(a.applications, { total: 3, withRules: 1, projects: 2 });
   assert.equal(a.armScores.scored, 2);
   assert.equal(a.armScores.top, 8.9);
-  assert.equal(a.risks.total, 229);
+  assert.deepEqual(a.risks, { total: 229, viaMcp: 1 });
+  assert.deepEqual(a.schedules, { total: 2, active: 1 });
+  assert.deepEqual(a.contributors, { total: 311, tools: { 'VS Code': 90, 'Visual Studio': 2, Cursor: 19, 'Claude-cli': 19 } });
   assert.deepEqual(a.cloud, { accounts: 2, lastScanAt: '2026-11-20T10:00:00.000Z' });
   assert.deepEqual(a.feedback, { jira: { apps: 1, projects: 3 }, email: { apps: 1, projects: 2 }, slack: { apps: 1, projects: 0 } });
   assert.deepEqual(a.access, { sso: 1, ssoKinds: ['SAML'], ldap: 1, groups: 2 });
   assert.deepEqual(a.triage, { customStates: 1, customPresets: 1 });
   assert.deepEqual(a.policies, { made: 2, applied: 1, breakBuild: 1, violations: 12 });
   assert.deepEqual(a.dast, { environments: 4, scanned: 1, lastScanAt: '2026-11-21T09:00:00.000Z' });
-  assert.ok(!/hunter2|Payments|shop\.example|secret\.py|prod|Acme Jira|AppSec|okta|corp|Accepted risk|Acme preset/.test(JSON.stringify(a)), 'no names, no passwords');
+  assert.ok(!/hunter2|Payments|shop\.example|secret\.py|prod|Acme Jira|AppSec|okta|corp|Accepted risk|Acme preset|Nightly/.test(JSON.stringify(a)), 'no names, no passwords');
   // A tenant without ASPM answers nothing: every part is null, the read goes on.
   const none = await aspm({ request: async () => Promise.reject(new Error('403')) });
   assert.ok(Object.values(none).every((v) => v === null));
@@ -947,6 +951,11 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.equal(evaluate(cap('servicenow'), facts).level, 'none');
   assert.deepEqual(evaluate(cap('sso'), facts).evidence, ['Single sign-on through 1 identity provider (SAML)', 'Users come from 1 LDAP directory']);
   assert.deepEqual(evaluate(cap('triage-workflow'), facts).evidence, ['1 triage state of their own']);
+  assert.deepEqual(evaluate(cap('mcp'), facts).evidence, ['1 risk found through the Checkmarx MCP']);
+  assert.deepEqual(evaluate(cap('cursor'), facts).evidence, ['19 developers use Checkmarx from Cursor']);
+  assert.match(evaluate(cap('vscode'), facts).evidence[0], /90 developers use Checkmarx from VS Code/);
+  assert.equal(evaluate(cap('kiro'), facts).level, 'none', 'no developers, no proof');
+  assert.deepEqual(evaluate(cap('scheduled-scans'), facts).evidence, ['1 scan schedule running by itself']);
   const { supplyChain } = await import('../src/collector.js');
   const asked = [];
   const sc = await supplyChain({ request: async (p, o) => { asked.push(o.body.variables.scanId); if (o.body.variables.scanId === 's3') throw new Error('no SCA'); return { data: { supplyChainRisksByScanId: { totalCount: o.body.variables.scanId === 's1' ? 2 : 0 } } }; } }, ['s1', 's2', 's3']);

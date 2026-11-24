@@ -13,7 +13,8 @@
  *              policy (a policy applied), violations (policy violations raised), feedback:jira|azure|servicenow|
  *              email|slack|teams (a feedback app of that kind set up), sso, ldap, groups (access),
  *              triaged (findings triaged by hand), custom-states, custom-presets (triage states and
- *              SAST presets of their own), malicious (supply chain risk checked on SCA scans)
+ *              SAST presets of their own), malicious (supply chain risk checked on SCA scans),
+ *              mcp (risks found through the Checkmarx MCP), schedules (scan schedules active)
  *   keywords   words looked for in the opportunity's own notes, discovery and sessions (a hint, never proof)
  *
  * Evidence only ever suggests: the SE confirms a criterion is met. An Admin (or anyone with catalog.manage) edits
@@ -72,7 +73,7 @@ export const DEFAULT_CATALOG = [
   c('dev-assist', 'agents', 'Developer Assist', 'Checkmarx One Assist — Developer Assist (prevention in the IDE & coding assistants)', { origins: ['vs code', 'vscode', 'jetbrains', 'intellij', 'cursor', 'windsurf', 'kiro', 'visual studio', 'copilot'], keywords: ['developer assist', 'one assist', 'coding assistant', 'cursor', 'copilot', 'windsurf'] }, { proof: 'In the developer’s IDE or coding assistant, show a vulnerability prevented as the code is written, and the fix it proposes.', tech: 'Scans whose origin (sourceOrigin / user agent in GET /api/scans) names an IDE or coding assistant: VS Code, JetBrains, Visual Studio, Cursor, Windsurf, Kiro, Copilot.' }),
   c('ai-triage', 'agents', 'Triage Assist', 'Checkmarx One Assist — Triage Assist (attackability-first ranking)', { actions: ['triage'], keywords: ['triage assist', 'ai triage', 'attackability', 'auto triage'] }, { isNew: true, proof: 'Run Triage Assist on the agreed findings; show the attackability ranking and the not-exploitable verdicts.', tech: 'AI triage actions counted by GET /api/credits/consumption in the last 30 days (actionType containing "triage").' }),
   c('ai-remediation', 'agents', 'Remediation Assist', 'Checkmarx One Assist — Remediation Assist (merge-ready fixes)', { actions: ['remediation'], keywords: ['remediation assist', 'ai remediation', 'auto remediation', 'ai fix', 'merge-ready'] }, { isNew: true, proof: 'Generate a fix for an agreed finding and open the merge-ready pull request; show the rescan confirming it.', tech: 'AI remediation actions counted by GET /api/credits/consumption in the last 30 days (actionType containing "remediation").' }),
-  c('mcp', 'aspm', 'Checkmarx MCP', 'Checkmarx MCP server (agent & platform access)', { origins: ['mcp'], keywords: ['mcp', 'model context protocol', 'agent access'] }, { proof: 'Connect the customer’s agent (Claude, Copilot, Cursor…) to the Checkmarx MCP server and query findings or start a scan from it.', tech: 'Scans whose origin or user agent names "mcp" (GET /api/scans). MCP queries alone leave no scan: confirmed by the SE then.' }),
+  c('mcp', 'aspm', 'Checkmarx MCP', 'Checkmarx MCP server (agent & platform access)', { origins: ['mcp'], aspm: ['mcp'], keywords: ['mcp', 'model context protocol', 'agent access'] }, { proof: 'Connect the customer’s agent (Claude, Copilot, Cursor…) to the Checkmarx MCP server and query findings or start a scan from it.', tech: 'Scans whose origin or user agent names "mcp" (GET /api/scans), or risks whose origin names it ("security-mcp" in GET /api/risks).' }),
   // ——— ASPM ———
   c('risk-orchestration', 'aspm', 'Risk Orchestration', 'ASPM — Risk Orchestration (risks across engines, triaged and fixed by agents)', { aspm: ['risks'], keywords: ['risk orchestration', 'risk hub', 'unified risk', 'aspm'] }, { isNew: true, proof: 'Open Risk Orchestration; show the risks from every engine in one list, ranked, and an agent triaging or fixing one.', tech: 'GET /api/risks answers with risks on the tenant (metaData.totalResults above 0).' }),
   c('arm', 'aspm', 'Application Risk Management', 'ASPM — Application Risk Management (applications, criticality, risk score)', { aspm: ['applications', 'risk-scores'], keywords: ['application risk', 'risk score', 'business impact', 'criticality', 'applications'] }, { proof: 'Group the in-scope projects into applications with their business criticality; show each application’s risk score and its top risks.', tech: 'Applications in GET /api/applications, and risk scores for them in GET /api/risk-management/summary.' }),
@@ -85,6 +86,7 @@ export const DEFAULT_CATALOG = [
   c('bitbucket', 'scm', 'Bitbucket integration', 'Code Repository integration — Bitbucket', { repoHosts: ['bitbucket'], keywords: ['bitbucket'] }, { proof: 'Import repositories from Bitbucket; show a pull request decorated with findings.', tech: 'A project whose repoUrl is on Bitbucket.' }),
   c('azure-repos', 'scm', 'Azure Repos integration', 'Code Repository integration — Azure DevOps', { repoHosts: ['dev.azure.com', 'visualstudio.com'], keywords: ['azure repos'] }, { proof: 'Import repositories from Azure Repos; show a pull request decorated with findings.', tech: 'A project whose repoUrl is on dev.azure.com or visualstudio.com.' }),
   c('webhook', 'scm', 'Scan on push / pull request (webhook)', 'Code Repository webhook scans', { origins: ['webhook', 'scm', 'pull request', 'pr-'], keywords: ['webhook', 'pull request', 'pr decoration', 'scan on push'] }, { proof: 'Push a change and open a pull request; show the scan starting by itself and the decoration.', tech: 'Scans whose origin names a webhook, SCM or pull request (GET /api/scans).' }),
+  c('scheduled-scans', 'scm', 'Scheduled scans', 'Project scan scheduling', { aspm: ['schedules'], keywords: ['schedule', 'scheduled scan', 'nightly scan', 'daily scan'] }, { proof: 'Schedule the agreed projects to scan by themselves (daily or weekly) and show the scans arriving.', tech: 'Active schedules in GET /api/projects/schedules.' }),
   // ——— CI/CD ———
   ...[
     ['jenkins', 'Jenkins', 'Checkmarx One Jenkins plugin', ['jenkins'], ['jenkins']],
@@ -220,6 +222,7 @@ export function tenantFacts(snapshot, proof = null) {
     repoHosts: [...new Set((snapshot?.projects?.list ?? []).map((p) => p.repoUrl).filter(Boolean).map((u) => u.toLowerCase()))],
     actions: new Set(Object.entries(snapshot?.credits?.actions ?? {}).filter(([, n]) => n > 0).map(([k]) => k)),
     aspm: aspmFacts(snapshot?.aspm, snapshot?.findings),
+    tools: Object.entries(snapshot?.aspm?.contributors?.tools ?? {}).map(([name, count]) => ({ name, key: name.toLowerCase(), count })),
     first,
   };
 }
@@ -237,6 +240,8 @@ function aspmFacts(a, findings = null) {
   if (a.supplyChain?.checked > 0) out.set('malicious', `Supply chain risk checked on the latest SCA scan of ${n(a.supplyChain.checked, 'project')}: ${a.supplyChain.risks ? n(a.supplyChain.risks, 'malicious or suspicious package') + ' found' : 'none found'}`);
   if (a.applications?.total > 0) out.set('applications', `${n(a.applications.total, 'application')} defined${a.applications.projects ? `, holding ${n(a.applications.projects, 'project')}` : ''}`);
   if (a.armScores?.scored > 0) out.set('risk-scores', `Application Risk Management scored ${n(a.armScores.scored, 'application')}${a.armScores.top != null ? ` (highest ${a.armScores.top.toFixed(1)})` : ''}`);
+  if (a.risks?.viaMcp > 0) out.set('mcp', `${n(a.risks.viaMcp, 'risk')} found through the Checkmarx MCP`);
+  if (a.schedules?.active > 0) out.set('schedules', `${n(a.schedules.active, 'scan schedule')} running by ${a.schedules.active === 1 ? 'itself' : 'themselves'}`);
   if (a.risks?.total > 0) out.set('risks', `Risk Orchestration lists ${n(a.risks.total, 'risk')} across engines`);
   if (a.dast?.scanned > 0) out.set('dast', `DAST scanned ${n(a.dast.scanned, 'environment')}${a.dast.lastScanAt ? `, last on ${new Date(a.dast.lastScanAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : ''}`);
   if (a.policies?.applied > 0) out.set('policy', `${n(a.policies.applied, 'policy', 'policies')} applied to projects${a.policies.breakBuild ? `, ${a.policies.breakBuild} breaking the build` : ''}`);
@@ -268,6 +273,8 @@ export function evaluate(capability, facts, notesText = '') {
     for (const e of d.engines ?? []) if (facts.engines.has(e)) evidence.push(`Completed scans ran the ${e} engine${since(facts, `engine:${e}`)}`);
     for (const t of d.scanTypes ?? []) if (facts.scanTypes.has(t)) evidence.push(`A ${t === 'fusion' ? 'Fusion' : 'LAST'} scan completed${since(facts, `scanType:${t}`)}`);
     for (const o of d.origins ?? []) {
+      const tool = (facts.tools ?? []).find((x) => x.key === o) ?? (facts.tools ?? []).find((x) => wordIn(x.key, o) || wordIn(x.key.replace(/[\s-]+/g, ''), o));
+      if (tool) evidence.push(`${tool.count} ${tool.count === 1 ? 'developer uses' : 'developers use'} Checkmarx from ${tool.name}`);
       const hit = facts.origins.find((x) => wordIn(x, o));
       if (hit) evidence.push(`Scans came from "${hit}"`);
     }

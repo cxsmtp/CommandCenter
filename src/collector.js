@@ -266,6 +266,9 @@ async function credits(client, projectNames) {
  *   access        the IAM (Keycloak admin API, as the portal's Identity & Access pages read it): identity providers
  *                 for single sign-on (identity-provider/instances), LDAP directories (components), and the groups in
  *                 GET /api/access-management/groups. Kinds and counts only; null where the key may not read them.
+ *   contributors  GET /api/contributors/insights: developers counted per tool they use Checkmarx from (IDE plugins,
+ *                 AI agents, CLI), which proves the IDE and coding-agent criteria
+ *   schedules     GET /api/projects/schedules: scans scheduled to run by themselves (daily, weekly…)
  *   triage        GET /api/custom-states: the customer's own triage states (the list holds no built-in ones);
  *                 GET /api/queries/presets: presets made by the customer (built-in ones have small ids, theirs large)
  * No names are kept: only counts, scores and dates.
@@ -274,10 +277,10 @@ export async function aspm(client, connection = null) {
   // Each part on its own: a page this tenant lacks, or one that fails, leaves the others standing.
   const soft = (fn) => fn().catch(() => null);
   const iam = connection?.iamUrl && connection?.tenant ? `${connection.iamUrl}/auth/admin/realms/${encodeURIComponent(connection.tenant)}` : null;
-  const [apps, arm, risks, cloud, dast, pol, incidents, fbApps, fbProfiles, idps, dirs, groups, states, presets] = await Promise.all([
+  const [apps, arm, risks, cloud, dast, pol, incidents, fbApps, fbProfiles, idps, dirs, groups, states, presets, schedules, contributors] = await Promise.all([
     soft(() => client.request('/api/applications', { query: { limit: 100, offset: 0 }, retries: 1 })),
     soft(() => client.request('/api/risk-management/summary', { retries: 1 })),
-    soft(() => client.request('/api/risks', { query: { limit: 1, offset: 0 }, retries: 1 })),
+    soft(() => client.request('/api/risks', { query: { limit: 200, offset: 0 }, retries: 1 })),
     soft(() => client.request('/api/cnas/accounts', { query: { limit: 100, offset: 0 }, retries: 1 })),
     soft(() => client.request('/api/dast/scans/environments', { query: { from: 1, to: 100 }, retries: 1 })),
     soft(() => client.request('/api/policy_management_service_uri/policies/v3', { query: { limit: 100, page: 1 }, retries: 1 })),
@@ -289,7 +292,18 @@ export async function aspm(client, connection = null) {
     soft(() => client.request('/api/access-management/groups', { query: { limit: 500, offset: 0 }, retries: 1 })),
     soft(() => client.request('/api/custom-states', { retries: 1 })),
     soft(() => client.request('/api/queries/presets', { retries: 1 })),
+    soft(() => client.request('/api/projects/schedules', { query: { offset: 0, limit: 100 }, retries: 1 })),
+    soft(() => client.request('/api/contributors/insights', { retries: 1 })),
   ]);
+  // Developers by the tool they use Checkmarx from ("VS Code", "Cursor", "Claude-cli", "Kiro"…), versions folded.
+  const tools = {};
+  for (const [k, v] of Object.entries(contributors && typeof contributors === 'object' ? contributors : {})) {
+    const count = n0(v?.contributorCount);
+    if (!count) continue;
+    const name = text(k.split('/')[0].replace(/_[\d.]+$/, '').replace(/^-/, ''), 40);
+    if (name) tools[name] = (tools[name] ?? 0) + count;
+  }
+  const scheduleList = arrayIn(schedules, ['schedules', 'data', 'items']);
   const sso = Array.isArray(idps) ? idps.filter((x) => x && x.enabled !== false) : null;
   const groupList = arrayIn(groups, ['groups', 'data', 'items']);
   // The list's wrapper differs between releases ({ policies }, { data }, a bare array): the first array of policies.
@@ -306,7 +320,8 @@ export async function aspm(client, connection = null) {
   return {
     applications: list ? { total: n0(apps?.totalCount) ?? list.length, withRules: list.filter((a) => a?.rules?.length).length, projects: new Set(list.flatMap((a) => a?.projectIds ?? [])).size } : null,
     armScores: scored ? { scored: scored.length, top: scored.length ? Math.max(...scored.map((a) => Number(a.riskScore))) : null, highOrAbove: scored.filter((a) => /critical|high/i.test(a?.riskSeverity ?? '')).length } : null,
-    risks: risks?.metaData ? { total: n0(risks.metaData.totalResults) ?? 0 } : null,
+    // Risks found through the Checkmarx MCP (origin "security-mcp") show the MCP in use even when no scan started.
+    risks: risks?.metaData ? { total: n0(risks.metaData.totalResults) ?? 0, viaMcp: (risks.risks ?? []).filter((r) => /mcp/i.test(r?.origin ?? '')).length } : null,
     feedback,
     access: sso || Array.isArray(dirs) || groupList
       ? {
@@ -319,6 +334,8 @@ export async function aspm(client, connection = null) {
     triage: Array.isArray(states) || Array.isArray(presets)
       ? { customStates: Array.isArray(states) ? states.filter((x) => x && !x.deleted).length : null, customPresets: Array.isArray(presets) ? presets.filter((x) => Number(x?.id) > CUSTOM_PRESET_ID).length : null }
       : null,
+    contributors: contributors && typeof contributors === 'object' ? { total: n0(contributors.total), tools } : null,
+    schedules: scheduleList ? { total: n0(schedules?.total_count) ?? scheduleList.length, active: scheduleList.filter((x) => x?.active !== false).length } : null,
     policies: policies ? { made: made.length, applied: made.filter((x) => x.projects?.length || x.tags?.length).length, breakBuild: made.filter((x) => x.breakBuild || x.netNewBreakBuild).length, violations } : null,
     dast: envs ? { environments: n0(dast?.totalItems) ?? envs.length, scanned: dastScans.length, lastScanAt: dastScans[0] ? new Date(dastScans[0]).toISOString() : null } : null,
     cloud: accounts ? { accounts: n0(cloud?.total) ?? accounts.length, lastScanAt: last ? new Date(last).toISOString() : null } : null,
