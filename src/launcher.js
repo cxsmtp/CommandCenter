@@ -6,7 +6,9 @@
  *     the state is read again and the server started again
  *   - a version just installed must answer /healthz within 60 s; if it does not, or it stops, the launcher goes
  *     back to the version before by itself and records why
- *   - a crash is restarted after a pause (longer each time, up to a minute)
+ *   - a crash is restarted after a pause (longer each time, up to a minute); a version that dies within a minute
+ *     of starting three times in a row goes back to the version before (or the built-in one) by itself, so a
+ *     version that cannot start any more never keeps the server down: the one before starts and updates again
  *   - the company proxy and trusted certificates saved in Settings are applied to the server it starts
  *   - stop signals pass to the server, which saves before it ends
  */
@@ -26,6 +28,8 @@ const HEALTH_MS = 60_000;
 let child = null;
 let stopping = false;
 let crashes = 0;
+let quickCrashes = 0;
+export const QUICK_CRASHES = 3;
 const log = (...a) => console.log(`[launcher ${new Date().toISOString()}]`, ...a);
 
 /** Which code to run: the active version's folder, or the one built into the image. */
@@ -95,6 +99,7 @@ function start() {
       if (ok) {
         writeState(DATA, { ...s, pending: null, history: [...(s.history ?? []), { at: new Date().toISOString(), event: 'started', version: s.active }].slice(-50) });
         log(`Version ${s.active} is up.`);
+      quickCrashes = 0;
       } else {
         rollback(s, 'no answer on /healthz within 60 s');
         child.kill('SIGTERM');
@@ -115,6 +120,13 @@ function start() {
       return start();
     }
     crashes = Date.now() - started > 5 * 60_000 ? 1 : crashes + 1;
+    quickCrashes = Date.now() - started < 60_000 ? quickCrashes + 1 : 0;
+    const now = readState(DATA);
+    if (quickCrashes >= QUICK_CRASHES && now.active) {
+      quickCrashes = 0;
+      rollback(now, `stopped within a minute of starting ${QUICK_CRASHES} times in a row (${signal ?? `code ${code}`})`);
+      return start();
+    }
     const wait = Math.min(60_000, 1000 * 2 ** Math.min(crashes, 6));
     log(`The server stopped (${signal ?? `code ${code}`}); starting again in ${Math.round(wait / 1000)} s.`);
     setTimeout(start, wait);

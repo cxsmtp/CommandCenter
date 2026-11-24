@@ -149,3 +149,21 @@ test('the audit trail: chained, encrypted, sealed by day, carried on after a res
   assert.match(v.reason, /missing/);
   t4.stop();
 });
+
+test('the audit trail starts the next day: yesterday’s records carry the chain on (the server once failed to start here)', async (t) => {
+  const { Trail } = await import('../src/trail.js');
+  const dir = tmp();
+  const vault = new Vault(dir);
+  const day1 = new Trail({ dataDir: dir, vault });
+  day1.change({ by: 'u1', byName: 'Vera', type: 'people', what: 'Added Sam' });
+  day1.stop();
+  // The next morning the server starts again.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 86_400_000 });
+  const day2 = new Trail({ dataDir: dir, vault });
+  day2.change({ by: 'u1', byName: 'Vera', type: 'people', what: 'Added Kim' });
+  day2.stop();
+  t.mock.timers.reset();
+  const v = day2.verify('changes');
+  assert.equal(v.ok, true);
+  assert.equal(v.records, 2);
+});

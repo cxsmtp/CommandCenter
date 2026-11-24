@@ -182,7 +182,7 @@ export class Trail {
       records = this.#cache.get(key);
     }
     if (fs.existsSync(log)) records = [...records, ...this.#readLog(log)];
-    if (dayOf(new Date().toISOString()) === day || this.#state[stream].day === day) records = [...records, ...this.#queue[stream].filter((r) => dayOf(r.at) === day)];
+    if (dayOf(new Date().toISOString()) === day || this.#state[stream]?.day === day) records = [...records, ...this.#queue[stream].filter((r) => dayOf(r.at) === day)];
     return records;
   }
 
