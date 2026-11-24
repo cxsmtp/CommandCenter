@@ -28,6 +28,7 @@ import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
 import { wipDeck, checkTemplate } from './wip.js';
+import { SharePoint } from './sharepoint.js';
 import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
 import { predict, gaps, rollups } from './insights.js';
@@ -72,7 +73,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const mailer = new Mailer(db);
   // What the page may see of the settings: never the email server's or the proxy's secrets.
   const settings = () => {
-    const { smtp, network, lastWeeklyDrafts, salesforce, ...rest } = { ...DEFAULT_SETTINGS, ...db.read('settings', {}) };
+    const { smtp, network, lastWeeklyDrafts, salesforce, sharepoint: _sp, ...rest } = { ...DEFAULT_SETTINGS, ...db.read('settings', {}) };
     return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
   };
   const fullSettings = () => db.read('settings', {});
@@ -734,6 +735,28 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const n = fullSettings().network ?? {};
       return send(res, 200, { network: { proxy: n.proxy ?? '', proxyUser: n.proxyUser ?? '', hasProxyPass: Boolean(n.proxyPass), noProxy: n.noProxy ?? '', active: Boolean(process.env.HTTPS_PROXY) }, allowlist: allowlist(), certs: certList(), launched: updater.launched, restartNeeded: restartNeeded() });
     }
+    // ——— SharePoint (Microsoft Graph app registration) ———
+    if (route === 'GET /settings/sharepoint') {
+      need(user, 'settings.manage');
+      const c = db.read('settings', {}).sharepoint ?? {};
+      return send(res, 200, { tenantId: c.tenantId ?? '', clientId: c.clientId ?? '', folder: c.folder ?? 'POV/{customer}', hasSecret: Boolean(c.clientSecret) });
+    }
+    if (route === 'PUT /settings/sharepoint') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = db.read('settings', {});
+      const prev = all.sharepoint ?? {};
+      const guid = (v) => (/^[0-9a-f-]{36}$/i.test(String(v ?? '').trim()) ? String(v).trim() : '');
+      all.sharepoint = b.remove ? null : { tenantId: guid(b.tenantId) || text(b.tenantId, 120), clientId: guid(b.clientId), folder: text(b.folder, 200) || 'POV/{customer}', clientSecret: b.clientSecret ? db.seal(String(b.clientSecret).slice(0, 400)) : prev.clientSecret ?? '' };
+      db.write('settings', all);
+      audit.record(user, 'settings', b.remove ? 'Removed the SharePoint connection' : 'Saved the SharePoint connection');
+      return send(res, 200, { ok: true });
+    }
+    if (route === 'POST /settings/sharepoint/test') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      return send(res, 200, await sharepoint.test(spConfig(), text(b.siteUrl, 500)));
+    }
     if (route === 'PUT /settings/network') {
       need(user, 'settings.manage');
       const b = await readBody(req);
@@ -1334,6 +1357,32 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         fs.rmSync(path.join(dataDir, 'apma', `${id.replace(/[^0-9a-f-]/gi, '')}.pdf`), { force: true });
         return send(res, 200, { opportunity: publicOpp(placed(opp)) });
       }
+      // Publish the POV's documents to its SharePoint site.
+      if (sub === 'sharepoint' && m === 'POST') {
+        const opp = viewOpp(user, id);
+        if (!opps.canEdit(user, opps.get(id), fullSettings())) throw fail(403, 'Only those who may edit this POV publish its documents.');
+        if (!opp.sharepointUrl) throw fail(400, 'Add the POV’s SharePoint site link first (Edit details).');
+        const b = await readBody(req);
+        const want = new Set(Array.isArray(b.what) ? b.what : ['wip', 'deck', 'results']);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const files = [];
+        const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        if (want.has('wip')) {
+          const tpl = fs.existsSync(WIP_TEMPLATE) ? db.vault.readFile(WIP_TEMPLATE) : null;
+          files.push({ name: `${opp.customer} - POV WIP ${stamp}.pptx`, type: PPTX, data: await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: tpl }) });
+        }
+        if (want.has('deck')) files.push({ name: `${opp.customer} - POV results ${stamp}.pptx`, type: PPTX, data: await deckOf(opp) });
+        if (want.has('results')) files.push({ name: `${opp.customer} - POV results ${stamp}.html`, type: 'text/html', data: Buffer.from(resultsPage(resultsData(opp))) });
+        if (!files.length) throw fail(400, 'Pick at least one document.');
+        const r = await sharepoint.publish(spConfig(), { siteUrl: opp.sharepointUrl, customer: opp.customer, files });
+        opps.mutate({ ...user, role: 'admin' }, id, fullSettings(), (o) => {
+          o.sharepointPublished = { at: new Date().toISOString(), by: user.name, folder: r.folder, files: r.files };
+          (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Published to SharePoint: ${r.files.map((f) => f.name).join(', ')}` });
+        });
+        audit.record(user, 'sharepoint', `${opp.customer}: published ${r.files.length} document${r.files.length === 1 ? '' : 's'} to SharePoint (${r.folder})`, { oppId: id });
+        notify({ id });
+        return send(res, 200, r);
+      }
       if (sub === 'report' && m === 'GET') {
         const opp = viewOpp(user, id);
         const html = successReport(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(id) : null, evidence: evidenceOf(opp), org: settings().orgName, categories: catalog.categories() });
@@ -1728,6 +1777,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   // ——— Results pages: one per POV; a final copy kept when it is marked successful ———
   const WIP_TEMPLATE = path.join(dataDir, 'templates', 'wip-template.pptx');
+  const sharepoint = new SharePoint();
+  const spConfig = () => {
+    const c = db.read('settings', {}).sharepoint ?? null;
+    return c ? { ...c, clientSecret: c.clientSecret ? db.open(c.clientSecret) : '' } : null;
+  };
   const resultsDir = (id) => path.join(dataDir, 'results', id.replace(/[^0-9a-f-]/gi, ''));
   const finals = (id) => {
     try {

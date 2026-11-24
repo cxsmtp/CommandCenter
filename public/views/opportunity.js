@@ -560,7 +560,7 @@ function wipPanel(d) {
   return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>POV work-in-progress deck</h3><span class="small muted">the document you share with the customer during the POV</span></div><div class="body stack">
     <p style="margin:0">Built from this POV each time you download it: the executive overview, the platform, the toolchain, ${a ? 'the APMA assessment, ' : ''}plan and timeline (${meetings.length} meetings, ${held} held), the environment, the test plan for each business goal with today’s status, and the notes of each meeting held.</p>
     ${gaps.length && current.canEdit ? `<p class="small" style="margin:0"><span class="warn-t">Still empty:</span> ${gaps.join(', ')}.</p>` : ''}
-    <div class="row"><button class="btn primary" data-act="wip">Download the WIP deck (.pptx)</button>${current.canEdit ? '<button class="btn" data-act="wip-plan">Plan, toolchain &amp; environment</button>' : ''}</div>
+    <div class="row"><button class="btn primary" data-act="wip">Download the WIP deck (.pptx)</button>${current.canEdit && o.sharepointUrl ? '<button class="btn" data-act="sp-publish">Publish to SharePoint</button>' : ''}${current.canEdit ? '<button class="btn" data-act="wip-plan">Plan, toolchain &amp; environment</button>' : ''}</div>
     <div class="item"><div class="top"><b>APMA assessment</b><span class="small muted">optional</span></div>
       ${a ? `<p class="small" style="margin:6px 0">${a.dimensions.filter((x) => x.current != null).map((x) => `${esc(x.name)} <b>${x.current}</b> → ${x.desired}`).join(' · ')}</p>
         <div class="row">${a.file ? `<a class="btn sm" href="/api/opportunities/${esc(o.id)}/apma" target="_blank" rel="noopener">Open the report</a>` : ''}${current.canEdit ? '<button class="btn sm" data-act="apma-up">Replace</button><button class="btn sm ghost danger" data-act="apma-del">Remove</button>' : ''}</div>`
@@ -862,6 +862,40 @@ const WIRES = {
     });
     on(main, '[data-act="wip"]', () => attempt(() => download(`/opportunities/${oid()}/wip`), 'WIP deck downloaded'));
     on(main, '[data-act="wip-plan"]', () => editPlan());
+    on(main, '[data-act="sp-publish"]', () => {
+      const last = d.opportunity.sharepointPublished;
+      openDialog(
+        `<form id="spP" class="dbody"><h2>Publish to SharePoint</h2><p class="small muted">Into the POV’s site, in its documents folder. Today’s date goes in each file’s name, so earlier copies stay.</p>
+          <label class="check"><input type="checkbox" name="wip" checked> The WIP deck</label>
+          <label class="check"><input type="checkbox" name="deck" checked> The results presentation</label>
+          <label class="check"><input type="checkbox" name="results" checked> The results page (HTML)</label>
+          ${last ? `<p class="small muted">Last published ${esc(when(last.at))} by ${esc(last.by)} to ${esc(last.folder)}.</p>` : ''}
+          <p class="form-error" id="spErr" role="alert"></p>
+          <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Publish</button></div></form>`,
+        {
+          onOpen(dl) {
+            dl.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+            dl.querySelector('#spP').addEventListener('submit', async (e) => {
+              e.preventDefault();
+              const f = e.target;
+              const btn = f.querySelector('.btn.primary');
+              btn.disabled = true;
+              btn.textContent = 'Publishing…';
+              try {
+                const r = await api(`/opportunities/${oid()}/sharepoint`, { method: 'POST', body: { what: ['wip', 'deck', 'results'].filter((k) => f[k].checked) } });
+                closeDialog();
+                toast(`Published ${r.files.length} document${r.files.length === 1 ? '' : 's'} to ${r.folder}`);
+                rerender();
+              } catch (err) {
+                $('#spErr').textContent = err.message;
+                btn.disabled = false;
+                btn.textContent = 'Publish';
+              }
+            });
+          },
+        },
+      );
+    });
     const apmaIn = $('#apmaFile');
     on(main, '[data-act="apma-up"]', () => apmaIn.click());
     apmaIn?.addEventListener('change', async () => {

@@ -96,6 +96,7 @@ function organisation(body, data) {
     <div><button class="btn primary">Save</button></div>
   </form>`;
   wipTemplate(body);
+  sharePointPanel(body);
   $('#orgForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const r = await attempt(() => api('/settings', { method: 'PUT', body: formData(e.target) }), 'Saved');
@@ -314,4 +315,47 @@ async function wipTemplate(body) {
     });
   };
   draw().catch(() => box.remove());
+}
+
+// SharePoint: the Microsoft app registration Meridian publishes POV documents with.
+async function sharePointPanel(body) {
+  const box = document.createElement('section');
+  box.className = 'panel';
+  box.style.cssText = 'max-width:720px;margin-top:16px';
+  body.append(box);
+  let c;
+  try {
+    c = await api('/settings/sharepoint');
+  } catch {
+    box.remove();
+    return;
+  }
+  box.innerHTML = `<div class="head"><h3>SharePoint</h3><span class="small muted">${c.hasSecret ? '<span class="ok-t">Connected</span>' : 'Not set up'}</span></div>
+    <form class="body stack" id="spF">
+      <p class="small muted" style="margin:0">SEs publish a POV’s WIP deck, results deck and results page to the POV’s SharePoint site in one click. Your Microsoft admin registers an app in Entra ID with the <b>Sites.Selected</b> (or Sites.ReadWrite.All) application permission and admin consent, and gives you its ids and a client secret. The secret is kept sealed.</p>
+      <div class="row"><label class="field">Directory (tenant) ID<input name="tenantId" value="${esc(c.tenantId)}" placeholder="00000000-0000-0000-0000-000000000000"></label><label class="field">Application (client) ID<input name="clientId" value="${esc(c.clientId)}" placeholder="00000000-0000-0000-0000-000000000000"></label></div>
+      <label class="field">Client secret<input name="clientSecret" type="password" autocomplete="new-password" placeholder="${c.hasSecret ? 'Saved — leave empty to keep it' : 'The secret’s value'}"></label>
+      <label class="field">Folder in the site’s documents <span class="muted small">{customer} is the POV’s customer</span><input name="folder" value="${esc(c.folder)}"></label>
+      <label class="field">Test with a site link <span class="muted small">(optional)</span><input name="siteUrl" placeholder="https://contoso.sharepoint.com/sites/Acme"></label>
+      <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" data-act="sp-test">Test</button>${c.hasSecret ? '<button type="button" class="btn ghost danger" data-act="sp-remove">Remove</button>' : ''}</div>
+    </form>`;
+  const f = box.querySelector('#spF');
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (await attempt(() => api('/settings/sharepoint', { method: 'PUT', body: { tenantId: f.tenantId.value, clientId: f.clientId.value, clientSecret: f.clientSecret.value, folder: f.folder.value } }), 'SharePoint saved')) {
+      box.remove();
+      sharePointPanel(body);
+    }
+  });
+  box.querySelector('[data-act="sp-test"]').addEventListener('click', async () => {
+    const r = await attempt(() => api('/settings/sharepoint/test', { method: 'POST', body: { siteUrl: f.siteUrl.value } }));
+    if (r) toast(r.site ? `Signed in, and found the site “${r.site}”` : 'Signed in to Microsoft');
+  });
+  box.querySelector('[data-act="sp-remove"]')?.addEventListener('click', async () => {
+    if (!(await ask('Remove the SharePoint connection?', { ok: 'Remove', danger: true }))) return;
+    if (await attempt(() => api('/settings/sharepoint', { method: 'PUT', body: { remove: true } }), 'Removed')) {
+      box.remove();
+      sharePointPanel(body);
+    }
+  });
 }

@@ -815,3 +815,49 @@ test('success criteria count everything the tenant ever proved, not only the las
     m.server.close();
   }
 });
+
+test('SharePoint: an Admin connects the Microsoft app, an SE publishes the POV’s documents to its site', async () => {
+  const http = await import('node:http');
+  const got = [];
+  const ms = http.createServer((req, res) => {
+    let body = [];
+    req.on('data', (c) => body.push(c));
+    req.on('end', () => {
+      body = Buffer.concat(body);
+      const json = (code, o) => (res.writeHead(code, { 'Content-Type': 'application/json' }), res.end(JSON.stringify(o)));
+      if (req.url.endsWith('/oauth2/v2.0/token')) return new URLSearchParams(body.toString()).get('client_secret') === 'top-secret' ? json(200, { access_token: 'tok', expires_in: 3600 }) : json(401, { error: 'invalid_client' });
+      if (req.headers.authorization !== 'Bearer tok') return json(401, { error: { message: 'no token' } });
+      if (req.method === 'GET' && req.url.startsWith('/v1.0/sites/contoso.sharepoint.com:/sites/Initech')) return json(200, { id: 'site-1', displayName: 'Initech POV', webUrl: 'https://contoso.sharepoint.com/sites/Initech' });
+      if (req.method === 'PUT' && req.url.startsWith('/v1.0/sites/site-1/drive/root:/')) {
+        got.push({ path: decodeURIComponent(req.url), size: body.length });
+        return json(201, { webUrl: `https://contoso.sharepoint.com/x/${got.length}`, size: body.length });
+      }
+      json(404, { error: { message: `no route ${req.method} ${req.url}` } });
+    });
+  });
+  await new Promise((r) => ms.listen(0, '127.0.0.1', r));
+  process.env.CC_MS_LOGIN_URL = process.env.CC_MS_GRAPH_URL = `http://127.0.0.1:${ms.address().port}`;
+  try {
+    assert.equal((await call('se1', '/api/settings/sharepoint')).status, 403);
+    assert.equal((await call('admin', '/api/settings/sharepoint', { method: 'PUT', body: { tenantId: '11111111-1111-1111-1111-111111111111', clientId: '22222222-2222-2222-2222-222222222222', clientSecret: 'top-secret' } })).status, 200);
+    const shown = await call('admin', '/api/settings/sharepoint');
+    assert.equal(shown.body.hasSecret, true);
+    assert.ok(!JSON.stringify(shown.body).includes('top-secret'), 'the secret never comes back');
+    const t = await call('admin', '/api/settings/sharepoint/test', { method: 'POST', body: { siteUrl: 'https://contoso.sharepoint.com/sites/Initech' } });
+    assert.equal(t.body.site, 'Initech POV');
+    const o = await call('se1', '/api/opportunities', { method: 'POST', body: { customer: 'Initech SP', sharepointUrl: 'https://contoso.sharepoint.com/sites/Initech/Shared%20Documents' } });
+    const id = o.body.opportunity.id;
+    const r = await call('se1', `/api/opportunities/${id}/sharepoint`, { method: 'POST', body: { what: ['wip', 'results'] } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.folder, 'POV/Initech SP');
+    assert.equal(got.length, 2);
+    assert.ok(got.every((g) => g.path.includes('/POV/Initech SP/Initech SP - POV') && g.size > 1000));
+    const after = (await call('se1', `/api/opportunities/${id}`)).body.opportunity;
+    assert.equal(after.sharepointPublished.files.length, 2);
+    await call('se1', `/api/opportunities/${id}`, { method: 'DELETE' });
+  } finally {
+    delete process.env.CC_MS_LOGIN_URL;
+    delete process.env.CC_MS_GRAPH_URL;
+    ms.close();
+  }
+});
