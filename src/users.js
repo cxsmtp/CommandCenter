@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   'users.manage': 'Add and edit people below them',
   'catalog.manage': 'Edit the capability catalogue and its Checkmarx One mapping',
   'templates.manage': 'Make success criteria templates for their team (or everyone)',
+  'audit.view': 'See the audit trail: every change and every request by them and their team',
   'settings.manage': 'Change server settings (email server, refresh, defaults)',
   'roles.manage': 'Change what each role may do',
 };
@@ -35,8 +36,8 @@ export const PERMISSIONS = {
 const OLD_PERMISSIONS = ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'settings.manage', 'roles.manage'];
 
 export const DEFAULT_MATRIX = {
-  vp: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'templates.manage'],
-  leader: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'templates.manage'],
+  vp: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'templates.manage', 'audit.view'],
+  leader: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'catalog.manage', 'templates.manage', 'audit.view'],
   team_lead: ['opps.create', 'opps.edit.team', 'opps.reassign', 'tenant.logs', 'ai.run', 'credits.allocate', 'mail.send', 'users.manage', 'templates.manage'],
   associate: ['opps.create', 'tenant.logs', 'ai.run', 'mail.send'],
 };
@@ -197,7 +198,7 @@ export class Users {
     // Your own profile: name, title, preferences, password. Your team: also role, manager, email, active.
     if ('name' in changes) user.name = text(changes.name, 120) || user.email;
     if ('title' in changes) user.title = text(changes.title, 120);
-    if ('region' in changes && (!self || actor.role === 'admin')) user.region = text(changes.region, 60);
+    if ('region' in changes) user.region = text(changes.region, 60);
     if (changes.prefs && typeof changes.prefs === 'object') user.prefs = { ...user.prefs, ...cleanPrefs(changes.prefs) };
     if (!self) {
       if ('email' in changes) {

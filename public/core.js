@@ -96,6 +96,8 @@ export async function attempt(fn, ok) {
 // Escape closes). On a phone they are full-height sheets. The phone's Back button closes the one on top instead of
 // leaving the page, and focus goes back to what opened it.
 const openStack = [];
+// Back steps we take ourselves when a sheet closes by its own button: their popstate must not close the next sheet.
+let ownBacks = 0;
 function track(d) {
   const opener = document.activeElement;
   history.pushState({ meridianSheet: openStack.length + 1 }, '');
@@ -106,7 +108,10 @@ function track(d) {
       const i = openStack.indexOf(d);
       if (i >= 0) openStack.splice(i, 1);
       // Closed by a button or Escape: take back the history entry we added (not when Back closed it).
-      if (!d.dataset.closedByBack && history.state?.meridianSheet) history.back();
+      if (!d.dataset.closedByBack && history.state?.meridianSheet) {
+        ownBacks += 1;
+        history.back();
+      }
       delete d.dataset.closedByBack;
       if (opener && document.contains(opener)) opener.focus?.({ preventScroll: true });
     },
@@ -114,6 +119,10 @@ function track(d) {
   );
 }
 addEventListener('popstate', () => {
+  if (ownBacks > 0) {
+    ownBacks -= 1;
+    return;
+  }
   const top = openStack.at(-1);
   if (top?.open) {
     top.dataset.closedByBack = '1';

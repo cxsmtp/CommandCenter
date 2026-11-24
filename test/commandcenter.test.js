@@ -525,3 +525,29 @@ test('success criteria templates: built in, made by managers for their team, use
   assert.equal(used.uses, 1);
   await call('se1', `/api/opportunities/${o.body.opportunity.id}`, { method: 'DELETE' });
 });
+
+test('the audit page: every request and change, for Admins and leaders, each seeing their part', async () => {
+  // Associates have no audit page.
+  assert.equal((await call('se1', '/api/audit')).status, 403);
+  // A change and a read made by an SE show up for the VP above them, with the POV they were about.
+  await call('se1', `/api/opportunities/${ids.alpha}/notes`, { method: 'POST', body: { text: 'Audit me' } });
+  await call('se1', `/api/opportunities/${ids.alpha}`);
+  await new Promise((r) => setTimeout(r, 1200));
+  const changes = await call('vp', '/api/audit?kind=changes&q=note');
+  assert.equal(changes.status, 200);
+  assert.ok(changes.body.records.some((r) => r.byName === 'Sam SE' && r.customer === 'Alpha Bank'));
+  assert.equal(changes.body.chain.ok, true);
+  const reads = await call('vp', `/api/audit?kind=access&opp=${ids.alpha}`);
+  assert.ok(reads.body.records.some((r) => r.method === 'GET' && r.byName === 'Sam SE' && r.status === 200));
+  // A failed sign-in is recorded with the address tried (never the password), for the Admin.
+  await call('anon', '/api/login', { method: 'POST', body: { email: 'nobody@x.com', password: 'wrong-password-1' } });
+  await new Promise((r) => setTimeout(r, 1200));
+  const fails = await call('admin', '/api/audit?kind=access&errors=1&q=nobody');
+  assert.ok(fails.body.records.some((r) => r.path === '/api/login' && r.status === 401 && /nobody@x\.com/.test(r.byName)));
+  assert.ok(!JSON.stringify(fails.body).includes('wrong-password-1'));
+  // Export, itself recorded.
+  const csv = await fetch(`${base}/api/audit/export?kind=changes`, { headers: { Cookie: jar.get('vp') } });
+  assert.equal(csv.status, 200);
+  assert.match(await csv.text(), /^seq,at,byName/);
+  assert.ok((await call('vp', '/api/audit?kind=changes&q=Exported')).body.records.length >= 1);
+});

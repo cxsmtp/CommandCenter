@@ -108,3 +108,44 @@ test('a password can be reset from the server console when nobody can sign in', 
   }
   assert.throws(() => execFileSync(process.execPath, ['src/reset-password.js', 'nobody@x.com'], { env: { ...process.env, CC_DATA_DIR: dir }, stdio: 'pipe' }));
 });
+
+test('the audit trail: chained, encrypted, sealed by day, carried on after a restart, and any change shows', async () => {
+  const { Trail } = await import('../src/trail.js');
+  const dir = tmp();
+  const vault = new Vault(dir);
+  const t = new Trail({ dataDir: dir, vault });
+  t.change({ by: 'u1', byName: 'Vera', type: 'people', what: 'Added Sam' });
+  t.access({ by: 'u1', byName: 'Vera', method: 'GET', path: '/api/overview', status: 200 });
+  t.stop();
+  const day = new Date().toISOString().slice(0, 10);
+  const raw = fs.readFileSync(path.join(dir, 'audit', 'changes', `${day}.log`), 'utf8');
+  assert.ok(!raw.includes('Added Sam'), 'encrypted on disk');
+
+  // A restart carries the chain on.
+  const t2 = new Trail({ dataDir: dir, vault });
+  t2.change({ by: 'u1', byName: 'Vera', type: 'people', what: 'Added Ana' });
+  assert.deepEqual(t2.verify('changes'), { ok: true, records: 2, from: t2.verify('changes').from });
+  assert.deepEqual(t2.query('changes').records.map((r) => r.what), ['Added Ana', 'Added Sam']);
+  assert.equal(t2.query('access').records[0].path, '/api/overview');
+
+  // Sealing a day keeps every record and the chain.
+  t2.maintain(Date.now() + 86_400_000);
+  assert.ok(fs.existsSync(path.join(dir, 'audit', 'changes', `${day}.arc`)));
+  assert.equal(t2.verify('changes').ok, true);
+  t2.stop();
+
+  // A record removed from the middle breaks the chain.
+  const t3dir = tmp();
+  const v3 = new Vault(t3dir);
+  const t3 = new Trail({ dataDir: t3dir, vault: v3 });
+  for (const w of ['a', 'b', 'c']) t3.change({ what: w });
+  t3.stop();
+  const f = path.join(t3dir, 'audit', 'changes', `${day}.log`);
+  const lines = fs.readFileSync(f, 'utf8').trim().split('\n');
+  fs.writeFileSync(f, `${lines[0]}\n${lines[2]}\n`);
+  const t4 = new Trail({ dataDir: t3dir, vault: v3 });
+  const v = t4.verify('changes');
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /missing/);
+  t4.stop();
+});

@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Db, fail, text, email as cleanEmail } from './db.js';
 import { Backups } from './backups.js';
+import { Trail } from './trail.js';
 import { Watchdog, healthChecks } from './health.js';
 import { readTable, recordsOf, matchRecords, logMessage, opportunityIdOf } from './salesforce.js';
 import { SfMailbox } from './sf-mailbox.js';
@@ -69,8 +70,14 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   };
   const fullSettings = () => db.read('settings', {});
   const firstAdmin = users.ensureAdmin();
-  const audit = new Audit(db);
+  // The audit trail: every change (kept for good) and every request (kept CC_ACCESS_DAYS days), chained and encrypted.
+  const trail = new Trail({ dataDir, vault: db.vault });
+  const audit = new Audit(db, trail);
   const templates = new Templates(db, { users, catalog });
+  opps.onHistory = ({ opp, actor, what }) => {
+    const who = actor?.id ? users.get(actor.id) ?? actor : null;
+    trail.change({ by: who?.id ?? '', byName: who?.name ?? 'Meridian', role: who?.role ?? '', type: 'opportunity', what, opp: opp.id, customer: opp.customer });
+  };
   const ai = new AiActions({ db });
   const orgRates = () => ratesFor(db.read('settings', {}).valueRates ?? {});
   const valueFor = (opp, live = opp.tenant ? monitor.live(opp.id) : null) => (live?.summary ? valueOf({ credits: monitor.snapshot(opp.id)?.credits, summary: live.summary, backlog: monitor.snapshot(opp.id)?.findings?.ai ?? null, ledger: ai.ledger(opp.id), rates: ratesFor(db.read('settings', {}).valueRates ?? {}, opp.valueRates ?? {}) }) : null);
@@ -487,7 +494,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     // Public
     if (route === 'POST /login') {
       const body = await readBody(req);
-      throttle(`${req.socket.remoteAddress}|${text(body.email, 254).toLowerCase()}`);
+      res.auditEmail = text(body.email, 254).toLowerCase();
+      throttle(`${req.socket.remoteAddress}|${res.auditEmail}`);
       const { token, user } = users.signIn(body.email, body.password);
       return send(res, 200, { user }, { 'Set-Cookie': sessionCookie(token, 12 * 3600) });
     }
@@ -841,9 +849,39 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (route === 'GET /system/about') {
       return send(res, 200, { version: VERSION, node: process.version, repo: updater.status().repo, licence: 'Internal use', startedAt: STARTED_AT, launched: updater.launched, dataDir: can(user, 'settings.manage') ? dataDir : undefined, backups: can(user, 'settings.manage') ? backupStore.list().slice(0, 10).map((x) => x.name) : undefined, audit: can(user, 'settings.manage') ? audit.verify() : undefined });
     }
-    if (route === 'GET /audit') {
-      need(user, 'settings.manage');
-      return send(res, 200, { entries: audit.list({ type: url.searchParams.get('type') ?? '', limit: 500 }), chain: audit.verify() });
+    // ——— The audit trail: Admins see everything; VPs and leaders what they and the people below them did ———
+    if (route === 'GET /audit' || route === 'GET /audit/export') {
+      need(user, 'audit.view');
+      const q = url.searchParams;
+      const stream = q.get('kind') === 'access' ? 'access' : 'changes';
+      const visible = user.role === 'admin' ? null : users.visibleIds(user);
+      const words = String(q.get('q') ?? '').toLowerCase().trim();
+      const who = q.get('who') ?? '';
+      const oppId = q.get('opp') ?? '';
+      const writes = q.get('writes') === '1';
+      const errors = q.get('errors') === '1';
+      const match = (r) => {
+        if (visible && !(r.by && visible.has(r.by)) && !(r.opp && opps.canView(user, opps.get(r.opp) ?? null))) return false;
+        if (who && r.by !== who) return false;
+        if (oppId && r.opp !== oppId) return false;
+        if (writes && r.method === 'GET') return false;
+        if (errors && !(r.status >= 400)) return false;
+        return !words || [r.byName, r.what, r.type, r.path, r.customer, r.ip, r.ua].join(' ').toLowerCase().includes(words);
+      };
+      const from = /^\d{4}-\d{2}-\d{2}$/.test(q.get('from') ?? '') ? q.get('from') : '';
+      const to = /^\d{4}-\d{2}-\d{2}$/.test(q.get('to') ?? '') ? q.get('to') : '';
+      if (route === 'GET /audit/export') {
+        const { records } = trail.query(stream, { match, from, to, limit: 50_000 });
+        audit.record(user, 'audit', `Exported ${records.length} ${stream === 'access' ? 'requests' : 'changes'} from the audit trail`);
+        const cols = stream === 'access' ? ['seq', 'at', 'byName', 'role', 'ip', 'ua', 'method', 'path', 'status', 'ms', 'customer', 'hash'] : ['seq', 'at', 'byName', 'role', 'type', 'what', 'customer', 'hash'];
+        const cell = (v) => `"${String(v ?? '').replace(/"/g, '""').replace(/^[=+\-@]/, "'$&")}"`;
+        const csv = [cols.join(','), ...records.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n');
+        return file(res, `meridian-audit-${stream}-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv; charset=utf-8', csv);
+      }
+      const before = Number(q.get('before')) || Infinity;
+      const page = trail.query(stream, { match, before, from, to, limit: Math.min(200, Number(q.get('limit')) || 100) });
+      const chain = trail.verify(stream);
+      return send(res, 200, { kind: stream, records: page.records, next: page.next, chain, keepDays: stream === 'access' ? trail.accessDays : null, people: user.role === 'admin' ? state_people() : state_people(visible) });
     }
 
     // Capability catalogue
@@ -1364,6 +1402,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/api/')) logAccess(req, res, url);
     try {
       if (url.pathname === '/healthz') return send(res, 200, { ok: true, version: VERSION, reading: monitor.load(), memoryMb: Math.round(process.memoryUsage().rss / 1048576) });
       if (url.pathname.startsWith('/api/')) await api(req, res, url);
@@ -1375,6 +1414,34 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
   };
+  const state_people = (only = null) => users.list().filter((u) => !only || only.has(u.id)).map((u) => ({ id: u.id, name: u.name }));
+
+  /** Every API request, once it is answered: who, from where, what, which POV, how it ended, how long it took. */
+  function logAccess(req, res, url) {
+    const t0 = Date.now();
+    res.on('close', () => {
+      try {
+        const u = users.fromToken(cookie(req, 'cc_session'));
+        const parts = url.pathname.split('/').filter(Boolean).slice(1);
+        const oppId = parts[0] === 'opportunities' && /^[0-9a-f-]{36}$/i.test(parts[1] ?? '') ? parts[1] : null;
+        const ip = (process.env.CC_TRUST_PROXY === 'true' && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '';
+        trail.access({
+          by: u?.id ?? '',
+          byName: u?.name ?? (res.auditEmail ? `sign-in as ${res.auditEmail}` : ''),
+          role: u?.role ?? '',
+          ip: ip.replace(/^::ffff:/, ''),
+          ua: shortAgent(req.headers['user-agent']),
+          method: req.method,
+          route: `/${parts.map((p, i) => (i > 0 && /^[0-9a-f-]{8,}$/i.test(p) ? ':id' : p)).join('/')}`,
+          path: (url.pathname + url.search).slice(0, 300),
+          status: res.statusCode,
+          ms: Date.now() - t0,
+          ...(oppId ? { opp: oppId, customer: opps.get(oppId)?.customer ?? '' } : {}),
+        });
+      } catch {}
+    });
+  }
+
   const tlsServer = cert
     ? https.createServer({ ...cert.options, minVersion: 'TLSv1.2' }, (req, res) => {
         // A real certificate: browsers are told to keep to HTTPS. (Not for a self-signed one: they would ignore it.)
@@ -1555,6 +1622,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const can = (u, p) => users.can(u, p, fullSettings());
   updater.start();
   if (startBackground) backupStore.start({ version: VERSION });
+  // Seal finished days of the trail and drop access days past their keeping time.
+  if (startBackground) {
+    setTimeout(() => trail.maintain(), 20_000).unref();
+    setInterval(() => trail.maintain(), 6 * 3_600_000).unref();
+  }
   const watchdog = new Watchdog({ monitor, launched: updater.launched, restart: () => setTimeout(() => process.exit(RESTART_CODE), 300) });
   if (startBackground) watchdog.start();
   if (startBackground) sfMailbox.start();
@@ -1562,12 +1634,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   server.on('close', () => {
     updater.stop();
     backupStore.stop();
+    trail.stop();
     sfMailbox.stop();
     watchdog.stop();
     monitor.stop();
     clearInterval(hourly);
   });
-  return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit, backups: backupStore, watchdog };
+  return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit, trail, backups: backupStore, watchdog };
 }
 
 /**
@@ -1598,6 +1671,14 @@ function sharedPort(tlsServer) {
     redirect.closeAllConnections?.();
   };
   return front;
+}
+
+/** "Safari on iPhone", "Chrome on Windows"… from a User-Agent header. */
+function shortAgent(ua = '') {
+  const s = String(ua);
+  const browser = /Edg\//.test(s) ? 'Edge' : /Chrome\//.test(s) ? 'Chrome' : /Firefox\//.test(s) ? 'Firefox' : /Safari\//.test(s) ? 'Safari' : /curl|node|python|undici/i.test(s) ? s.split('/')[0] : 'Other';
+  const os = /iPhone|iPad/.test(s) ? 'iOS' : /Android/.test(s) ? 'Android' : /Mac OS X/.test(s) ? 'macOS' : /Windows/.test(s) ? 'Windows' : /Linux/.test(s) ? 'Linux' : '';
+  return os ? `${browser} on ${os}` : browser;
 }
 
 /** An email server error, said so it can be fixed. */

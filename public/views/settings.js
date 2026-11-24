@@ -51,6 +51,7 @@ function profile(body, data, applyLook) {
     <section class="panel"><div class="head"><h3>Profile</h3></div><form id="profForm" class="body stack" style="gap:10px">
       <label class="field">Name<input name="name" value="${esc(u.name)}"></label>
       <label class="field">Title (signs your emails)<input name="title" value="${esc(u.title ?? '')}"></label>
+      <label class="field">Sales region<input name="region" list="myRegions" value="${esc(u.region ?? '')}" placeholder="e.g. EMEA"><datalist id="myRegions">${['NA', 'LATAM', 'EMEA', 'UK & I', 'DACH', 'Nordics', 'APAC', 'ANZ', 'India', 'Japan', 'Middle East'].map((r) => `<option value="${r}">`).join('')}</datalist></label>
       <div class="small muted">${esc(u.email)} · ${esc(u.roleLabel)}</div>
       <div><button class="btn primary">Save profile</button></div>
     </form>

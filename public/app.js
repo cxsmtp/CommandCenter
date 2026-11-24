@@ -6,6 +6,7 @@ import { renderCatalog } from './views/catalog.js';
 import { renderSettings } from './views/settings.js';
 import { openNewOpportunity } from './views/new-opportunity.js';
 import { renderInsights } from './views/insights.js';
+import { renderAudit } from './views/audit.js';
 
 // ——— The detail drawer: a POV opened from a list, on the right half, the list still in view ———
 let drawerFor = '';
@@ -82,11 +83,12 @@ const ICON = {
   more: svg('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'),
   refresh: svg('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
   out: svg('<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/>'),
+  audit: svg('<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/>'),
   insights: svg('<path d="M4 19h16"/><path d="M7 15l3.5-4 3 2.5L18 8"/><circle cx="18" cy="8" r="1.4"/>'),
 };
 const NAV = [
   ['Work', [['dashboard', ICON.dashboard, 'Portfolio'], ['insights', ICON.insights, 'Insights'], ['team', ICON.team, 'Teams']]],
-  ['Set up', [['catalog', ICON.catalog, 'Capabilities'], ['settings', ICON.settings, 'Settings']]],
+  ['Set up', [['catalog', ICON.catalog, 'Capabilities'], ['audit', ICON.audit, 'Audit', 'audit.view'], ['settings', ICON.settings, 'Settings']]],
 ];
 
 const MARK = '<svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12.5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/><ellipse cx="16" cy="16" rx="5.2" ry="12.5" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/><path d="M16 2.2v27.6" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="9" r="2.4" fill="currentColor"/></svg>';
@@ -97,7 +99,7 @@ function shell() {
   root.innerHTML = `<div class="shell">
     <nav class="nav" id="nav" aria-label="Main">
       <div class="brand">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Meridian')}</span><span class="brand-tag">One line of sight</span></span></div>
-      ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
+      ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.filter(([, , , need]) => !need || can(need)).map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
       <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button></div>
@@ -116,7 +118,7 @@ function shell() {
       <a href="#/insights" ${r.view === 'insights' ? 'aria-current="page"' : ''}>${ICON.insights}Insights</a>
       ${can('opps.create') ? `<button type="button" class="tab-new" data-action="new-opp"><span class="ico">${ICON.plus}</span>New</button>` : '<span></span>'}
       <a href="#/team" ${r.view === 'team' ? 'aria-current="page"' : ''}>${ICON.team}Teams</a>
-      <button type="button" data-action="more" ${['catalog', 'settings'].includes(r.view) ? 'aria-current="page"' : ''}>${ICON.more}More</button>
+      <button type="button" data-action="more" ${['catalog', 'settings', 'audit'].includes(r.view) ? 'aria-current="page"' : ''}>${ICON.more}More</button>
     </nav>
   </div>`;
 }
@@ -128,6 +130,7 @@ function openMore() {
     `<div class="dbody more-sheet"><div class="row center"><div style="flex:1"><b>${esc(u.name)}</b><div class="small muted">${esc(u.roleLabel)} · ${esc(u.email)}</div></div><button class="btn" data-close>Done</button></div>
       <nav class="more-list">
         <a href="#/catalog">${ICON.catalog}<span>Capabilities & templates</span></a>
+        ${can('audit.view') ? `<a href="#/audit">${ICON.audit}<span>Audit</span></a>` : ''}
         <a href="#/settings">${ICON.settings}<span>Settings</span></a>
         <button type="button" data-action="refresh-all">${ICON.refresh}<span>Read every POV tenant now</span></button>
         <button type="button" data-action="signout">${ICON.out}<span>Sign out</span></button>
@@ -154,12 +157,13 @@ async function renderNow() {
   if (!$('#main')) shell();
   const r = route();
   for (const a of document.querySelectorAll('.nav a[href^="#/"], .tabbar a[href^="#/"]')) a.toggleAttribute('aria-current', a.getAttribute('href') === `#/${r.view}` || (r.view === 'opp' && a.getAttribute('href') === '#/dashboard'));
-  document.querySelector('.tabbar [data-action="more"]')?.toggleAttribute('aria-current', ['catalog', 'settings'].includes(r.view));
+  document.querySelector('.tabbar [data-action="more"]')?.toggleAttribute('aria-current', ['catalog', 'settings', 'audit'].includes(r.view));
   if (r.view === 'opp') await renderOpportunity($('#main'), r.id, r.tab, { crumbs });
   else if (r.view === 'team') await renderTeam($('#main'), { crumbs });
   else if (r.view === 'catalog') await renderCatalog($('#main'), { crumbs });
   else if (r.view === 'settings') await renderSettings($('#main'), r.id, { crumbs, applyLook });
   else if (r.view === 'insights') await renderInsights($('#main'), { crumbs });
+  else if (r.view === 'audit') await renderAudit($('#main'), { crumbs });
   else await renderDashboard($('#main'), { crumbs, open: r.open });
   await renderDrawer(r);
   refreshNote();

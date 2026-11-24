@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { Db } from './db.js';
 import { hashPassword } from './users.js';
 import { Audit } from './audit.js';
+import { Trail } from './trail.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data');
@@ -43,6 +44,8 @@ user.password = hashPassword(password);
 user.mustChangePassword = true;
 user.active = true;
 db.write('users', users);
-new Audit(db).record(null, 'people', `Password reset from the server console for ${user.email}`, { id: user.id });
+const trail = new Trail({ dataDir, vault: db.vault });
+new Audit(db, trail).record(null, 'people', `Password reset from the server console for ${user.email}`, { id: user.id });
+trail.stop();
 
 console.log(`\n  New one-time password for ${user.email}:  ${password}\n  They choose their own at the next sign-in.\n\n  Now restart the server so it takes it:  podman restart meridian\n`);

@@ -60,7 +60,14 @@ export class Backups {
           fs.mkdirSync(dst, { recursive: true, mode: 0o700 });
           copy(src, dst, r);
         } else if (entry.isFile()) {
-          fs.copyFileSync(src, dst);
+          // A sealed day of the audit trail never changes: the backup links to it (no second copy on disk).
+          if (entry.name.endsWith('.arc')) {
+            try {
+              fs.linkSync(src, dst);
+            } catch {
+              fs.copyFileSync(src, dst);
+            }
+          } else fs.copyFileSync(src, dst);
           files[r] = { size: fs.statSync(dst).size, sha256: sha256(dst) };
         }
       }

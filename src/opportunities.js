@@ -33,6 +33,9 @@ export class Opportunities {
   #users;
   #catalog;
 
+  /** Told of every change to an opportunity (the audit trail): ({ opp, actor, what }) => void. */
+  onHistory = null;
+
   constructor(db, { users, catalog }) {
     this.#db = db;
     this.#users = users;
@@ -111,7 +114,7 @@ export class Opportunities {
     applyFields(opp, body);
     if (!opp.customer) throw fail(400, 'Give the customer name.');
     opp.name ||= opp.customer;
-    log(opp, actor, `Created the opportunity (${STAGES[opp.stage]})`);
+    log(opp, actor, `Created the opportunity (${STAGES[opp.stage]})`, this.onHistory);
     for (const id of strList(body.capabilities, 200, 60)) this.#addCriterion(opp, { capabilityId: id }, actor);
     // From the wizard: each capability with its own priority, and criteria in the team's own words.
     for (const it of Array.isArray(body.criteria) ? body.criteria.slice(0, 200) : []) if (it?.capabilityId && this.#catalog.get(it.capabilityId)) this.#addCriterion(opp, { capabilityId: text(it.capabilityId, 60), priority: it.priority === 'nice' ? 'nice' : 'must' }, actor);
@@ -141,17 +144,17 @@ export class Opportunities {
       if (body.ownerId && body.ownerId !== opp.ownerId) {
         if (!(this.#users.can(actor, 'opps.reassign', settings) && this.#users.isBelow(actor, body.ownerId, { self: true }))) throw fail(403, 'You can only give an opportunity to someone in your team.');
         opp.ownerId = body.ownerId;
-        log(opp, actor, `Handed over to ${this.#users.get(body.ownerId)?.name ?? 'someone else'}`);
+        log(opp, actor, `Handed over to ${this.#users.get(body.ownerId)?.name ?? 'someone else'}`, this.onHistory);
       }
       const changed = applyFields(opp, body);
       if (opp.stage !== before.stage) {
-        log(opp, actor, `Stage: ${STAGES[before.stage]} → ${STAGES[opp.stage]}`);
+        log(opp, actor, `Stage: ${STAGES[before.stage]} → ${STAGES[opp.stage]}`, this.onHistory);
         if (opp.stage === 'pov' && !opp.startDate) opp.startDate = new Date().toISOString().slice(0, 10);
         if (['won', 'lost'].includes(opp.stage)) opp.outcome = { result: opp.stage, reason: text(body.outcomeReason, 1000), closedAt: new Date().toISOString() };
       }
-      if (changed.includes('povResult')) log(opp, actor, opp.povResult ? `Marked the POV ${opp.povResult}` : 'Cleared the POV result');
+      if (changed.includes('povResult')) log(opp, actor, opp.povResult ? `Marked the POV ${opp.povResult}` : 'Cleared the POV result', this.onHistory);
       const rest = changed.filter((k) => k !== 'povResult');
-      if (rest.length) log(opp, actor, `Changed ${rest.join(', ')}`);
+      if (rest.length) log(opp, actor, `Changed ${rest.join(', ')}`, this.onHistory);
     });
   }
 
@@ -177,6 +180,7 @@ export class Opportunities {
       const what = before ? (changes.length ? `Salesforce: ${changes.join(' · ')}` : '') : `Salesforce report linked${rec.stage ? ` (stage ${rec.stage})` : ''}`;
       if (what) {
         (opp.history ??= []).push({ at: now, by: '', byName, what: text(what, 400) });
+        this.onHistory?.({ opp, actor: null, what: text(what, 400) });
         if (opp.history.length > HISTORY) opp.history = opp.history.slice(-HISTORY);
       }
       out.set(id, changes);
@@ -202,6 +206,7 @@ export class Opportunities {
       if (!c || c.statusSource === 'manual' || !['not_started', 'in_progress'].includes(c.status)) continue;
       Object.assign(c, { status: 'met', statusSource: 'tenant', proofType: 'tenant', confirmedBy: '', confirmedAt: now, autoEvidence: evidence.slice(0, 5) });
       (opp.history ??= []).push({ at: now, by: '', byName: 'Meridian', what: text(`Completed in the tenant: ${c.title} — ${evidence[0] ?? ''}`, 400) });
+      this.onHistory?.({ opp, actor: null, what: text(`Completed in the tenant: ${c.title} — ${evidence[0] ?? ''}`, 400) });
       done.push(c.title);
     }
     if (!done.length) return [];
@@ -244,18 +249,18 @@ export class Opportunities {
         addedBy: actor.id,
       };
       if (['discovery', 'technical'].includes(opp.stage)) {
-        log(opp, actor, `Stage: ${STAGES[opp.stage]} → ${STAGES.pov}`);
+        log(opp, actor, `Stage: ${STAGES[opp.stage]} → ${STAGES.pov}`, this.onHistory);
         opp.stage = 'pov';
         opp.startDate ||= new Date().toISOString().slice(0, 10);
       }
-      log(opp, actor, same ? 'Replaced the Checkmarx One API key' : `Connected Checkmarx One tenant "${connection.tenant}" (${connection.regionLabel})`);
+      log(opp, actor, same ? 'Replaced the Checkmarx One API key' : `Connected Checkmarx One tenant "${connection.tenant}" (${connection.regionLabel})`, this.onHistory);
     });
   }
 
   removeTenant(actor, id, settings) {
     return this.mutate(actor, id, settings, (opp) => {
       if (!opp.tenant) return;
-      log(opp, actor, `Disconnected tenant "${opp.tenant.tenant}" (its key deleted)`);
+      log(opp, actor, `Disconnected tenant "${opp.tenant.tenant}" (its key deleted)`, this.onHistory);
       opp.tenant = null;
     });
   }
@@ -263,7 +268,7 @@ export class Opportunities {
   setMute(actor, id, { until, projects, reason }, settings) {
     return this.mutate(actor, id, settings, (opp) => {
       opp.mute = { until: until === 'forever' ? 'forever' : isoOrNull(until), projects: strList(projects, 500, 80), reason: text(reason, 300) };
-      log(opp, actor, opp.mute.until ? `Muted alerts ${opp.mute.until === 'forever' ? 'until unmuted' : `until ${opp.mute.until.slice(0, 16).replace('T', ' ')}`}` : opp.mute.projects.length ? `Muted ${opp.mute.projects.length} project(s)` : 'Unmuted alerts');
+      log(opp, actor, opp.mute.until ? `Muted alerts ${opp.mute.until === 'forever' ? 'until unmuted' : `until ${opp.mute.until.slice(0, 16).replace('T', ' ')}`}` : opp.mute.projects.length ? `Muted ${opp.mute.projects.length} project(s)` : 'Unmuted alerts', this.onHistory);
     });
   }
 
@@ -279,7 +284,7 @@ export class Opportunities {
       const what = describe(kind, next, existing);
       if (existing) Object.assign(existing, next);
       else list.push({ id: randomUUID(), ...next });
-      log(opp, actor, what);
+      log(opp, actor, what, this.onHistory);
       return existing ?? list[list.length - 1];
     });
   }
@@ -289,7 +294,7 @@ export class Opportunities {
     return this.mutate(actor, id, settings, (opp) => {
       const item = (opp[kind] ?? []).find((x) => x.id === itemId);
       opp[kind] = (opp[kind] ?? []).filter((x) => x.id !== itemId);
-      if (item) log(opp, actor, `Removed ${KIND_LABEL[kind]} "${item.title || item.name || item.text?.slice(0, 40) || ''}"`);
+      if (item) log(opp, actor, `Removed ${KIND_LABEL[kind]} "${item.title || item.name || item.text?.slice(0, 40) || ''}"`, this.onHistory);
     });
   }
 
@@ -304,7 +309,7 @@ export class Opportunities {
     const crit = { id: randomUUID(), ...CLEANERS.criteria({ title: cap?.name, category: cap?.category ?? 'custom', ...item, capabilityId: cap?.id ?? '' }, actor) };
     if (!crit.title) throw fail(400, 'Give the success criterion a title.');
     opp.criteria.push(crit);
-    if (actor) log(opp, actor, `Added success criterion "${crit.title}"`);
+    if (actor) log(opp, actor, `Added success criterion "${crit.title}"`, this.onHistory);
     return crit;
   }
 }
@@ -410,8 +415,9 @@ function cleanOverrides(o) {
   return out;
 }
 
-function log(opp, actor, what) {
+function log(opp, actor, what, sink = null) {
   (opp.history ??= []).push({ at: new Date().toISOString(), by: actor?.id ?? '', what: text(what, 400) });
+  sink?.({ opp, actor, what: text(what, 400) });
   if (opp.history.length > HISTORY) opp.history = opp.history.slice(-HISTORY);
 }
 

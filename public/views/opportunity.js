@@ -43,7 +43,7 @@ export async function renderOpportunity(main, id, tab, { crumbs, drawer = null }
         </div>
         ${links.length || o.salesforce ? `<div class="opp-links">${links.join('')}${sfChip(o.salesforce)}</div>` : ''}
       </div>
-      <div class="actions">${next ? `<button class="btn primary" data-next="${next.key}">${esc(next.label)}</button>` : ''}${d.canEdit ? '<button class="btn ghost" data-act="opp-menu" aria-label="More">•••</button>' : '<span class="badge">View only</span>'}</div>
+      <div class="actions">${next ? `<button class="btn primary" data-next="${next.key}">${esc(next.label)}</button>` : ''}${d.canEdit ? '<button class="btn" data-act="edit">Edit</button><button class="btn ghost" data-act="opp-menu" aria-label="More">•••</button>' : '<span class="badge">View only</span>'}</div>
     </div>
     <div class="tabs" role="tablist">${TABS.map(([k, label]) => `<button role="tab" aria-selected="${k === active}" data-tab="${k}">${label}${k === 'criteria' && r.progress.total ? ` <span class="muted">${r.progress.met}/${r.progress.total}</span>` : ''}${k === 'tenant' && r.live ? ` <span class="dot ${r.live.health}"></span>` : ''}</button>`).join('')}</div>
     <div id="tabBody">${VIEWS[active](d)}</div>`;
@@ -799,6 +799,7 @@ function editDetails() {
      <div class="row"><label class="field">POV start<input type="date" name="startDate" value="${esc(o.startDate)}"></label><label class="field">POV end<input type="date" name="endDate" value="${esc(o.endDate)}"></label></div>
      <label class="field">Salesforce opportunity link<input name="salesforceUrl" type="url" value="${esc(o.salesforceUrl)}"></label>
      <label class="field">SharePoint site link<input name="sharepointUrl" type="url" value="${esc(o.sharepointUrl)}"></label>
+     <label class="field">Deal size<input name="amount" value="${esc(o.amount ?? '')}" placeholder="e.g. $420k ARR"></label>
      <div class="row"><button type="button" class="btn ghost danger" id="delOpp">Delete this opportunity</button></div>`,
     (b) => api(`/opportunities/${oid()}`, { method: 'PATCH', body: b }),
   ).then(() => {});
