@@ -914,19 +914,26 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
     '/api/policy_management_service_uri/incidents/total': 12,
     '/api/feedback-app/v2/apps': { apps: [{ id: 6480, name: 'Acme Jira', type: 'Jira' }, { id: 7, type: 'Email' }, { id: 8, applicationType: { name: 'Slack' } }] },
     '/api/feedback-app/v3/profiles': { profiles: [{ name: 'AppSec', appsIds: [6480], projectsIds: ['p1', 'p2'] }, { appsIds: [6480, 7], projectsIds: ['p2', 'p3'] }] },
+    'https://iam.example/auth/admin/realms/acme/identity-provider/instances': [{ alias: 'okta', providerId: 'saml', enabled: true }, { alias: 'old', providerId: 'oidc', enabled: false }],
+    'https://iam.example/auth/admin/realms/acme/components': [{ name: 'corp', providerId: 'ldap' }],
+    '/api/access-management/groups': [{ id: 'g1', name: 'AppSec' }, { id: 'g2', name: 'Dev' }],
+    '/api/custom-states': [{ id: 595, name: 'Accepted risk', type: 'INFO' }],
+    '/api/queries/presets': [{ id: 1, name: 'ASA Premium' }, { id: 54, name: 'OWASP Top 10' }, { id: 1802187495, name: 'Acme preset' }],
     '/api/dast/scans/environments': { totalItems: 4, environments: [{ domain: 'shop.example', lastScanTime: '2026-11-21T09:00:00Z', settings: { authSettings: { userName: 'u', password: 'hunter2' } } }, { domain: 'b.example' }] },
   };
   const client = { request: async (p) => (p in answers ? answers[p] : Promise.reject(Object.assign(new Error('404'), { status: 404 }))) };
-  const a = await aspm(client);
+  const a = await aspm(client, { iamUrl: 'https://iam.example', tenant: 'acme' });
   assert.deepEqual(a.applications, { total: 3, withRules: 1, projects: 2 });
   assert.equal(a.armScores.scored, 2);
   assert.equal(a.armScores.top, 8.9);
   assert.equal(a.risks.total, 229);
   assert.deepEqual(a.cloud, { accounts: 2, lastScanAt: '2026-11-20T10:00:00.000Z' });
   assert.deepEqual(a.feedback, { jira: { apps: 1, projects: 3 }, email: { apps: 1, projects: 2 }, slack: { apps: 1, projects: 0 } });
+  assert.deepEqual(a.access, { sso: 1, ssoKinds: ['SAML'], ldap: 1, groups: 2 });
+  assert.deepEqual(a.triage, { customStates: 1, customPresets: 1 });
   assert.deepEqual(a.policies, { made: 2, applied: 1, breakBuild: 1, violations: 12 });
   assert.deepEqual(a.dast, { environments: 4, scanned: 1, lastScanAt: '2026-11-21T09:00:00.000Z' });
-  assert.ok(!/hunter2|Payments|shop\.example|secret\.py|prod|Acme Jira|AppSec/.test(JSON.stringify(a)), 'no names, no passwords');
+  assert.ok(!/hunter2|Payments|shop\.example|secret\.py|prod|Acme Jira|AppSec|okta|corp|Accepted risk|Acme preset/.test(JSON.stringify(a)), 'no names, no passwords');
   // A tenant without ASPM answers nothing: every part is null, the read goes on.
   const none = await aspm({ request: async () => Promise.reject(new Error('403')) });
   assert.ok(Object.values(none).every((v) => v === null));
@@ -938,6 +945,10 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.deepEqual(evaluate(cap('jira'), facts).evidence, ['A Jira feedback app is set up, used by 3 projects']);
   assert.deepEqual(evaluate(cap('chat'), facts).evidence, ['A Slack feedback app is set up, not yet on a project']);
   assert.equal(evaluate(cap('servicenow'), facts).level, 'none');
+  assert.deepEqual(evaluate(cap('sso'), facts).evidence, ['Single sign-on through 1 identity provider (SAML)', 'Users come from 1 LDAP directory']);
+  assert.deepEqual(evaluate(cap('triage-workflow'), facts).evidence, ['1 triage state of their own']);
+  assert.deepEqual(evaluate(cap('presets'), facts).evidence, ['1 SAST preset of their own']);
+  assert.deepEqual(evaluate(cap('rbac'), facts).evidence, ['2 groups set up for access']);
   assert.match(evaluate(cap('cloud-insights'), facts).evidence[0], /2 cloud accounts connected/);
   assert.match(evaluate(cap('dast'), facts).evidence.join(' '), /DAST scanned 1 environment/);
   assert.deepEqual(evaluate(cap('policy'), facts).evidence, ['1 policy applied to projects, 1 breaking the build', 'Policies raised 12 violations']);

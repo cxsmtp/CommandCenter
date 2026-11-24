@@ -263,12 +263,18 @@ async function credits(client, projectNames) {
  *                 many projects or tags, how many break the build; .../incidents/total: violations raised
  *   feedback      GET /api/feedback-app/v2/apps and /v3/profiles: the feedback apps set up (Jira, Azure Boards,
  *                 ServiceNow, email, Slack, Teams) and how many projects a profile sends to each
+ *   access        the IAM (Keycloak admin API, as the portal's Identity & Access pages read it): identity providers
+ *                 for single sign-on (identity-provider/instances), LDAP directories (components), and the groups in
+ *                 GET /api/access-management/groups. Kinds and counts only; null where the key may not read them.
+ *   triage        GET /api/custom-states: the customer's own triage states (the list holds no built-in ones);
+ *                 GET /api/queries/presets: presets made by the customer (built-in ones have small ids, theirs large)
  * No names are kept: only counts, scores and dates.
  */
-export async function aspm(client) {
+export async function aspm(client, connection = null) {
   // Each part on its own: a page this tenant lacks, or one that fails, leaves the others standing.
   const soft = (fn) => fn().catch(() => null);
-  const [apps, arm, risks, cloud, dast, pol, incidents, fbApps, fbProfiles] = await Promise.all([
+  const iam = connection?.iamUrl && connection?.tenant ? `${connection.iamUrl}/auth/admin/realms/${encodeURIComponent(connection.tenant)}` : null;
+  const [apps, arm, risks, cloud, dast, pol, incidents, fbApps, fbProfiles, idps, dirs, groups, states, presets] = await Promise.all([
     soft(() => client.request('/api/applications', { query: { limit: 100, offset: 0 }, retries: 1 })),
     soft(() => client.request('/api/risk-management/summary', { retries: 1 })),
     soft(() => client.request('/api/risks', { query: { limit: 1, offset: 0 }, retries: 1 })),
@@ -278,7 +284,14 @@ export async function aspm(client) {
     soft(() => client.request('/api/policy_management_service_uri/incidents/total', { retries: 1 })),
     soft(() => client.request('/api/feedback-app/v2/apps', { query: { limit: 100, page: 1 }, retries: 1 })),
     soft(() => client.request('/api/feedback-app/v3/profiles', { query: { limit: 100, page: 1, includeProjects: true }, retries: 1 })),
+    iam ? soft(() => client.request(`${iam}/identity-provider/instances`, { retries: 1 })) : null,
+    iam ? soft(() => client.request(`${iam}/components`, { query: { type: 'org.keycloak.storage.UserStorageProvider' }, retries: 1 })) : null,
+    soft(() => client.request('/api/access-management/groups', { query: { limit: 500, offset: 0 }, retries: 1 })),
+    soft(() => client.request('/api/custom-states', { retries: 1 })),
+    soft(() => client.request('/api/queries/presets', { retries: 1 })),
   ]);
+  const sso = Array.isArray(idps) ? idps.filter((x) => x && x.enabled !== false) : null;
+  const groupList = arrayIn(groups, ['groups', 'data', 'items']);
   // The list's wrapper differs between releases ({ policies }, { data }, a bare array): the first array of policies.
   const policies = Array.isArray(pol) ? pol : [pol?.policies, pol?.data, pol?.items, pol?.results].find(Array.isArray) ?? null;
   const made = policies?.filter((x) => x && !x.defaultPolicy) ?? [];
@@ -295,12 +308,25 @@ export async function aspm(client) {
     armScores: scored ? { scored: scored.length, top: scored.length ? Math.max(...scored.map((a) => Number(a.riskScore))) : null, highOrAbove: scored.filter((a) => /critical|high/i.test(a?.riskSeverity ?? '')).length } : null,
     risks: risks?.metaData ? { total: n0(risks.metaData.totalResults) ?? 0 } : null,
     feedback,
+    access: sso || Array.isArray(dirs) || groupList
+      ? {
+          sso: sso ? sso.length : null,
+          ssoKinds: sso ? [...new Set(sso.map((x) => (/saml/i.test(x.providerId ?? '') ? 'SAML' : /oidc|openid|microsoft|google|azure|okta/i.test(x.providerId ?? '') ? 'OIDC' : text(x.providerId, 30))).filter(Boolean))] : [],
+          ldap: Array.isArray(dirs) ? dirs.filter((x) => /ldap|kerberos/i.test(x?.providerId ?? '')).length : null,
+          groups: groupList ? n0(groups?.total) ?? groupList.length : null,
+        }
+      : null,
+    triage: Array.isArray(states) || Array.isArray(presets)
+      ? { customStates: Array.isArray(states) ? states.filter((x) => x && !x.deleted).length : null, customPresets: Array.isArray(presets) ? presets.filter((x) => Number(x?.id) > CUSTOM_PRESET_ID).length : null }
+      : null,
     policies: policies ? { made: made.length, applied: made.filter((x) => x.projects?.length || x.tags?.length).length, breakBuild: made.filter((x) => x.breakBuild || x.netNewBreakBuild).length, violations } : null,
     dast: envs ? { environments: n0(dast?.totalItems) ?? envs.length, scanned: dastScans.length, lastScanAt: dastScans[0] ? new Date(dastScans[0]).toISOString() : null } : null,
     cloud: accounts ? { accounts: n0(cloud?.total) ?? accounts.length, lastScanAt: last ? new Date(last).toISOString() : null } : null,
   };
 }
 
+/** Built-in SAST presets have small ids; those a tenant makes get large generated ones. */
+const CUSTOM_PRESET_ID = 100_000;
 const arrayIn = (body, keys) => (Array.isArray(body) ? body : keys.map((k) => body?.[k]).find(Array.isArray) ?? null);
 /** A feedback app's kind from whatever its type field is called: jira, azure, servicenow, email, slack, teams. */
 export function feedbackKind(app) {
@@ -478,7 +504,7 @@ export async function collect(connection, { client = new CxClient(connection), n
   const keep = !slow && previous;
   const [creditInfo, ai, people, aspmInfo] = keep
     ? [previous.credits ?? null, previous.ai ?? null, previous.people ?? null, previous.aspm ?? null]
-    : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null), part('aspm', () => aspm(client), null)]);
+    : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null), part('aspm', () => aspm(client, connection), null)]);
   const findings = projects.list.length ? await part('findings', () => latestFindings(client, projects.list.map((p) => p.id)), null) : { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, byProject: {} };
   // Nothing at all could be read (a rejected key, an unreachable tenant): the read failed.
   if (['projects', 'scans', 'running'].every((name) => errors.some((e) => e.part === name))) {

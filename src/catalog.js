@@ -11,7 +11,8 @@
  *   aspm       what the ASPM pages hold: applications, risk-scores (Application Risk Management), risks (Risk
  *              Orchestration), cloud (Cloud Insights accounts), dast (a DAST environment scanned),
  *              policy (a policy applied), violations (policy violations raised), feedback:jira|azure|servicenow|
- *              email|slack|teams (a feedback app of that kind set up)
+ *              email|slack|teams (a feedback app of that kind set up), sso, ldap, groups (access),
+ *              custom-states, custom-presets (triage states and SAST presets of their own)
  *   keywords   words looked for in the opportunity's own notes, discovery and sessions (a hint, never proof)
  *
  * Evidence only ever suggests: the SE confirms a criterion is met. An Admin (or anyone with catalog.manage) edits
@@ -121,10 +122,10 @@ export const DEFAULT_CATALOG = [
   c('email-feedback', 'tracking', 'Email notifications', 'Feedback Apps — Email', { aspm: ['feedback:email'], keywords: ['email notification', 'feedback app'] }, { proof: 'Show the notification email a team gets for new findings.', tech: 'GET /api/feedback-app/v2/apps: a email feedback app set up; GET /api/feedback-app/v3/profiles: the projects it serves. Tickets made by hand are shown by the SE.' }),
   c('chat', 'tracking', 'Slack / Teams notifications', 'Notifications', { aspm: ['feedback:slack', 'feedback:teams'], keywords: ['slack', 'teams'] }, { proof: 'Show the notification in the team’s channel.', tech: 'GET /api/feedback-app/v2/apps: a Slack or Teams feedback app set up; GET /api/feedback-app/v3/profiles: the projects it serves. Tickets made by hand are shown by the SE.' }),
   // ——— Platform ———
-  c('sso', 'platform', 'Single sign-on (SAML / OIDC)', 'Identity & Access Management — SSO', { keywords: ['sso', 'saml', 'okta', 'entra', 'azure ad'] }, { proof: 'Sign in through the customer’s identity provider; show group mapping.', tech: MANUAL }),
-  c('rbac', 'platform', 'Roles, groups & access control', 'Identity & Access Management — roles and groups', { keywords: ['rbac', 'roles', 'groups', 'permissions'] }, { proof: 'Show a developer seeing only their team’s projects.', tech: MANUAL }),
-  c('triage-workflow', 'platform', 'Triage workflow & custom states', 'Results — triage states', { keywords: ['triage', 'not exploitable', 'custom state'] }, { proof: 'Triage results with the customer’s states and comments; show the audit trail.', tech: MANUAL }),
-  c('presets', 'platform', 'Presets & query customisation', 'SAST presets / CxQL', { keywords: ['preset', 'cxql', 'custom query'] }, { proof: 'Tune a preset or a query for the customer’s framework.', tech: MANUAL }),
+  c('sso', 'platform', 'Single sign-on (SAML / OIDC)', 'Identity & Access Management — SSO', { aspm: ['sso', 'ldap'], keywords: ['sso', 'saml', 'okta', 'entra', 'azure ad'] }, { proof: 'Sign in through the customer’s identity provider; show group mapping.', tech: 'Identity providers in the IAM (GET /auth/admin/realms/{tenant}/identity-provider/instances), or an LDAP directory (…/components). Needs a key that may read the IAM; otherwise confirmed by the SE.' }),
+  c('rbac', 'platform', 'Roles, groups & access control', 'Identity & Access Management — roles and groups', { aspm: ['groups'], keywords: ['rbac', 'roles', 'groups', 'permissions'] }, { proof: 'Show a developer seeing only their team’s projects.', tech: 'Groups in GET /api/access-management/groups. Which roles they hold on which projects is shown by the SE.' }),
+  c('triage-workflow', 'platform', 'Triage workflow & custom states', 'Results — triage states', { aspm: ['custom-states'], keywords: ['triage', 'not exploitable', 'custom state'] }, { proof: 'Triage results with the customer’s states and comments; show the audit trail.', tech: 'Triage states of their own in GET /api/custom-states. Findings moved through them are shown by the SE.' }),
+  c('presets', 'platform', 'Presets & query customisation', 'SAST presets / CxQL', { aspm: ['custom-presets'], keywords: ['preset', 'cxql', 'custom query'] }, { proof: 'Tune a preset or a query for the customer’s framework.', tech: 'A SAST preset of their own in GET /api/queries/presets (built-in presets have small ids). Query changes are shown by the SE.' }),
   c('speed', 'platform', 'Scan speed & accuracy benchmark', 'Scan duration / false-positive rate', { keywords: ['scan time', 'false positive', 'accuracy', 'benchmark'] }, { proof: 'Compare scan times and the false-positive rate on the agreed applications.', tech: 'Scan durations are shown in the Live tenant tab (createdAt → updatedAt); the comparison is confirmed by the SE.' }),
 ];
 
@@ -235,6 +236,11 @@ function aspmFacts(a) {
   if (a.policies?.violations > 0) out.set('violations', `Policies raised ${n(a.policies.violations, 'violation')}`);
   const NAMES = { jira: 'Jira', azure: 'Azure Boards', servicenow: 'ServiceNow', email: 'email', slack: 'Slack', teams: 'Teams' };
   for (const [k, f] of Object.entries(a.feedback ?? {})) if (f?.apps > 0) out.set(`feedback:${k}`, `${f.apps === 1 ? 'A' : f.apps} ${NAMES[k] ?? k} feedback app${f.apps === 1 ? ' is' : 's are'} set up${f.projects ? `, used by ${n(f.projects, 'project')}` : ', not yet on a project'}`);
+  if (a.access?.sso > 0) out.set('sso', `Single sign-on through ${n(a.access.sso, 'identity provider')}${a.access.ssoKinds?.length ? ` (${a.access.ssoKinds.join(', ')})` : ''}`);
+  if (a.access?.ldap > 0) out.set('ldap', `Users come from ${n(a.access.ldap, 'LDAP directory', 'LDAP directories')}`);
+  if (a.access?.groups > 0) out.set('groups', `${n(a.access.groups, 'group')} set up for access`);
+  if (a.triage?.customStates > 0) out.set('custom-states', `${n(a.triage.customStates, 'triage state')} of their own`);
+  if (a.triage?.customPresets > 0) out.set('custom-presets', `${n(a.triage.customPresets, 'SAST preset')} of their own`);
   if (a.cloud?.accounts > 0) out.set('cloud', `Cloud Insights has ${n(a.cloud.accounts, 'cloud account')} connected${a.cloud.lastScanAt ? `, last scanned ${new Date(a.cloud.lastScanAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : ''}`);
   return out;
 }
