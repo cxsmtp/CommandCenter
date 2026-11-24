@@ -27,6 +27,9 @@ import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
+import { wipDeck, checkTemplate } from './wip.js';
+import { readApma } from './apma.js';
+import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
 import { predict, gaps, rollups } from './insights.js';
 import { flowView } from './flow.js';
 import { Updater, RESTART_CODE } from './updates.js';
@@ -516,7 +519,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie('', 0) });
     }
     if (route === 'GET /meta') {
-      return send(res, 200, { stages: STAGES, criterionStatus: CRITERION_STATUS, sessionTypes: SESSION_TYPES, categories: catalog.categories(), roles: Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.label])), permissions: PERMISSIONS, templates: TEMPLATES, themes: THEMES, scanWindowDays: SCAN_WINDOW_DAYS });
+      return send(res, 200, { stages: STAGES, criterionStatus: CRITERION_STATUS, sessionTypes: SESSION_TYPES, categories: catalog.categories(), roles: Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.label])), permissions: PERMISSIONS, templates: TEMPLATES, themes: THEMES, scanWindowDays: SCAN_WINDOW_DAYS, toolchain: TOOLCHAIN, povRoles: POV_ROLES, planDefaults: PLAN_DEFAULTS, devsecops: DEVSECOPS });
     }
     // ——— Salesforce ———
     if (route === 'GET /me/salesforce') {
@@ -939,6 +942,36 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       return send(res, 200, bank.info());
     }
 
+    // An APMA report read without keeping it, for the new-opportunity wizard.
+    if (route === 'POST /apma/read') {
+      const a = readApma(await readRaw(req, 25 * 1048576));
+      return send(res, 200, { apma: a });
+    }
+    // ——— The WIP deck template (.pptx): its look, layouts and closing slide are used for every POV's WIP deck ———
+    if (route === 'GET /wip-template') {
+      if (!fs.existsSync(WIP_TEMPLATE)) return send(res, 200, { template: null });
+      const info = db.read('wipTemplate', null);
+      return send(res, 200, { template: info });
+    }
+    if (route === 'POST /wip-template') {
+      need(user, 'settings.manage');
+      const buf = await readRaw(req, 60 * 1048576);
+      const found = await checkTemplate(buf);
+      if (!found) throw fail(400, 'That is not a PowerPoint file (.pptx).');
+      db.vault.writeFile(WIP_TEMPLATE, buf, { keepPrevious: false });
+      const info = { ...found, name: text(decodeURIComponent(req.headers['x-file-name'] ?? 'template.pptx'), 200), at: new Date().toISOString(), by: user.name };
+      db.write('wipTemplate', info);
+      audit.record(user, 'settings', `Uploaded the POV WIP template “${info.name}”`);
+      return send(res, 200, { template: info });
+    }
+    if (route === 'DELETE /wip-template') {
+      need(user, 'settings.manage');
+      fs.rmSync(WIP_TEMPLATE, { force: true });
+      db.write('wipTemplate', null);
+      audit.record(user, 'settings', 'Removed the POV WIP template');
+      return send(res, 200, { template: null });
+    }
+
     // ——— Success criteria templates ———
     if (route === 'GET /templates') return send(res, 200, { templates: templates.list(user, { includeHidden: user.role === 'admin' && url.searchParams.get('all') === '1' }), canManage: can(user, 'templates.manage') });
     if (route === 'POST /templates') {
@@ -1269,6 +1302,33 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (sub === 'deck' && m === 'GET') {
         const opp = viewOpp(user, id);
         return file(res, `${opp.customer} - POV results.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', await deckOf(opp));
+      }
+      // The POV work-in-progress deck, in the team's template when there is one.
+      if (sub === 'wip' && m === 'GET') {
+        const opp = viewOpp(user, id);
+        const tpl = fs.existsSync(WIP_TEMPLATE) ? db.vault.readFile(WIP_TEMPLATE) : null;
+        const buf = await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, template: tpl });
+        return file(res, `${opp.customer} - POV WIP.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf);
+      }
+      // The APMA assessment: the PDF read into the POV (optional; it fills the APMA slide), kept encrypted.
+      if (sub === 'apma' && m === 'POST') {
+        const buf = await readRaw(req, 25 * 1048576);
+        const a = readApma(buf);
+        const name = text(decodeURIComponent(req.headers['x-file-name'] ?? 'APMA report.pdf'), 200);
+        const opp = opps.update(user, id, { apma: { ...a, file: { name, at: new Date().toISOString() } } }, fullSettings());
+        db.vault.writeFile(path.join(dataDir, 'apma', `${id.replace(/[^0-9a-f-]/gi, '')}.pdf`), buf, { keepPrevious: false });
+        return send(res, 200, { opportunity: publicOpp(placed(opp)), apma: opp.apma, found: a.found });
+      }
+      if (sub === 'apma' && m === 'GET') {
+        const opp = viewOpp(user, id);
+        const p = path.join(dataDir, 'apma', `${id.replace(/[^0-9a-f-]/gi, '')}.pdf`);
+        if (!opp.apma?.file || !fs.existsSync(p)) return send(res, 404, { error: 'No APMA report on this POV.' });
+        return file(res, opp.apma.file.name || 'APMA report.pdf', 'application/pdf', db.vault.readFile(p));
+      }
+      if (sub === 'apma' && m === 'DELETE') {
+        const opp = opps.update(user, id, { apma: null }, fullSettings());
+        fs.rmSync(path.join(dataDir, 'apma', `${id.replace(/[^0-9a-f-]/gi, '')}.pdf`), { force: true });
+        return send(res, 200, { opportunity: publicOpp(placed(opp)) });
       }
       if (sub === 'report' && m === 'GET') {
         const opp = viewOpp(user, id);
@@ -1657,6 +1717,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   }
 
   // ——— Results pages: one per POV; a final copy kept when it is marked successful ———
+  const WIP_TEMPLATE = path.join(dataDir, 'templates', 'wip-template.pptx');
   const resultsDir = (id) => path.join(dataDir, 'results', id.replace(/[^0-9a-f-]/gi, ''));
   const finals = (id) => {
     try {

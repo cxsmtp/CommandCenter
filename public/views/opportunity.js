@@ -473,8 +473,10 @@ function discoveryText(o) {
 function sessions(d) {
   const list = [...(d.opportunity.sessions ?? [])].sort((a, b) => b.date.localeCompare(a.date));
   return `<div class="toolbar"><span class="muted small">Discovery calls, technical sessions, workshops, checkpoints and the readout.</span><span class="spacer"></span>${current.canEdit ? '<button class="btn primary" data-act="add-session">Session</button>' : ''}</div>
-    <div class="list">${list.map((x) => `<div class="item"><div class="top"><div><b>${esc(x.title)}</b> <span class="badge">${esc(state.meta.sessionTypes[x.type] ?? x.type)}</span></div><span class="small muted">${day(x.date)}</span></div>
+    <div class="list">${list.map((x) => `<div class="item"><div class="top"><div><b>${esc(x.title)}</b> <span class="badge">${esc(state.meta.sessionTypes[x.type] ?? x.type)}</span> ${(x.status || (x.date <= new Date().toISOString().slice(0, 10) ? 'done' : 'planned')) === 'done' ? '<span class="badge ok">Completed</span>' : '<span class="badge warn">Planned</span>'}</div><span class="small muted">${day(x.date)}</span></div>
       ${x.attendees ? `<div class="small muted">${esc(x.attendees)}</div>` : ''}
+      ${x.did ? `<div style="margin-top:6px"><b class="small">What we did</b><div class="notes-box small">${esc(x.did)}</div></div>` : ''}
+      ${x.theirNext || x.ourNext ? `<div class="row small" style="margin-top:6px;align-items:flex-start">${x.theirNext ? `<div class="grow"><b>Next from the customer</b><div class="notes-box">${esc(x.theirNext)}</div></div>` : ''}${x.ourNext ? `<div class="grow"><b>From our side</b><div class="notes-box">${esc(x.ourNext)}</div></div>` : ''}</div>` : ''}
       ${x.notes ? `<div class="notes-box" style="margin-top:6px">${esc(x.notes)}</div>` : ''}
       ${x.followUps ? `<div style="margin-top:6px"><b class="small">Follow-ups</b><div class="notes-box small">${esc(x.followUps)}</div></div>` : ''}
       <div class="row" style="margin-top:8px"><button class="btn sm" data-copy-session="${esc(x.id)}">Copy</button>${current.canEdit ? `<button class="btn sm" data-edit-session="${esc(x.id)}">Edit</button><button class="btn sm ghost danger" data-del-session="${esc(x.id)}">Remove</button>` : ''}</div></div>`).join('') || '<div class="empty panel">No sessions yet.</div>'}</div>`;
@@ -529,7 +531,7 @@ function email(d) {
 // ——— Report ———
 function report(d) {
   const o = d.opportunity;
-  return `<section class="panel"><div class="body stack">
+  return `${wipPanel(d)}<section class="panel"><div class="body stack">
     <p style="margin:0"><b>The results page</b> opens with the Checkmarx One platform slide, showing only this POV's engines with their status. Select any engine for its record: progress, the scans and evidence that prove it, notes, links and every timestamp up to the POV's completion. The other slides follow. Printing it gives a PDF of every slide, then one page per engine.</p>
     <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="dl-results">Download the page (HTML)</button><button class="btn" data-act="deck">Download the presentation (.pptx)</button></div>
     <div class="item"><div class="top"><b>Final results</b>${d.finals.length ? `<span class="small muted">kept ${esc(when(d.finals[0].at))}${d.finals.length > 1 ? ` · ${d.finals.length} copies` : ''}</span>` : ''}</div>
@@ -540,6 +542,83 @@ function report(d) {
     <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
     <p class="small muted" style="margin:0">To keep it with the customer's documents, save it as PDF and put it in the SharePoint site${o.sharepointUrl ? '' : ' (add its link under Edit details)'}. Publishing to SharePoint by itself needs a Microsoft Graph app registration; the report layout will follow the formats you supply.</p>
   </div></section>`;
+}
+
+// ——— The POV work-in-progress deck ———
+function wipPanel(d) {
+  const o = d.opportunity;
+  const a = o.apma;
+  const tc = o.toolchain ?? {};
+  const tools = (state.meta.toolchain ?? []).flatMap((t) => tc[t.key]?.tools ?? []);
+  const meetings = o.sessions ?? [];
+  const today = new Date().toISOString().slice(0, 10);
+  const held = meetings.filter((m) => (m.status || (m.date <= today ? 'done' : 'planned')) === 'done').length;
+  const gaps = [!tools.length && 'the customer’s toolchain', !meetings.length && 'the meetings', !(o.stakeholders ?? []).some((p) => p.povRole) && 'POV roles for the people'].filter(Boolean);
+  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>POV work-in-progress deck</h3><span class="small muted">the document you share with the customer during the POV</span></div><div class="body stack">
+    <p style="margin:0">Built from this POV each time you download it: the executive overview, the platform, the toolchain, ${a ? 'the APMA assessment, ' : ''}plan and timeline (${meetings.length} meetings, ${held} held), the environment, the test plan for each business goal with today’s status, and the notes of each meeting held.</p>
+    ${gaps.length && current.canEdit ? `<p class="small" style="margin:0"><span class="warn-t">Still empty:</span> ${gaps.join(', ')}.</p>` : ''}
+    <div class="row"><button class="btn primary" data-act="wip">Download the WIP deck (.pptx)</button>${current.canEdit ? '<button class="btn" data-act="wip-plan">Plan, toolchain &amp; environment</button>' : ''}</div>
+    <div class="item"><div class="top"><b>APMA assessment</b><span class="small muted">optional</span></div>
+      ${a ? `<p class="small" style="margin:6px 0">${a.interviewee ? `Interview with ${esc(a.interviewee)} · ` : ''}${a.dimensions.filter((x) => x.current != null).map((x) => `${esc(x.name)} <b>${x.current}</b> → ${x.desired}`).join(' · ')}</p>
+        <div class="row">${a.file ? `<a class="btn sm" href="/api/opportunities/${esc(o.id)}/apma" target="_blank" rel="noopener">Open the report</a>` : ''}${current.canEdit ? '<button class="btn sm" data-act="apma-up">Replace</button><button class="btn sm ghost danger" data-act="apma-del">Remove</button>' : ''}</div>`
+        : `<p class="small muted" style="margin:6px 0">Drop the customer’s APMA report (PDF): its maturity scores, the interview and the recommended first steps fill the APMA slide.</p>${current.canEdit ? '<div class="row"><button class="btn sm" data-act="apma-up">Add the APMA report</button></div>' : ''}`}
+      <input type="file" id="apmaFile" accept="application/pdf,.pdf" hidden></div>
+  </div></section>`;
+}
+
+function editPlan() {
+  const o = current.opportunity;
+  const p = o.plan ?? {};
+  const tc = o.toolchain ?? {};
+  const TC = state.meta.toolchain ?? [];
+  const lines = (a) => (a ?? []).join('\n');
+  const picked = (k, n) => (tc[k]?.tools ?? []).includes(n);
+  return openDialog(
+    `<form id="planForm"><h2>Plan, toolchain &amp; environment</h2>
+      <h3 class="sec-title" style="margin-top:0">The customer’s toolchain</h3>
+      ${TC.map((t) => `<div class="field"><span>${esc(t.label)} <span class="muted small">· access needed</span> <input name="acc_${t.key}" value="${esc(tc[t.key]?.access || t.access)}" style="display:inline-block;width:auto;min-width:170px;padding:2px 8px;font-size:13px" aria-label="Access needed"></span>
+        <div class="wz-chips">${t.tools.map(([n]) => `<button type="button" class="wz-chip ${picked(t.key, n) ? 'must' : ''}" data-tc="${t.key}" data-name="${esc(n)}" aria-pressed="${picked(t.key, n)}">${esc(n)}</button>`).join('')}</div>
+        <input name="extra_${t.key}" value="${esc((tc[t.key]?.tools ?? []).filter((n) => !t.tools.some(([x]) => x === n)).join(', '))}" placeholder="Others, separated by commas" style="margin-top:6px"></div>`).join('')}
+      <label class="field">Languages and frameworks<input name="languages" value="${esc(tc.languages || o.discovery?.languages || '')}"></label>
+      <h3 class="sec-title">Objectives</h3>
+      <div class="row"><label class="field">Scope <span class="muted small">one per line; the business goals if empty</span><textarea name="scope" rows="4">${esc(lines(p.scope))}</textarea></label>
+        <label class="field">Support<textarea name="support" rows="4">${esc(lines(p.support?.length ? p.support : state.meta.planDefaults?.support))}</textarea></label>
+        <label class="field">Success<textarea name="success" rows="4">${esc(lines(p.success?.length ? p.success : state.meta.planDefaults?.success))}</textarea></label></div>
+      <div class="row"><label class="field">Out of scope<input name="outOfScope" value="${esc(p.outOfScope ?? '')}"></label><label class="field">Account name in the tenant<input name="accountName" value="${esc(p.accountName ?? '')}" placeholder="${esc(o.tenant?.tenant ?? '')}"></label></div>
+      <label class="field">Executive overview letter <span class="muted small">leave empty and Meridian writes it from the POV; paragraphs separated by an empty line</span><textarea name="letter" rows="6">${esc(p.letter ?? '')}</textarea></label>
+      <label class="field">Closing line of the letter<input name="quote" value="${esc(p.quote ?? '')}" placeholder="“From code to confidence: building security from the ground up with Checkmarx.”"></label>
+      <p class="small muted">Meetings and their notes are under Notes → Sessions; people and their POV roles under Customer → Stakeholders.</p>
+      <p class="form-error" id="planErr" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Save</button></div></form>`,
+    {
+      wide: true,
+      onOpen(dl) {
+        const f = dl.querySelector('#planForm');
+        dl.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+        for (const b of dl.querySelectorAll('[data-tc]'))
+          b.addEventListener('click', () => {
+            const on = b.getAttribute('aria-pressed') !== 'true';
+            b.setAttribute('aria-pressed', String(on));
+            b.classList.toggle('must', on);
+          });
+        f.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const v = (n) => f.querySelector(`[name="${n}"]`)?.value ?? '';
+          const toolchain = Object.fromEntries(TC.map((t) => [t.key, { tools: [...[...dl.querySelectorAll(`[data-tc="${t.key}"][aria-pressed="true"]`)].map((b) => b.dataset.name), ...v(`extra_${t.key}`).split(',').map((x) => x.trim()).filter(Boolean)], access: v(`acc_${t.key}`) }]));
+          toolchain.languages = v('languages');
+          const split = (n) => v(n).split('\n').map((x) => x.trim()).filter(Boolean);
+          try {
+            await api(`/opportunities/${oid()}`, { method: 'PATCH', body: { toolchain, plan: { scope: split('scope'), support: split('support'), success: split('success'), outOfScope: v('outOfScope'), accountName: v('accountName'), letter: v('letter'), quote: v('quote') } } });
+            closeDialog('ok');
+            toast('Saved');
+            rerender();
+          } catch (error) {
+            $('#planErr').textContent = error.message;
+          }
+        });
+      },
+    },
+  );
 }
 
 // ——— History ———
@@ -771,6 +850,23 @@ const WIRES = {
       if (await attempt(() => api(`/opportunities/${oid()}/results/freeze`, { method: 'POST' }), 'Final results kept')) rerender();
     });
     on(main, '[data-act="deck"]', () => attempt(() => download(`/opportunities/${oid()}/deck`), 'Presentation downloaded'));
+    on(main, '[data-act="wip"]', () => attempt(() => download(`/opportunities/${oid()}/wip`), 'WIP deck downloaded'));
+    on(main, '[data-act="wip-plan"]', () => editPlan());
+    const apmaIn = $('#apmaFile');
+    on(main, '[data-act="apma-up"]', () => apmaIn.click());
+    apmaIn?.addEventListener('change', async () => {
+      const file = apmaIn.files[0];
+      if (!file) return;
+      const res = await fetch(`/api/opportunities/${oid()}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
+      toast(j.found === 5 ? 'APMA assessment read: all five dimensions' : `APMA assessment read: ${j.found} of 5 dimensions found`);
+      rerender();
+    });
+    on(main, '[data-act="apma-del"]', async () => {
+      if (!(await ask('Remove the APMA assessment from this POV? The WIP deck no longer has its APMA slide.', { ok: 'Remove', danger: true }))) return;
+      if (await attempt(() => api(`/opportunities/${oid()}/apma`, { method: 'DELETE' }), 'Removed')) rerender();
+    });
   },
 };
 // The folded tabs wire both of their parts.
@@ -935,8 +1031,11 @@ function editSession(x) {
     `<div class="row"><label class="field">Date<input type="date" name="date" value="${esc(x?.date ?? new Date().toISOString().slice(0, 10))}" required></label><label class="field">Type<select name="type">${Object.entries(state.meta.sessionTypes).map(([k, l]) => `<option value="${k}" ${x?.type === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>
      <label class="field">Title<input name="title" value="${esc(x?.title ?? '')}" placeholder="e.g. Jenkins and GitHub integration session"></label>
      <label class="field">Attendees<input name="attendees" value="${esc(x?.attendees ?? '')}"></label>
-     <label class="field">Notes<textarea name="notes" rows="8">${esc(x?.notes ?? '')}</textarea></label>
-     <label class="field">Follow-ups<textarea name="followUps" rows="3">${esc(x?.followUps ?? '')}</textarea></label>`,
+     <label class="field">Status<select name="status"><option value="">By its date (Completed once it has passed)</option><option value="done" ${x?.status === 'done' ? 'selected' : ''}>Completed</option><option value="planned" ${x?.status === 'planned' ? 'selected' : ''}>Planned</option></select></label>
+     <label class="field">What we did <span class="muted small">one point per line: the meeting notes slide</span><textarea name="did" rows="5">${esc(x?.did ?? '')}</textarea></label>
+     <div class="row"><label class="field">Next steps from the customer<textarea name="theirNext" rows="3">${esc(x?.theirNext ?? '')}</textarea></label><label class="field">From the Checkmarx side<textarea name="ourNext" rows="3">${esc(x?.ourNext ?? '')}</textarea></label></div>
+     <label class="field">Other notes<textarea name="notes" rows="4">${esc(x?.notes ?? '')}</textarea></label>
+     <label class="field">Follow-ups<textarea name="followUps" rows="2">${esc(x?.followUps ?? '')}</textarea></label>`,
     (b) => api(`/opportunities/${oid()}/sessions${x ? `/${x.id}` : ''}`, { method: 'POST', body: b }),
     { wide: true },
   );
@@ -948,6 +1047,7 @@ function editPerson(p) {
     p ? 'Edit stakeholder' : 'New stakeholder',
     `<div class="row"><label class="field">Name<input name="name" value="${esc(p?.name ?? '')}" required></label><label class="field">Title<input name="title" value="${esc(p?.title ?? '')}"></label></div>
      <div class="row"><label class="field">Email<input type="email" name="email" value="${esc(p?.email ?? '')}"></label><label class="field">Side<select name="side"><option value="customer">Customer (emails go to them)</option><option value="internal" ${p?.side === 'internal' ? 'selected' : ''}>Internal (copied)</option></select></label></div>
+     <label class="field">POV role<select name="povRole"><option value="">—</option>${(state.meta.povRoles ?? []).map((r) => `<option ${p?.povRole === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
      <label class="check"><input type="checkbox" name="notify" ${p?.notify !== false ? 'checked' : ''}> Include in POV emails</label>`,
     (b) => api(`/opportunities/${oid()}/stakeholders${p ? `/${p.id}` : ''}`, { method: 'POST', body: b }),
   );

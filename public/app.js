@@ -1,4 +1,4 @@
-import { $, esc, api, state, can, local, toast, attempt, openDialog, closeDialog } from './core.js';
+import { $, esc, api, state, can, local, toast, attempt, openDialog, closeDialog, sheetsSettled } from './core.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderOpportunity } from './views/opportunity.js';
 import { renderTeam } from './views/team.js';
@@ -228,7 +228,10 @@ document.addEventListener('click', async (e) => {
   if (action === 'new-opp') {
     e.preventDefault();
     const id = await openNewOpportunity();
-    if (id) location.hash = `#/opp/${id}`;
+    if (id) {
+      await sheetsSettled();
+      location.hash = `#/opp/${id}`;
+    }
     return;
   }
   if (action === 'refresh-all') {

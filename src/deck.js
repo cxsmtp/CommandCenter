@@ -184,7 +184,7 @@ const hex = (c) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
 const mix = (a, b, t) => hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * t).toString(16).padStart(2, '0')).join('').toUpperCase();
 const SPARKLE = 'FFD44D';
 
-function platformSlide(pptx, view) {
+export function platformSlide(pptx, view) {
   const slide = pptx.addSlide();
   slide.background = { color: BG };
   const shown = new Set();

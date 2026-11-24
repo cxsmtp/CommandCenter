@@ -94,6 +94,7 @@ function organisation(body, data) {
     <label class="check"><input type="checkbox" name="weeklyDrafts" ${s.weeklyDrafts ? 'checked' : ''}> Every Monday, write a weekly status draft for each running POV (waiting in its Email tab, never sent by itself)</label>
     <div><button class="btn primary">Save</button></div>
   </form>`;
+  wipTemplate(body);
   $('#orgForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const r = await attempt(() => api('/settings', { method: 'PUT', body: formData(e.target) }), 'Saved');
@@ -281,3 +282,35 @@ const lastRun = (r) => `<div><b>Last read ${esc(ago(r.at))}</b>${r.skipped === '
   ${(r.imported ?? []).map((x) => `<div>✓ ${esc(x.subject || 'report')}: ${x.rows} rows, ${x.matched} matched${x.unmatched ? `, ${x.unmatched} not matched` : ''}</div>`).join('')}
   ${(r.skipped && r.skipped !== 'off' ? r.skipped : []).map((x) => `<div class="muted">Left: ${esc(x.subject || '(no subject)')} — ${esc(x.why)}</div>`).join('')}
   ${r.ok !== false && !(r.imported ?? []).length && r.skipped !== 'off' ? '<div class="muted">No new report emails.</div>' : ''}`;
+
+// The team's POV WIP template: its look, layouts and closing slide are used for every POV's WIP deck.
+async function wipTemplate(body) {
+  const box = document.createElement('section');
+  box.className = 'panel';
+  box.style.cssText = 'max-width:720px;margin-top:16px';
+  body.append(box);
+  const draw = async () => {
+    const { template: t } = await api('/wip-template');
+    box.innerHTML = `<div class="head"><h3>POV WIP deck template</h3></div><div class="body stack">
+      <p class="small muted" style="margin:0">Upload the team’s POV WIP PowerPoint. Meridian keeps its masters, layouts, backgrounds and closing slide, drops its slides, and fills every POV’s WIP deck in that look. Kept encrypted on this server. Without one, the deck uses Meridian’s own dark design.</p>
+      ${t ? `<p style="margin:0"><b>${esc(t.name)}</b> <span class="small muted">· ${t.slides} slides · ${t.closing ? 'closing slide found' : 'no closing slide found'} · uploaded ${esc(new Date(t.at).toLocaleDateString())}${t.by ? ` by ${esc(t.by)}` : ''}</span></p>` : '<p class="small" style="margin:0">No template yet.</p>'}
+      <div class="row"><button class="btn" data-act="tpl-up">${t ? 'Replace the template' : 'Upload the template (.pptx)'}</button>${t ? '<button class="btn ghost danger" data-act="tpl-del">Remove</button>' : ''}</div>
+      <input type="file" id="wipTpl" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden></div>`;
+    const input = box.querySelector('#wipTpl');
+    box.querySelector('[data-act="tpl-up"]').addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+      const res = await fetch('/api/wip-template', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(j.error ?? 'That file could not be used', { bad: true });
+      toast('Template saved');
+      draw();
+    });
+    box.querySelector('[data-act="tpl-del"]')?.addEventListener('click', async () => {
+      if (!(await ask('Remove the WIP template? Decks go back to Meridian’s own design.', { ok: 'Remove', danger: true }))) return;
+      if (await attempt(() => api('/wip-template', { method: 'DELETE' }), 'Removed')) draw();
+    });
+  };
+  draw().catch(() => box.remove());
+}

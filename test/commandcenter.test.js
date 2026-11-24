@@ -663,3 +663,108 @@ test('the SEAL library: business goals become the bank, the first call fills the
   assert.equal((await call('se1', '/api/bank')).body.source, 'built-in');
   await call('se1', `/api/opportunities/${opp.id}`, { method: 'DELETE' });
 });
+
+/** A small PDF in the APMA report's shape: one-byte text codes mapped through a ToUnicode CMap, compressed. */
+async function fakeApmaPdf() {
+  const { deflateSync } = await import('node:zlib');
+  const lines = [
+    'Checkmarx APMA AppSec', 'Maturity Assessment for', 'Initech', 'Results and Recommendations after initial assessment',
+    'The overall maturity of your AppSec program is currently at a medium level (average maturity between level 1 and level 2). The dimensions Planning and Strategy & Governance are among the dimensions with the lowest maturity in your AppSec program at the moment.',
+    'Recommendation 1: Define a basic set of strategic KPIs for your AppSec program', 'This recommendation for practice Strategic KPIs in dimension Strategy & Governance will increase the maturity of this practice from level 0 to level 1.',
+    'The diagram shows the result of the interview assessment with Pat Doe. Furthermore, it shows the desired state.',
+    '2.2 High Level Scores and Recommendations', 'Dimension', 'Current', 'State', 'Desired', 'State', 'Recommendation',
+    'Strategy &', '1.6', '2.5', 'Your organization currently has a level of maturity.', 'Governance',
+    'Security Testing - Tactical', '1.4', '2.5', 'Next steps.',
+    'Security Testing - Operational', '1.8', '3.0', 'Next steps.',
+    'Security Testing - Infrastructure', '1.5', '2.5', 'Next steps.',
+    'Planning', '1.0', '2.0', 'Plans are defined.',
+  ];
+  const hex = (t) => Buffer.from(t, 'latin1').toString('hex');
+  const content = deflateSync(Buffer.from(`BT /F1 10 Tf\n${lines.map((l) => `0 -12 Td [<${hex(l)}>] TJ`).join('\n')}\nET`, 'latin1'));
+  const cmap = Buffer.from('/CIDInit /ProcSet findresource begin\nbegincmap\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n1 beginbfrange\n<00> <FF> <0000>\nendbfrange\nendcmap\n', 'latin1');
+  const parts = [];
+  const obj = (n, dict, stream) => parts.push(Buffer.concat([Buffer.from(`${n} 0 obj\n${dict}${stream ? `\nstream\n` : ''}`, 'latin1'), stream ?? Buffer.alloc(0), Buffer.from(`${stream ? '\nendstream' : ''}\nendobj\n`, 'latin1')]));
+  obj(1, '<</Type/Catalog/Pages 2 0 R>>');
+  obj(2, '<</Type/Pages/Kids[3 0 R]/Count 1>>');
+  obj(3, '<</Type/Page/Parent 2 0 R/Resources 4 0 R/MediaBox[0 0 595 842]/Contents 5 0 R>>');
+  obj(4, '<</Font<</F1 6 0 R>>>>');
+  obj(5, `<</Length ${content.length}/Filter/FlateDecode>>`, content);
+  obj(6, '<</Type/Font/Subtype/TrueType/BaseFont/Fake/ToUnicode 7 0 R>>');
+  obj(7, `<</Length ${cmap.length}>>`, cmap);
+  return Buffer.concat([Buffer.from('%PDF-1.4\n', 'latin1'), ...parts, Buffer.from('trailer\n<</Root 1 0 R>>\n%%EOF\n', 'latin1')]);
+}
+
+test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its PDF, poured into the team’s template', async () => {
+  const pdf = await fakeApmaPdf();
+  const { readApma } = await import('../src/apma.js');
+  const a = readApma(pdf);
+  assert.equal(a.customer, 'Initech');
+  assert.equal(a.interviewee, 'Pat Doe');
+  assert.deepEqual(a.dimensions.map((d) => [d.current, d.desired]), [[1.6, 2.5], [1, 2], [1.4, 2.5], [1.8, 3], [1.5, 2.5]]);
+  assert.equal(a.recommendations[0].practice, 'Strategic KPIs');
+  assert.throws(() => readApma(Buffer.from('not a pdf')), /not a PDF/);
+
+  const o = await call('se1', '/api/opportunities', {
+    method: 'POST',
+    body: {
+      customer: 'Initech WIP',
+      startDate: '2026-11-02',
+      endDate: '2026-11-30',
+      criteria: [{ capabilityId: 'sast', priority: 'must' }, { capabilityId: 'dev-assist', priority: 'must' }],
+      stakeholders: [{ name: 'Pat Doe', email: 'pat@initech.example', side: 'customer', povRole: 'POV admin' }],
+      sessions: [{ type: 'launch', date: '2026-11-02', title: 'POV launch', did: 'Onboarding complete\nSCM connected', theirNext: 'Internal testing', status: 'done' }, { type: 'wrapup', date: '2099-01-01', title: 'Wrap-up call' }],
+      toolchain: { ide: { tools: ['VS Code'], access: 'add plugins' }, scm: ['Bitbucket'], languages: 'Java' },
+      plan: { outOfScope: 'Production' },
+    },
+  });
+  assert.equal(o.status, 201, JSON.stringify(o.body));
+  const opp = o.body.opportunity;
+  assert.equal(opp.stakeholders[0].povRole, 'POV admin');
+  assert.equal(opp.sessions.find((s) => s.type === 'launch').did, 'Onboarding complete\nSCM connected');
+  assert.deepEqual(opp.toolchain.ide, { tools: ['VS Code'], access: 'add plugins' });
+  assert.deepEqual(opp.toolchain.scm.tools, ['Bitbucket']);
+  assert.equal(opp.plan.outOfScope, 'Production');
+
+  // The APMA report: optional, read when it is added, kept encrypted.
+  const up = await fetch(`${base}/api/opportunities/${opp.id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', Cookie: jar.get('se1') }, body: pdf });
+  assert.equal(up.status, 200);
+  assert.equal((await up.json()).found, 5);
+  const back = await fetch(`${base}/api/opportunities/${opp.id}/apma`, { headers: { Cookie: jar.get('se1') } });
+  assert.deepEqual(Buffer.from(await back.arrayBuffer()), pdf);
+  assert.ok(!fs.readFileSync(path.join(dataDir, 'apma', `${opp.id}.pdf`)).includes(Buffer.from('Initech')), 'stored encrypted');
+
+  const JSZip = (await import('jszip')).default;
+  const slideTexts = async (buf) => {
+    const z = await JSZip.loadAsync(buf);
+    const names = Object.keys(z.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+    return Promise.all(names.map(async (n) => [...(await z.file(n).async('string')).matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(' ')));
+  };
+  const get = async () => {
+    const r = await fetch(`${base}/api/opportunities/${opp.id}/wip`, { headers: { Cookie: jar.get('se1') } });
+    assert.equal(r.status, 200, r.status === 200 ? '' : await r.clone().text());
+    return Buffer.from(await r.arrayBuffer());
+  };
+  const plain = await get();
+  const texts = (await slideTexts(plain)).join(' | ');
+  for (const t of ['INITECH WIP', 'Executive Overview', 'Tailored to Your DevSecOps', 'APMA Assessment', 'Pat Doe', 'POV Plan &amp; Timeline', 'POV Environment Details', 'Bitbucket', 'add plugins', 'Production', 'Test Plan Overview', 'Meeting Notes', 'Onboarding complete', 'Internal testing']) assert.ok(texts.includes(t), `the deck has “${t}”`);
+
+  // The team's template: only those who manage settings upload it; its look is kept, its slides are not.
+  const tpl = plain;
+  const deny = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', Cookie: jar.get('se1') }, body: tpl });
+  assert.equal(deny.status, 403);
+  const ok = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', Cookie: jar.get('admin'), 'X-File-Name': 'team.pptx' }, body: tpl });
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).template.closing, true);
+  const bad = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', Cookie: jar.get('admin') }, body: Buffer.from('nope') });
+  assert.equal(bad.status, 400);
+  const filled = await get();
+  const z = await JSZip.loadAsync(filled);
+  const pres = await z.file('ppt/presentation.xml').async('string');
+  const count = [...pres.matchAll(/<p:sldId /g)].length;
+  assert.equal(count, (await slideTexts(plain)).length, 'one slide for each, the closing one from the template');
+  const rels = await z.file('ppt/_rels/presentation.xml.rels').async('string');
+  for (const m of rels.matchAll(/Target="(slides\/[^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${m[1]} is in the file`);
+  for (const n of Object.keys(z.files).filter((x) => /^ppt\/slides\/_rels\/.+\.rels$/.test(x))) for (const m of (await z.file(n).async('string')).matchAll(/Target="\.\.\/([^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${n} points at ${m[1]}, which exists`);
+  assert.equal((await call('admin', '/api/wip-template', { method: 'DELETE' })).status, 200);
+  await call('se1', `/api/opportunities/${opp.id}`, { method: 'DELETE' });
+});

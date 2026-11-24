@@ -7,6 +7,8 @@
  * discovery, sessions, notes, tasks, success criteria) lives on the same record, so the dashboard, the emails and the
  * report all read one place. Every change is written to the record's history (who, when, what).
  */
+import { cleanToolchain, cleanPlan } from './toolchain.js';
+import { cleanApma } from './apma.js';
 import { randomUUID } from 'node:crypto';
 import { fail, text, dateOnly, httpUrl, email as cleanEmail, isoOrNull } from './db.js';
 import { deriveConnection } from './cxone/endpoints.js';
@@ -24,7 +26,7 @@ export const STAGES = {
   on_hold: 'On hold',
 };
 export const CRITERION_STATUS = { not_started: 'Not started', in_progress: 'In progress', met: 'Completed successfully', not_met: 'Not met', na: 'Not applicable' };
-export const SESSION_TYPES = { first_call: 'First call', discovery: 'Discovery', technical: 'Technical session', workshop: 'Workshop', checkpoint: 'POV checkpoint', readout: 'Readout' };
+export const SESSION_TYPES = { first_call: 'First call', discovery: 'Discovery', pre_pov: 'Pre-POV call', technical: 'Technical session', workshop: 'Workshop', launch: 'POV launch & setup', checkpoint: 'Check-in call', wrapup: 'Wrap-up call', readout: 'Readout' };
 const HISTORY = 400;
 
 const strList = (v, n = 40, max = 120) => (Array.isArray(v) ? v : String(v ?? '').split(',')).map((x) => text(x, max)).filter(Boolean).slice(0, n);
@@ -351,8 +353,8 @@ function describe(kind, next, existing) {
 }
 
 const CLEANERS = {
-  stakeholders: (s) => ({ name: text(s.name, 120), email: cleanEmail(s.email), title: text(s.title, 120), side: s.side === 'internal' ? 'internal' : 'customer', notify: s.notify !== false }),
-  sessions: (s) => ({ date: dateOnly(s.date) || new Date().toISOString().slice(0, 10), type: SESSION_TYPES[s.type] ? s.type : 'technical', title: text(s.title, 200) || SESSION_TYPES[s.type] || 'Session', attendees: text(s.attendees, 1000), notes: text(s.notes, 20000), followUps: text(s.followUps, 4000) }),
+  stakeholders: (s) => ({ name: text(s.name, 120), email: cleanEmail(s.email), title: text(s.title, 120), side: s.side === 'internal' ? 'internal' : 'customer', povRole: text(s.povRole, 60), notify: s.notify !== false }),
+  sessions: (s) => ({ date: dateOnly(s.date) || new Date().toISOString().slice(0, 10), type: SESSION_TYPES[s.type] ? s.type : 'technical', title: text(s.title, 200) || SESSION_TYPES[s.type] || 'Session', attendees: text(s.attendees, 1000), notes: text(s.notes, 20000), followUps: text(s.followUps, 4000), did: text(s.did, 8000), theirNext: text(s.theirNext, 4000), ourNext: text(s.ourNext, 4000), status: ['done', 'planned'].includes(s.status) ? s.status : '' }),
   notes: (n, actor, existing) => ({ text: text(n.text, 20000), at: existing?.at ?? new Date().toISOString(), by: existing?.by ?? actor?.id ?? '', pinned: Boolean(n.pinned) }),
   tasks: (t, actor, existing) => ({ title: text(t.title, 300), due: dateOnly(t.due), done: Boolean(t.done), doneAt: t.done ? existing?.doneAt ?? new Date().toISOString() : null, assignee: text(t.assignee, 80) }),
   criteria: (c, actor, existing) => {
@@ -441,6 +443,18 @@ function applyFields(opp, b) {
       .map((g) => ({ key: text(g.key, 60) || text(g.title, 60).toLowerCase().replace(/[^a-z0-9]+/g, '-'), title: text(g.title, 160), statement: text(g.statement, 400), persona: text(g.persona, 160), driver: text(g.driver, 40), measures: (Array.isArray(g.measures) ? g.measures : []).slice(0, 12).map((m) => text(m, 400)).filter(Boolean) }))
       .filter((g) => g.title);
     changed.push('business goals');
+  }
+  if (b.toolchain && typeof b.toolchain === 'object') {
+    opp.toolchain = cleanToolchain(b.toolchain);
+    changed.push('toolchain');
+  }
+  if (b.plan && typeof b.plan === 'object') {
+    opp.plan = cleanPlan({ ...(opp.plan ?? {}), ...b.plan });
+    changed.push('POV plan');
+  }
+  if ('apma' in b) {
+    opp.apma = b.apma ? cleanApma({ ...b.apma, file: b.apma.file ?? opp.apma?.file }) : null;
+    changed.push('APMA assessment');
   }
   if (b.discovery && typeof b.discovery === 'object') {
     const d = { ...(opp.discovery ?? {}) };

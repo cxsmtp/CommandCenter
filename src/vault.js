@@ -76,6 +76,7 @@ export class Vault {
 
   /** Atomic: a temp file, flushed to disk, then renamed over; the file it replaces is kept as <file>.prev. */
   writeFile(file, data, { keepPrevious = true } = {}) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
     const fd = fs.openSync(tmp, 'w', 0o600);
     try {

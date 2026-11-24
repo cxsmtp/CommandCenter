@@ -22,6 +22,8 @@ export async function getTemplates(force = false) {
  * @param {object} [o.template]  the template to change, or to copy (mode template; copy when `copy`)
  * @returns {Promise<string|null>} the new opportunity's id (mode new), 'ok', or null when cancelled
  */
+const TC = () => state.meta?.toolchain ?? [];
+
 export async function criteriaWizard({ mode, opp = null, template = null, copy = false }) {
   const [cat, tpls, bankInfo, lib] = await Promise.all([getCatalog(), getTemplates(true), api('/bank'), api('/library').catch(() => ({ values: [] }))]);
   const goalsAll = bankInfo.goals;
@@ -40,6 +42,12 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     // The first call: who was there, what they care about, their toolchain, and what was agreed next.
     call: { date: new Date().toISOString().slice(0, 10), people: [{ name: '', email: '', title: '', persona: '' }], personas: new Set(), pains: '', languages: '', teamSize: '', timeline: '', nextTitle: '', nextDue: '' },
     goals: new Set((opp?.goals ?? []).map((g) => g.key)),
+    // The toolchain by touch point, and the POV plan behind the WIP deck.
+    tools: Object.fromEntries(TC().map((t) => [t.key, new Set()])),
+    toolExtra: {},
+    access: {},
+    plan: null,
+    apma: null,
     picked: new Set(),
     manual: new Map(),
     custom: template ? [...(template.custom ?? [])] : [],
@@ -60,10 +68,32 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   const chosen = () => [...caps.keys()].filter((id) => !have.has(id) && !inGoals().has(id) && prio(id) !== 'off').map((id) => ({ capabilityId: id, priority: prio(id) }));
   const customFromTemplates = () => tpls.templates.filter((x) => w.picked.has(x.id)).flatMap((t) => t.custom ?? []);
 
+  const plus = (n, from) => new Date((from ? new Date(`${from}T12:00:00Z`).getTime() : Date.now()) + n * 86_400_000).toISOString().slice(0, 10);
+  // The meetings of the POV, proposed from its dates: the launch, a check-in each week, the wrap-up.
+  const proposeMeetings = () => {
+    const start = w.details.startDate || plus(0);
+    const end = w.details.endDate || plus(30, start);
+    const m = [{ type: 'pre_pov', date: plus(-7, start), title: 'Pre-POV call' }, { type: 'launch', date: start, title: 'POV launch & quick setup' }];
+    for (let d = plus(7, start); d < end; d = plus(7, d)) m.push({ type: 'checkpoint', date: d, title: 'Check-in call' });
+    m.push({ type: 'wrapup', date: end, title: 'Wrap-up call' });
+    return m;
+  };
+  const planNow = () =>
+    (w.plan ??= {
+      meetings: proposeMeetings(),
+      scope: '',
+      support: (state.meta?.planDefaults?.support ?? []).join('\n'),
+      success: (state.meta?.planDefaults?.success ?? []).join('\n'),
+      outOfScope: '',
+      accountName: '',
+      am: { name: '', email: '', title: 'Strategic Account Manager' },
+    });
   const stepsNow = () => [
     ...(mode === 'new' ? [['details', 'Opportunity']] : []),
     ...(mode === 'new' && ['first_call', 'discovery'].includes(w.details.stage) ? [['call', 'First call']] : []),
-    ...(mode !== 'template' ? [['goals', 'Business goals'], ['templates', 'Start from']] : []),
+    ...(mode !== 'template' ? [['goals', 'Business goals']] : []),
+    ...(mode === 'new' ? [['tools', 'Toolchain'], ['plan', 'POV plan']] : []),
+    ...(mode !== 'template' ? [['templates', 'Start from']] : []),
     ['engines', 'Engines & agents'],
     ['integrations', 'Integrations'],
     ['review', mode === 'template' ? 'Name & share' : 'Review'],
@@ -109,20 +139,44 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const c = w.call;
       const personas = [...new Set(goalsAll.flatMap((g) => String(g.persona ?? '').split(/,\s*(?=[A-Z])/)).map((x) => x.trim()).filter(Boolean))];
       const list = personas.length ? personas : ['CISO / Security Leader', 'AppSec Leader', 'Head of Engineering / Development', 'AI Engineer / AI Security Owner', 'DevSecOps / Platform Engineering'];
-      const tool = (k, label) => `<div class="field">${label}<div class="wz-chips">${cat.catalog.filter((x) => x.category === k).map((x) => `<button type="button" class="wz-chip ${prio(x.id) !== 'off' ? 'must' : ''}" data-tool="${esc(x.id)}" aria-pressed="${prio(x.id) !== 'off'}">${esc(x.name.replace(/ \(.*\)$/, '').replace(/ integration$/, ''))}</button>`).join('')}</div></div>`;
       return `<p class="muted wz-lead">Everything from the call, once: it becomes the stakeholders, the discovery notes, the business goals and a dated next step.</p>
         <label class="field">When was the call<input type="date" name="c_date" value="${esc(c.date)}"></label>
         <div class="field">Who joined from the customer${c.people.map((p, i) => `<div class="call-person">
           <input name="p_name_${i}" value="${esc(p.name)}" placeholder="Name" aria-label="Name">
           <input name="p_email_${i}" type="email" value="${esc(p.email)}" placeholder="Email" aria-label="Email">
           <input name="p_title_${i}" value="${esc(p.title)}" placeholder="Title, e.g. Head of AppSec" aria-label="Title">
-          <select name="p_persona_${i}" aria-label="Role in the deal"><option value="">Role in the deal…</option>${list.map((x) => `<option ${p.persona === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+          <select name="p_persona_${i}" aria-label="Role in the deal"><option value="">Persona…</option>${list.map((x) => `<option ${p.persona === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+          <select name="p_role_${i}" aria-label="POV role"><option value="">POV role…</option>${(state.meta?.povRoles ?? []).filter((r) => !/Checkmarx/.test(r)).map((x) => `<option ${p.povRole === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
         </div>`).join('')}<button type="button" class="btn sm" data-act="add-person" style="align-self:flex-start">Add someone</button></div>
         <label class="field">What they are worried about<textarea name="c_pains" rows="3" placeholder="In their words: tool sprawl, false positives, AI-generated code, audit pressure…">${esc(c.pains)}</textarea></label>
-        ${tool('scm', 'Where their code lives')}${tool('ci', 'How they build')}${tool('ide', 'IDEs and AI coding assistants')}${tool('tracking', 'Where work is tracked')}
         <div class="row"><label class="field">Languages<input name="c_languages" value="${esc(c.languages)}" placeholder="e.g. Java, C#, Python"></label><label class="field">Teams and applications<input name="c_teamSize" value="${esc(c.teamSize)}" placeholder="e.g. 400 developers, 120 applications"></label></div>
         <label class="field">Timeline and buying process<input name="c_timeline" value="${esc(c.timeline)}" placeholder="e.g. decision by end of Q1, renewal of the current tool in March"></label>
         <div class="row"><label class="field">Agreed next step<input name="c_nextTitle" value="${esc(c.nextTitle)}" placeholder="e.g. Technical deep-dive with the AppSec team"></label><label class="field">By<input type="date" name="c_nextDue" value="${esc(c.nextDue)}"></label></div>`;
+    },
+    tools: () => `<p class="muted wz-lead">The customer’s toolchain, touch point by touch point. It fills the DevSecOps and environment slides of the WIP deck; tools Checkmarx One integrates with also become success criteria.</p>
+      ${TC().map((t) => `<div class="field"><span>${esc(t.label)} <span class="muted small">· access needed</span> <input name="acc_${t.key}" value="${esc(w.access[t.key] ?? t.access)}" aria-label="Access needed for ${esc(t.label)}" style="display:inline-block;width:auto;min-width:170px;padding:2px 8px;font-size:13px"></span>
+        <div class="wz-chips">${t.tools.map(([n]) => `<button type="button" class="wz-chip ${w.tools[t.key].has(n) ? 'must' : ''}" data-tc="${t.key}" data-name="${esc(n)}" aria-pressed="${w.tools[t.key].has(n)}">${esc(n)}</button>`).join('')}</div>
+        <input name="extra_${t.key}" value="${esc(w.toolExtra[t.key] ?? '')}" placeholder="Others, separated by commas" aria-label="Other ${esc(t.label)} tools" style="margin-top:6px"></div>`).join('')}
+      <label class="field">Languages and frameworks<input name="c_languages" value="${esc(w.call.languages)}" placeholder="e.g. Java, C#, Python, React"></label>`,
+    plan: () => {
+      const p = planNow();
+      const types = state.meta?.sessionTypes ?? {};
+      return `<p class="muted wz-lead">The plan the customer sees in the WIP deck. Meetings are proposed from the POV dates: change, add or remove them. Each shows as Completed once its date has passed.</p>
+        <div class="field">Meetings${p.meetings.map((m, i) => `<div class="call-person" style="grid-template-columns:1.2fr 1fr 1.6fr auto">
+          <select name="m_type_${i}" aria-label="Kind">${Object.entries(types).map(([k, l]) => `<option value="${k}" ${m.type === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+          <input type="date" name="m_date_${i}" value="${esc(m.date)}" aria-label="Date">
+          <input name="m_title_${i}" value="${esc(m.title)}" placeholder="Title" aria-label="Title">
+          <button type="button" class="btn sm ghost" data-del-meeting="${i}" aria-label="Remove">✕</button></div>`).join('')}
+          <button type="button" class="btn sm" data-act="add-meeting" style="align-self:flex-start">Add a meeting</button></div>
+        <div class="row"><label class="field">Scope <span class="muted small">one per line; the business goals if empty</span><textarea name="pl_scope" rows="4">${esc(p.scope)}</textarea></label>
+          <label class="field">Support<textarea name="pl_support" rows="4">${esc(p.support)}</textarea></label>
+          <label class="field">Success<textarea name="pl_success" rows="4">${esc(p.success)}</textarea></label></div>
+        <label class="field">Out of scope<input name="pl_out" value="${esc(p.outOfScope)}" placeholder="e.g. Production deployments, mobile apps"></label>
+        <div class="field">Account manager <span class="muted small">(on the cover, as Checkmarx sponsor)</span><div class="call-person" style="grid-template-columns:1fr 1fr 1fr">
+          <input name="am_name" value="${esc(p.am.name)}" placeholder="Name" aria-label="Account manager name"><input name="am_title" value="${esc(p.am.title)}" placeholder="Title" aria-label="Title"><input name="am_email" type="email" value="${esc(p.am.email)}" placeholder="Email" aria-label="Email"></div></div>
+        <label class="field">Account name in the tenant <span class="muted small">(optional)</span><input name="pl_account" value="${esc(p.accountName)}"></label>
+        <div class="field">APMA assessment <span class="muted small">(optional: the report’s PDF fills the APMA slide)</span>
+          ${w.apma ? `<div class="apma-got"><b>${esc(w.apma.customer || 'Assessment')}</b> · ${w.apma.dimensions.filter((d) => d.current != null).map((d) => `${esc(d.name)} ${d.current} → ${d.desired}`).join(' · ')} <button type="button" class="btn sm ghost" data-act="apma-clear">Remove</button></div>` : '<input type="file" id="wzApma" accept="application/pdf,.pdf">'}</div>`;
     },
     goals: () => {
       const mine = [...w.call.personas, ...w.call.people.map((p) => p.persona).filter(Boolean)];
@@ -209,7 +263,20 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     if (stepsNow()[w.step][0] === 'call') {
       const val = (n) => f.querySelector(`[name="${n}"]`)?.value ?? '';
       Object.assign(w.call, { date: val('c_date'), pains: val('c_pains'), languages: val('c_languages'), teamSize: val('c_teamSize'), timeline: val('c_timeline'), nextTitle: val('c_nextTitle'), nextDue: val('c_nextDue') });
-      w.call.people = w.call.people.map((_, i) => ({ name: val(`p_name_${i}`), email: val(`p_email_${i}`), title: val(`p_title_${i}`), persona: val(`p_persona_${i}`) }));
+      w.call.people = w.call.people.map((_, i) => ({ name: val(`p_name_${i}`), email: val(`p_email_${i}`), title: val(`p_title_${i}`), persona: val(`p_persona_${i}`), povRole: val(`p_role_${i}`) }));
+    }
+    if (stepsNow()[w.step][0] === 'tools') {
+      for (const t of TC()) {
+        w.access[t.key] = f.querySelector(`[name="acc_${t.key}"]`)?.value ?? t.access;
+        w.toolExtra[t.key] = f.querySelector(`[name="extra_${t.key}"]`)?.value ?? '';
+      }
+      w.call.languages = f.querySelector('[name="c_languages"]')?.value ?? w.call.languages;
+    }
+    if (stepsNow()[w.step][0] === 'plan') {
+      const p = planNow();
+      const val = (n) => f.querySelector(`[name="${n}"]`)?.value ?? '';
+      p.meetings = p.meetings.map((_, i) => ({ type: val(`m_type_${i}`), date: val(`m_date_${i}`), title: val(`m_title_${i}`) }));
+      Object.assign(p, { scope: val('pl_scope'), support: val('pl_support'), success: val('pl_success'), outOfScope: val('pl_out'), accountName: val('pl_account'), am: { name: val('am_name'), title: val('am_title'), email: val('am_email') } });
     }
     if ($('#wzKey', d)) w.apiKey = $('#wzKey', d).value;
     if ($('#wzSaveName', d)) w.save.name = $('#wzSaveName', d).value;
@@ -235,6 +302,11 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const c = w.call;
       const withCall = stepsNow().some(([k]) => k === 'call');
       const toolsBy = (k) => cat.catalog.filter((x) => x.category === k && prio(x.id) !== 'off').map((x) => x.id);
+      const p = planNow();
+      const lines = (t) => String(t ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
+      const toolchain = Object.fromEntries(TC().map((t) => [t.key, { tools: [...w.tools[t.key], ...String(w.toolExtra[t.key] ?? '').split(',').map((x) => x.trim()).filter(Boolean)], access: w.access[t.key] ?? t.access }]));
+      toolchain.languages = c.languages;
+      const am = p.am.name.trim() ? [{ name: p.am.name, email: p.am.email, title: p.am.title, side: 'internal', povRole: 'Checkmarx sponsor', notify: false }] : [];
       const people = withCall ? c.people.filter((p) => p.name.trim()) : [];
       const body = {
         stage: 'pov',
@@ -243,17 +315,24 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         custom,
         templateIds,
         goalIds: [...w.goals],
+        toolchain,
+        plan: { scope: lines(p.scope), support: lines(p.support), success: lines(p.success), outOfScope: p.outOfScope, accountName: p.accountName },
+        ...(w.apma ? { apma: w.apma } : {}),
+        stakeholders: am,
+        sessions: p.meetings.filter((m) => m.date),
         ...(withCall
           ? {
               discovery: { callDate: c.date, attendees: people.map((p) => `${p.name}${p.title ? ` (${p.title})` : ''}`).join(', '), painPoints: c.pains, languages: c.languages, teamSize: c.teamSize, timeline: c.timeline, nextSteps: c.nextTitle, scm: toolsBy('scm'), ci: toolsBy('ci'), ide: toolsBy('ide'), tracking: toolsBy('tracking') },
-              stakeholders: people.map((p) => ({ name: p.name, email: p.email, title: [p.title, p.persona && p.persona !== p.title ? p.persona : ''].filter(Boolean).join(' · '), side: 'customer', notify: true })),
-              sessions: [{ type: 'first_call', date: c.date, title: 'First call', attendees: people.map((p) => p.name).join(', '), notes: c.pains }],
+              stakeholders: [...people.map((x) => ({ name: x.name, email: x.email, title: [x.title, x.persona && x.persona !== x.title ? x.persona : ''].filter(Boolean).join(' · '), povRole: x.povRole, side: 'customer', notify: true })), ...am],
+              sessions: [{ type: 'first_call', date: c.date, title: 'First call', attendees: people.map((x) => x.name).join(', '), notes: c.pains, status: 'done' }, ...p.meetings.filter((m) => m.date)],
               tasks: c.nextTitle.trim() ? [{ title: c.nextTitle, due: c.nextDue }] : [],
             }
           : {}),
       };
       if (w.apiKey.trim()) body.apiKey = w.apiKey.trim();
       id = (await api('/opportunities', { method: 'POST', body })).opportunity.id;
+      // Keep the APMA report itself with the POV too.
+      if (w.apmaFile) await fetch(`/api/opportunities/${id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(w.apmaFile.name) }, body: w.apmaFile }).catch(() => {});
     } else {
       await api(`/opportunities/${id}/criteria/bulk`, { method: 'POST', body: { items, custom, templateIds, goalIds: [...w.goals].filter((k) => !(opp?.goals ?? []).some((g) => g.key === k)) } });
     }
@@ -301,11 +380,45 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       card.addEventListener('click', go);
       card.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && !e.target.closest('[data-stop]') && (e.preventDefault(), go(e)));
     }
-    for (const b of f.querySelectorAll('[data-tool]'))
+    for (const b of f.querySelectorAll('[data-tc]'))
       b.addEventListener('click', () => {
-        w.manual.set(b.dataset.tool, prio(b.dataset.tool) === 'off' ? 'must' : 'off');
+        const set = w.tools[b.dataset.tc];
+        const on = !set.has(b.dataset.name);
+        on ? set.add(b.dataset.name) : set.delete(b.dataset.name);
+        // A tool Checkmarx One integrates with becomes a success criterion (and stops being one when unpicked).
+        const id = TC().find((t) => t.key === b.dataset.tc)?.tools.find(([n]) => n === b.dataset.name)?.[1];
+        if (id && caps.has(id) && !TC().some((t) => t.tools.some(([n, x]) => x === id && n !== b.dataset.name && w.tools[t.key].has(n)))) w.manual.set(id, on ? 'must' : 'off');
         redraw();
       });
+    f.querySelector('[data-act="add-meeting"]')?.addEventListener('click', () => {
+      keep(d);
+      const p = planNow();
+      p.meetings.push({ type: 'checkpoint', date: p.meetings.at(-1)?.date ?? plus(0), title: 'Check-in call' });
+      draw(d);
+    });
+    for (const b of f.querySelectorAll('[data-del-meeting]'))
+      b.addEventListener('click', () => {
+        keep(d);
+        planNow().meetings.splice(Number(b.dataset.delMeeting), 1);
+        draw(d);
+      });
+    f.querySelector('#wzApma')?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      keep(d);
+      const res = await fetch('/api/apma/read', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf' }, body: file });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
+      w.apma = { ...j.apma, file: { name: file.name, at: new Date().toISOString() } };
+      w.apmaFile = file;
+      draw(d);
+    });
+    f.querySelector('[data-act="apma-clear"]')?.addEventListener('click', () => {
+      keep(d);
+      w.apma = null;
+      w.apmaFile = null;
+      draw(d);
+    });
     f.querySelector('[data-act="add-person"]')?.addEventListener('click', () => {
       keep(d);
       w.call.people.push({ name: '', email: '', title: '', persona: '' });

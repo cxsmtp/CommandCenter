@@ -130,6 +130,14 @@ addEventListener('popstate', () => {
   }
 });
 
+/** Resolves once the Back steps of closed sheets have happened, so a navigation made after a dialog is not undone. */
+export const sheetsSettled = (limit = 600) =>
+  new Promise((resolve) => {
+    const end = Date.now() + limit;
+    const check = () => (ownBacks > 0 && Date.now() < end ? setTimeout(check, 15) : resolve());
+    setTimeout(check, 0);
+  });
+
 /** The form dialog: `html` inside, `onOpen(el)` to wire it. Resolves with its return value when it closes. */
 export function openDialog(html, { wide = false, onOpen } = {}) {
   const d = $('#dialog');
