@@ -3,3 +3,6 @@ data/
 .env
 !.env.example
 *.log
+
+# Sample decks made by scripts/sample-decks.mjs
+sample-decks/
