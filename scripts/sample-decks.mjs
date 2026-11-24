@@ -3,7 +3,7 @@
 //
 //   node scripts/sample-decks.mjs [path\to\team-template.pptx] [output folder]
 //
-// Without a template the team-style decks use Meridian's own dark design. Nothing real is in them: the customer,
+// Without a template the team-style decks use Kendra's own dark design. Nothing real is in them: the customer,
 // people and APMA scores are made up.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -20,7 +20,7 @@ const base = `http://127.0.0.1:${app.server.address().port}/api`;
 let cookie = '';
 const call = async (p, { method = 'GET', body, raw = false, type } = {}) => {
   const binary = Buffer.isBuffer(body);
-  const r = await fetch(base + p, { method, headers: { 'X-Requested-With': 'Meridian', Cookie: cookie, ...(body ? { 'Content-Type': binary ? type ?? 'application/octet-stream' : 'application/json' } : {}) }, body: body ? (binary ? body : JSON.stringify(body)) : undefined });
+  const r = await fetch(base + p, { method, headers: { 'X-Requested-With': 'Kendra', Cookie: cookie, ...(body ? { 'Content-Type': binary ? type ?? 'application/octet-stream' : 'application/json' } : {}) }, body: body ? (binary ? body : JSON.stringify(body)) : undefined });
   const set = r.headers.get('set-cookie');
   if (set) cookie = set.split(';')[0];
   if (!r.ok) throw new Error(`${method} ${p}: ${r.status} ${await r.text()}`);

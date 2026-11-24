@@ -80,7 +80,7 @@ export class Backups {
     };
     copy(this.#dir, dest);
     const check = this.#check(dest, files);
-    const manifest = { app: 'Meridian', at: at.toISOString(), label, version, key: this.#vault.fingerprint, files, verified: check.ok, problems: check.problems };
+    const manifest = { app: 'Kendra', at: at.toISOString(), label, version, key: this.#vault.fingerprint, files, verified: check.ok, problems: check.problems };
     fs.writeFileSync(path.join(dest, 'manifest.json'), JSON.stringify(manifest, null, 1), { mode: 0o600 });
     if (this.#offsite) {
       try {
@@ -191,7 +191,7 @@ export class Backups {
   }
 
   /**
-   * The restore drill: the newest backup restored into a scratch folder and opened as Meridian would open it, with the
+   * The restore drill: the newest backup restored into a scratch folder and opened as Kendra would open it, with the
    * same key. Passes when the accounts, POVs and settings all read (and there is at least one account).
    */
   drill({ open }) {

@@ -1,5 +1,5 @@
 /**
- * The audit trail: everything that happens in Meridian, kept and provable.
+ * The audit trail: everything that happens in Kendra, kept and provable.
  *
  * Two streams, each in <data>/audit/<stream>/:
  *   changes  every change (settings, people, roles, opportunities, criteria, emails sent, updates…), in words.

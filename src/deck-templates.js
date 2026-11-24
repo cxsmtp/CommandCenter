@@ -1,7 +1,7 @@
 /**
  * Presentation templates: what a POV's decks look like and hold, set by managers.
  *
- *   - A design: the team's PowerPoint (masters, layouts, its own slides filled and reused), or Meridian's own.
+ *   - A design: the team's PowerPoint (masters, layouts, its own slides filled and reused), or Kendra's own.
  *   - For the WIP deck and the final report: which slides go in the main deck and which in the appendix, in order.
  *   - Its own words: the Support and Success lines of the plan, the closing line of the overview letter.
  *
@@ -31,10 +31,10 @@ export const SLIDES = {
   next: 'Next steps',
   apma: 'APMA assessment (when there is one)',
   tenant: 'What Checkmarx One showed',
-  envFull: 'Environment & toolchain in full (Meridian)',
-  devsecopsFull: 'Toolchain: every touch point (Meridian)',
-  planFull: 'Plan & timeline: every meeting (Meridian)',
-  testsFull: 'Test plan, rows sized to their text (Meridian)',
+  envFull: 'Environment & toolchain in full (Kendra)',
+  devsecopsFull: 'Toolchain: every touch point (Kendra)',
+  planFull: 'Plan & timeline: every meeting (Kendra)',
+  testsFull: 'Test plan, rows sized to their text (Kendra)',
   evidence: 'Evidence for every criterion',
   impact: 'What the POV changed (Analytics: fix time, triage, scans)',
   screenshots: 'POV screenshots (a divider, then each screenshot the SE added)',
@@ -51,7 +51,7 @@ export const DEFAULT_LAYOUT = {
   results: { main: [...MAIN.slice(0, -1), 'impact', 'closing'], appendix: ['challenges', 'glance', 'expansion', 'next', 'apma', 'tenant', 'analyticsDetail', 'tenantEvidence', 'devsecopsFull', 'planFull', 'envFull', 'testsFull', 'evidence', 'notes'] },
 };
 
-/** Version Kendra: Meridian's own slides, every engine and touch point, and the guide's business goals and criteria. */
+/** Version Kendra: Kendra's own slides, every engine and touch point, and the guide's business goals and criteria. */
 export const KENDRA_LAYOUT = {
   wip: { main: ['cover', 'age', 'goals', 'devsecopsFull', 'components', 'planFull', 'envFull', 'goalsPlan', 'closing'], appendix: ['overview', 'apma', 'notes'] },
   results: { main: ['cover', 'age', 'glance', 'impact', 'goals', 'goalsPlan', 'components', 'expansion', 'next', 'closing'], appendix: ['challenges', 'analyticsDetail', 'tenantEvidence', 'devsecopsFull', 'planFull', 'envFull', 'apma', 'tenant', 'evidence', 'notes'] },
@@ -63,12 +63,12 @@ export const CHAKRA_LAYOUT = {
   results: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'impact', 'screenshots'], appendix: ['tenantEvidence', 'evidence', 'notes', 'closing'] },
 };
 
-/** Meridian's own design, the Classic results deck, Version Kendra and Chakra: always there. */
+/** Kendra's own design, the Classic results deck, Version Kendra and Chakra: always there. */
 export const BUILT_IN = [
-  { id: 'builtin-meridian', builtIn: true, scope: 'everyone', name: 'Meridian', description: 'Meridian’s own dark design, every slide.', layout: DEFAULT_LAYOUT, texts: {} },
-  { id: 'builtin-classic', builtIn: true, classic: true, scope: 'everyone', name: 'Classic', description: 'The original results presentation (the WIP deck in Meridian’s design).', layout: DEFAULT_LAYOUT, texts: {} },
+  { id: 'builtin-meridian', builtIn: true, scope: 'everyone', name: 'Kendra standard', description: 'Kendra’s own dark design, every slide.', layout: DEFAULT_LAYOUT, texts: {} },
+  { id: 'builtin-classic', builtIn: true, classic: true, scope: 'everyone', name: 'Classic', description: 'The original results presentation (the WIP deck in Kendra’s design).', layout: DEFAULT_LAYOUT, texts: {} },
   { id: 'builtin-chakra', builtIn: true, scope: 'everyone', name: 'Chakra', description: 'The team’s POV WIP order: cover, DevSecOps, components, APMA, plan, environment, the test plan per business goal, the POV screenshots; then the appendix with the meeting notes, and the closing slide last.', layout: CHAKRA_LAYOUT, texts: {} },
-  { id: 'builtin-kendra', builtIn: true, scope: 'everyone', name: 'Version Kendra', description: 'Meridian’s slides with every engine and touch point, and the POV guide’s business goals: each goal with its numbered success criteria, milestones and tracker references.', layout: KENDRA_LAYOUT, texts: {} },
+  { id: 'builtin-kendra', builtIn: true, scope: 'everyone', name: 'Version Kendra', description: 'Kendra’s slides with every engine and touch point, and the POV guide’s business goals: each goal with its numbered success criteria, milestones and tracker references.', layout: KENDRA_LAYOUT, texts: {} },
 ];
 
 const lines = (v, n = 6) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => text(x, 200)).filter(Boolean).slice(0, n);
@@ -112,7 +112,7 @@ export class DeckTemplates {
   }
 
   /** The template uploaded before templates existed becomes the first one, the organisation's default. */
-  migrate(legacyFile, { by = 'Meridian' } = {}) {
+  migrate(legacyFile, { by = 'Kendra' } = {}) {
     if (this.#own().length || !fs.existsSync(legacyFile)) return null;
     const tpl = { id: randomUUID(), name: 'Team template', description: 'The team’s PowerPoint design.', scope: 'everyone', ownerId: null, ownerName: by, layout: DEFAULT_LAYOUT, texts: {}, design: { name: 'Team template.pptx', at: new Date().toISOString() }, createdAt: new Date().toISOString() };
     fs.mkdirSync(this.#dir, { recursive: true });

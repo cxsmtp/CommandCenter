@@ -19,7 +19,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
   const o = state.overview;
 
   if (!o.rows.length && !owner) {
-    main.innerHTML = `<div class="hero-empty"><h1>Your POVs will live here</h1><p>Add an opportunity: the customer, then the success criteria (a template picks them for you). When the POV starts, paste the tenant's Checkmarx One API key and Meridian follows it by itself.</p>${can('opps.create') ? '<button class="btn primary" data-action="new-opp">New opportunity</button>' : ''}</div>`;
+    main.innerHTML = `<div class="hero-empty"><h1>Your POVs will live here</h1><p>Add an opportunity: the customer, then the success criteria (a template picks them for you). When the POV starts, paste the tenant's Checkmarx One API key and Kendra follows it by itself.</p>${can('opps.create') ? '<button class="btn primary" data-action="new-opp">New opportunity</button>' : ''}</div>`;
     return;
   }
 
@@ -264,7 +264,7 @@ export const sfMoney = (a) => (a?.value ? `${a.currency && a.currency !== 'USD' 
 
 async function uploadReport(file) {
   if (!/\.(xlsx|csv|html?)$/i.test(file.name)) throw new Error('Use the report exported from Salesforce as .xlsx or .csv.');
-  const res = await fetch('/api/salesforce/import', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+  const res = await fetch('/api/salesforce/import', { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `The report was not taken (${res.status}).`);
   return body;

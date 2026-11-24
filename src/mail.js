@@ -233,7 +233,7 @@ export class Mailer {
   }
 
   async test(to) {
-    await this.#transport().sendMail({ from: this.#from(), to, subject: 'Meridian test email', text: 'Your email server works with Meridian.' });
+    await this.#transport().sendMail({ from: this.#from(), to, subject: 'Kendra test email', text: 'Your email server works with Kendra.' });
   }
 
   async send(msg, { replyTo, attachments = [], bcc = [] } = {}) {

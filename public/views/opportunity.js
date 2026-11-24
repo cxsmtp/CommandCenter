@@ -373,7 +373,7 @@ function criteria(d) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(c);
   }
-  if (!all.length) return `<div class="hero-empty"><h2>No success criteria yet</h2><p>Pick a template or the capabilities the customer wants to see. Meridian then marks each one done by itself when the tenant proves it.</p>${current.canEdit ? '<button class="btn primary" data-act="add-caps">Add success criteria</button>' : ''}</div>`;
+  if (!all.length) return `<div class="hero-empty"><h2>No success criteria yet</h2><p>Pick a template or the capabilities the customer wants to see. Kendra then marks each one done by itself when the tenant proves it.</p>${current.canEdit ? '<button class="btn primary" data-act="add-caps">Add success criteria</button>' : ''}</div>`;
   return `<div class="crit-top">
       <div class="crit-sum">${ring(p, { size: 52 })}<div><b>${p.met} of ${p.total} done</b>${p.must ? `<div class="small muted">Must-haves ${p.mustMet} of ${p.must}</div>` : ''}</div></div>
       <span class="spacer"></span>
@@ -405,7 +405,7 @@ function openCriterion(c) {
       <div class="small muted">${c.priority === 'must' ? 'Must have' : 'Nice to have'}${cap ? ` · in Checkmarx One: ${esc(cap.cxName)}` : ''}</div>
       <div class="status-pick" role="group" aria-label="Status">${statuses.map(([k, l]) => `<button type="button" data-set="${k}" aria-pressed="${c.status === k}" ${ro()}>${esc(l)}</button>`).join('')}</div>
       ${c.status === 'met' && c.statusSource === 'tenant' ? `<p class="ev ev-detected" style="margin:0">✓ Marked done by itself: ${(c.autoEvidence ?? []).map(esc).join(' · ')}. Choose another status to override it.</p>` : ev && ev.level !== 'none' ? `<p class="ev ev-${ev.level}" style="margin:0">${ev.level === 'detected' ? '● Found in the tenant' : '○ Mentioned in your notes'}: ${ev.evidence.map(esc).join(' · ')}</p>` : '<p class="small muted" style="margin:0">Nothing in the tenant proves it yet.</p>'}
-      ${cap?.proof ? `<details class="small"><summary>How to show it</summary><p>${esc(cap.proof)}</p>${cap.tech ? `<p class="muted">How Meridian checks: ${esc(cap.tech)}</p>` : ''}</details>` : ''}
+      ${cap?.proof ? `<details class="small"><summary>How to show it</summary><p>${esc(cap.proof)}</p>${cap.tech ? `<p class="muted">How Kendra checks: ${esc(cap.tech)}</p>` : ''}</details>` : ''}
       <div>${demoLine(c) || (current.canEdit ? `<button class="btn sm" data-demo="${esc(c.id)}">Record a demo</button> <span class="small muted">If you showed it yourself instead of in their tenant</span>` : '')}</div>
       <label class="field">Notes<textarea id="critNotes" rows="3" ${ro()} placeholder="What the customer saw, what they said">${esc(c.notes ?? '')}</textarea></label>
       ${current.canEdit ? `<div class="dialog-actions"><button type="button" class="btn ghost danger" data-del>Remove</button><span class="spacer"></span><button type="button" class="btn ghost" data-adv>More settings</button></div>` : ''}
@@ -511,7 +511,7 @@ function email(d) {
     { label: '', html: (p) => (current.canEdit ? `<button class="btn sm" data-edit-person="${esc(p.id)}">Edit</button> <button class="btn sm ghost danger" data-del-person="${esc(p.id)}">Remove</button>` : '') },
   ];
   return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders</h3>${current.canEdit ? '<button class="btn sm" data-act="add-person">Stakeholder</button>' : ''}</div>${table('people', cols, o.stakeholders ?? [], { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
-  <div class="layout"><section class="panel"><div class="head"><h3>Write an email</h3></div><div class="body"><p class="small muted" style="margin:0 0 8px">Pick one: Meridian writes it from the POV, with the stakeholders filled in.</p><div class="row center">${Object.entries(state.meta.templates).map(([k, l]) => `<button class="btn sm" data-template="${k}">${esc(l)}</button>`).join('')}</div></div>
+  <div class="layout"><section class="panel"><div class="head"><h3>Write an email</h3></div><div class="body"><p class="small muted" style="margin:0 0 8px">Pick one: Kendra writes it from the POV, with the stakeholders filled in.</p><div class="row center">${Object.entries(state.meta.templates).map(([k, l]) => `<button class="btn sm" data-template="${k}">${esc(l)}</button>`).join('')}</div></div>
     <form id="mailForm" class="body stack" style="gap:8px" ${wants('completion') ? '' : 'hidden'}>
       <input type="hidden" name="template">
       <label class="field">To<input name="to" placeholder="name@customer.com, …"></label>
@@ -600,7 +600,7 @@ function editPlan() {
       <h3 class="sec-title">Environment</h3>
       <div class="row"><label class="field">Repositories in scope <span class="muted small">names or a short list</span><input name="repositories" value="${esc(p.repositories ?? '')}" placeholder="e.g. payments-api, web-portal, 3 mobile apps"></label>
         <label class="field">DAST and API targets<input name="targets" value="${esc(p.targets ?? '')}" placeholder="e.g. staging web app, orders API"></label></div>
-      <label class="field">Executive overview letter <span class="muted small">leave empty and Meridian writes it from the POV; paragraphs separated by an empty line</span><textarea name="letter" rows="6">${esc(p.letter ?? '')}</textarea></label>
+      <label class="field">Executive overview letter <span class="muted small">leave empty and Kendra writes it from the POV; paragraphs separated by an empty line</span><textarea name="letter" rows="6">${esc(p.letter ?? '')}</textarea></label>
       <label class="field">Closing line of the letter<input name="quote" value="${esc(p.quote ?? '')}" placeholder="“From code to confidence: building security from the ground up with Checkmarx.”"></label>
       <p class="small muted">Meetings and their notes are under Notes → Sessions; people and their POV roles under Customer → Stakeholders.</p>
       <p class="form-error" id="planErr" role="alert"></p>
@@ -872,7 +872,7 @@ const WIRES = {
     on(main, '[data-act="shot-add"]', () => shotIn?.click());
     shotIn?.addEventListener('change', async () => {
       for (const f of [...shotIn.files]) {
-        const r = await fetch(`/api/opportunities/${oid()}/screenshots?caption=${encodeURIComponent(f.name.replace(/\.(png|jpe?g)$/i, '').replace(/[_-]+/g, ' '))}`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+        const r = await fetch(`/api/opportunities/${oid()}/screenshots?caption=${encodeURIComponent(f.name.replace(/\.(png|jpe?g)$/i, '').replace(/[_-]+/g, ' '))}`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': f.type || 'application/octet-stream' }, body: f });
         if (!r.ok) {
           toast((await r.json().catch(() => ({}))).error ?? `${f.name} could not be added`, { bad: true });
           break;
@@ -954,7 +954,7 @@ const WIRES = {
     apmaIn?.addEventListener('change', async () => {
       const file = apmaIn.files[0];
       if (!file) return;
-      const res = await fetch(`/api/opportunities/${oid()}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
+      const res = await fetch(`/api/opportunities/${oid()}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
       toast(j.otherCustomer ? 'Read — but this report looks like it was written for another company. Check it is the right file.' : j.found === 5 ? 'APMA assessment read: all five dimensions' : `APMA assessment read: ${j.found} of 5 dimensions found`, { bad: Boolean(j.otherCustomer) });
@@ -1029,7 +1029,7 @@ function connectTenant() {
   return dialogForm(
     'tenantForm',
     o.tenant ? 'Replace the API key' : 'Connect the POV tenant',
-    `<p class="muted" style="margin:0">Paste the Checkmarx One API key of the POV tenant. The tenant, region and hosts come from the key; it is checked with Checkmarx One and stored encrypted on this server. Read-only use: Meridian never changes anything in the tenant.</p>
+    `<p class="muted" style="margin:0">Paste the Checkmarx One API key of the POV tenant. The tenant, region and hosts come from the key; it is checked with Checkmarx One and stored encrypted on this server. Read-only use: Kendra never changes anything in the tenant.</p>
      <textarea name="apiKey" class="mono" rows="4" required spellcheck="false" autocomplete="off" placeholder="eyJhbGciOi…"></textarea>
      ${o.tenant ? '<label class="check"><input type="checkbox" name="replaceTenant"> Connect a different tenant</label>' : ''}
      <details><summary class="small muted" style="cursor:pointer">Single-tenant or on-prem addresses</summary><div class="row" style="margin-top:8px"><label class="field">IAM URL<input name="iamUrl"></label><label class="field">API URL<input name="baseUrl"></label><label class="field">Tenant<input name="tenant"></label></div></details>`,
@@ -1088,7 +1088,7 @@ function recordDemo(c) {
             await api(`/opportunities/${oid()}/criteria/${c.id}/demo`, { method: 'POST', body: { date: f.date.value, environment: f.environment.value, attendees: f.attendees.value, notes: f.notes.value, recordingUrl: f.recordingUrl.value, markCompleted: f.markCompleted.checked } });
             if (file) {
               btn.textContent = 'Uploading the video…';
-              const r = await fetch(`/api/opportunities/${oid()}/criteria/${c.id}/demo-video?name=${encodeURIComponent(file.name)}`, { method: 'PUT', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': file.type || 'video/mp4' }, body: file });
+              const r = await fetch(`/api/opportunities/${oid()}/criteria/${c.id}/demo-video?name=${encodeURIComponent(file.name)}`, { method: 'PUT', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': file.type || 'video/mp4' }, body: file });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Upload failed (${r.status})`);
             }
             closeDialog('ok');

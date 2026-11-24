@@ -91,7 +91,7 @@ function organisation(body, data) {
     <label class="field">Read each running POV tenant every (minutes)<input type="number" name="refreshMinutes" min="1" max="1440" value="${esc(s.refreshMinutes)}"></label>
     <div class="row"><label class="field">Default look<select name="defaultTheme">${Object.entries(LOOKS).map(([k, [l]]) => `<option value="${k}" ${s.defaultTheme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="field">Default mode<select name="defaultMode">${['auto', 'light', 'dark'].map((m) => `<option ${s.defaultMode === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label></div>
-    <label class="field">Results presentation<select name="reportStyle"><option value="classic" ${s.reportStyle !== 'team' ? 'selected' : ''}>Classic (Meridian’s own design)</option><option value="team" ${s.reportStyle === 'team' ? 'selected' : ''}>Team template (the WIP design, in the uploaded template)</option></select></label>
+    <label class="field">Results presentation<select name="reportStyle"><option value="classic" ${s.reportStyle !== 'team' ? 'selected' : ''}>Classic (Kendra’s own design)</option><option value="team" ${s.reportStyle === 'team' ? 'selected' : ''}>Team template (the WIP design, in the uploaded template)</option></select></label>
     <label class="check"><input type="checkbox" name="weeklyDrafts" ${s.weeklyDrafts ? 'checked' : ''}> Every Monday, write a weekly status draft for each running POV (waiting in its Email tab, never sent by itself)</label>
     <div><button class="btn primary">Save</button></div>
   </form>`;
@@ -107,10 +107,10 @@ function organisation(body, data) {
 function email(body, data) {
   const s = data.smtp;
   body.innerHTML = `<form id="smtpForm" class="panel body stack" style="max-width:720px">
-    <p class="muted" style="margin:0">Meridian sends the SE's emails through this account, with the SE as Reply-To. Without it, SEs download .eml files or copy the text into their own mail.</p>
+    <p class="muted" style="margin:0">Kendra sends the SE's emails through this account, with the SE as Reply-To. Without it, SEs download .eml files or copy the text into their own mail.</p>
     <div class="row"><label class="field">SMTP host<input name="host" value="${esc(s.host)}" placeholder="smtp.office365.com"></label><label class="field" style="max-width:120px">Port<input type="number" name="port" value="${esc(s.port)}"></label><label class="check"><input type="checkbox" name="secure" ${s.secure ? 'checked' : ''}> TLS from the start (port 465)</label></div>
     <div class="row"><label class="field">User<input name="user" value="${esc(s.user)}" autocomplete="off"></label><label class="field">Password${s.hasPassword ? ' (kept; type to replace)' : ''}<input type="password" name="pass" autocomplete="new-password"></label></div>
-    <label class="field">From<input name="from" value="${esc(s.from)}" placeholder="Meridian &lt;pov@company.com&gt;"></label>
+    <label class="field">From<input name="from" value="${esc(s.from)}" placeholder="Kendra &lt;pov@company.com&gt;"></label>
     <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="smtpTest">Send me a test</button></div>
   </form>`;
   $('#smtpForm').addEventListener('submit', async (e) => {
@@ -214,9 +214,9 @@ async function system(body) {
 async function sfMe(el) {
   const me = await api('/me/salesforce');
   el.innerHTML = `<div class="head"><h3>Email to Salesforce</h3>${me.set ? '<span class="badge ok">Connected</span>' : ''}</div><form id="sfMeForm" class="body stack" style="gap:10px;max-width:760px">
-    <p class="muted small" style="margin:0">Your private address from Salesforce (<b>Settings → Email → My Email to Salesforce</b>). Meridian sends it your tasks, notes, stage changes and POV results, and copies it on the POV emails you send, so they are saved in Salesforce as activities. It is stored encrypted and shown to no one.</p>
+    <p class="muted small" style="margin:0">Your private address from Salesforce (<b>Settings → Email → My Email to Salesforce</b>). Kendra sends it your tasks, notes, stage changes and POV results, and copies it on the POV emails you send, so they are saved in Salesforce as activities. It is stored encrypted and shown to no one.</p>
     <label class="field">Your Email to Salesforce address<input name="address" type="email" autocomplete="off" placeholder="${me.set ? esc(`${me.hint} (kept — type to replace)`) : 'emailtosalesforce@….salesforce.com'}"></label>
-    <label class="check"><input type="checkbox" name="copy" ${me.copy ? 'checked' : ''}> Copy it on the POV emails I send from Meridian</label>
+    <label class="check"><input type="checkbox" name="copy" ${me.copy ? 'checked' : ''}> Copy it on the POV emails I send from Kendra</label>
     ${me.sender ? `<p class="small" style="margin:0">Once in Salesforce: add <b class="mono">${esc(me.sender)}</b> to <b>My Acceptable Email Addresses</b> on the same page — Salesforce only takes mail from addresses on that list.</p>` : '<p class="small warn-t" style="margin:0">The email server is not set up yet: an Admin sets it under Settings → Email server.</p>'}
     <div class="row"><button class="btn primary">Save</button>${me.set ? '<button type="button" class="btn ghost" data-act="sf-clear">Remove</button>' : ''}</div>
   </form>`;
@@ -242,13 +242,13 @@ async function salesforce(body) {
       <p class="muted small" style="margin:0">Through each SE’s own Email to Salesforce address (they add it under Profile). Nothing is sent for people who have not added one.</p>
       <label class="check"><input type="checkbox" name="logStages" ${s.logStages ? 'checked' : ''}> When a POV changes stage, send Salesforce the change and where the POV stands</label>
       <label class="check"><input type="checkbox" name="logResults" ${s.logResults ? 'checked' : ''}> When a POV is marked successful, send Salesforce the result</label>
-      ${s.publicUrl ? '' : '<p class="small muted" style="margin:0">Tip: set CC_PUBLIC_URL to Meridian’s address so each Salesforce activity links back to the POV.</p>'}
+      ${s.publicUrl ? '' : '<p class="small muted" style="margin:0">Tip: set CC_PUBLIC_URL to Kendra’s address so each Salesforce activity links back to the POV.</p>'}
       <div><button class="btn primary">Save</button></div></div></form>
 
     <form id="sfBoxForm" class="panel"><div class="head"><h3>Report mailbox</h3>${mb.enabled ? '<span class="badge ok">On</span>' : '<span class="badge">Off</span>'}</div><div class="body stack" style="gap:10px">
-      <p class="muted small" style="margin:0">Salesforce keeps every POV’s stage, amount and close date current with no API: subscribe a mailbox to the opportunities report, and Meridian reads it.<br>
+      <p class="muted small" style="margin:0">Salesforce keeps every POV’s stage, amount and close date current with no API: subscribe a mailbox to the opportunities report, and Kendra reads it.<br>
       <b>1.</b> In Salesforce, open the Opportunities report (columns: Opportunity ID, Opportunity Name, Account Name, Stage, Amount, Close Date, Probability, Next Step) → <b>Subscribe</b> → daily, recipient: this mailbox. Attach the file (.xlsx) if your org allows it; if not, the table in the email is read.<br>
-      <b>2.</b> Give Meridian the mailbox below (IMAP; for Microsoft 365, a shared mailbox with IMAP on). Only mail from the allowed senders is read; it is marked read and moved to “Meridian imported”.</p>
+      <b>2.</b> Give Kendra the mailbox below (IMAP; for Microsoft 365, a shared mailbox with IMAP on). Only mail from the allowed senders is read; it is marked read and moved to “Kendra imported”.</p>
       <label class="check"><input type="checkbox" name="enabled" ${mb.enabled ? 'checked' : ''}> Read the mailbox every <input type="number" name="everyMinutes" min="5" max="1440" value="${esc(mb.everyMinutes)}" style="width:70px"> minutes</label>
       <div class="row"><label class="field">IMAP host<input name="host" value="${esc(mb.host)}" placeholder="outlook.office365.com"></label><label class="field" style="max-width:110px">Port<input type="number" name="port" value="${esc(mb.port)}"></label><label class="check"><input type="checkbox" name="secure" ${mb.secure ? 'checked' : ''}> TLS</label></div>
       <div class="row"><label class="field">User<input name="user" value="${esc(mb.user)}" autocomplete="off"></label><label class="field">Password${mb.hasPassword ? ' (kept; type to replace)' : ''}<input type="password" name="pass" autocomplete="new-password"></label></div>
@@ -298,7 +298,7 @@ async function wipTemplate(body) {
   const draw = async () => {
     const { template: t } = await api('/wip-template');
     box.innerHTML = `<div class="head"><h3>POV WIP deck template</h3></div><div class="body stack">
-      <p class="small muted" style="margin:0">Upload the team’s POV WIP PowerPoint. Meridian keeps its masters, layouts, backgrounds and closing slide, drops its slides, and fills every POV’s WIP deck in that look. Kept encrypted on this server. Without one, the deck uses Meridian’s own dark design.</p>
+      <p class="small muted" style="margin:0">Upload the team’s POV WIP PowerPoint. Kendra keeps its masters, layouts, backgrounds and closing slide, drops its slides, and fills every POV’s WIP deck in that look. Kept encrypted on this server. Without one, the deck uses Kendra’s own dark design.</p>
       ${t ? `<p style="margin:0"><b>${esc(t.name)}</b> <span class="small muted">· ${t.slides} slides · ${t.closing ? 'closing slide found' : 'no closing slide found'} · uploaded ${esc(new Date(t.at).toLocaleDateString())}${t.by ? ` by ${esc(t.by)}` : ''}</span></p>` : '<p class="small" style="margin:0">No template yet.</p>'}
       <div class="row"><button class="btn" data-act="tpl-up">${t ? 'Replace the template' : 'Upload the template (.pptx)'}</button>${t ? '<button class="btn ghost danger" data-act="tpl-del">Remove</button>' : ''}</div>
       <input type="file" id="wipTpl" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" hidden></div>`;
@@ -307,21 +307,21 @@ async function wipTemplate(body) {
     input.addEventListener('change', async () => {
       const file = input.files[0];
       if (!file) return;
-      const res = await fetch('/api/wip-template', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
+      const res = await fetch('/api/wip-template', { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) return toast(j.error ?? 'That file could not be used', { bad: true });
       toast('Template saved');
       draw();
     });
     box.querySelector('[data-act="tpl-del"]')?.addEventListener('click', async () => {
-      if (!(await ask('Remove the WIP template? Decks go back to Meridian’s own design.', { ok: 'Remove', danger: true }))) return;
+      if (!(await ask('Remove the WIP template? Decks go back to Kendra’s own design.', { ok: 'Remove', danger: true }))) return;
       if (await attempt(() => api('/wip-template', { method: 'DELETE' }), 'Removed')) draw();
     });
   };
   draw().catch(() => box.remove());
 }
 
-// SharePoint: the Microsoft app registration Meridian publishes POV documents with.
+// SharePoint: the Microsoft app registration Kendra publishes POV documents with.
 async function sharePointPanel(body) {
   const box = document.createElement('section');
   box.className = 'panel';

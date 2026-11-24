@@ -1,7 +1,7 @@
 /**
  * The success criteria bank: for every technical scenario (a capability in the catalogue), the business goal it
  * serves, the criterion as the customer reads it, the test item (what is done in the POV) and the benefit (what
- * the customer gains). When a criterion is added to a POV, Meridian fills its goal, test and benefit from here, so
+ * the customer gains). When a criterion is added to a POV, Kendra fills its goal, test and benefit from here, so
  * the final report tells the story by business goal without anyone writing it.
  *
  * Built in: a starting bank written from Checkmarx POV guides. An Admin (or anyone who manages the catalogue)

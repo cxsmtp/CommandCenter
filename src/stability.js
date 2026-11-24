@@ -1,5 +1,5 @@
 /**
- * Keeping Meridian up without anyone watching (after CxMissionZero's hands-off running):
+ * Keeping Kendra up without anyone watching (after CxMissionZero's hands-off running):
  *
  *   - one server per data folder (instance lock): a second copy on the same data refuses to start;
  *   - start-up checks: half-saved files from a crash are cleared, low disk space is said loudly;
@@ -31,7 +31,7 @@ export function lockDataDir(dataDir, { staleMs = 30_000 } = {}) {
     const sameHost = held.host === me.host;
     const fresh = Date.now() - held.at < staleMs;
     if (held.pid !== me.pid && fresh && (!sameHost || alive(held.pid))) {
-      throw stateError(`Another Meridian (pid ${held.pid} on ${held.host}) is using this data folder. Two servers on one data folder would damage it: stop the other one first.`);
+      throw stateError(`Another Kendra (pid ${held.pid} on ${held.host}) is using this data folder. Two servers on one data folder would damage it: stop the other one first.`);
     }
   } catch (e) {
     if (e.code === 'STATE') throw e;
@@ -152,7 +152,7 @@ export class AdminAlerts {
     db.write('alerts', st);
     const to = this.#o.admins();
     if (!mails.length || !to.length || !mailer.configured) return { sent: 0, mails };
-    await mailer.send({ to: to.join(', '), subject: `${this.#o.org}: ${mails.length === 1 ? mails[0].split(' — ')[0] : `${mails.length} things about the server`}`, body: `${mails.join('\n\n')}\n\nSettings → System shows every check.\n— Meridian` });
+    await mailer.send({ to: to.join(', '), subject: `${this.#o.org}: ${mails.length === 1 ? mails[0].split(' — ')[0] : `${mails.length} things about the server`}`, body: `${mails.join('\n\n')}\n\nSettings → System shows every check.\n— Kendra` });
     return { sent: 1, mails };
   }
 }

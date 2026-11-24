@@ -31,15 +31,15 @@ export async function wireAiTab(main, oppId, { canEdit, rerender }) {
       <div class="body"><div class="kpis">
         ${tile(num(v.hours?.total), 'hours saved', `${num(v.hours?.triage)} h triage · ${num(v.hours?.fix)} h fixing`)}
         ${tile(money(v.value, cur), 'worth of that time', `at ${money(v.rates?.hourlyRate, cur)} an hour`)}
-        ${tile(fmt(v.actions?.triaged ?? 0), 'findings triaged by AI', v.actions?.fromMeridian?.triage ? `${fmt(v.actions.fromMeridian.triage)} run from Meridian` : '')}
-        ${tile(fmt(v.actions?.fixed ?? 0), 'fixes proposed by AI', v.actions?.fromMeridian?.remediation ? `${fmt(v.actions.fromMeridian.remediation)} run from Meridian` : '')}
+        ${tile(fmt(v.actions?.triaged ?? 0), 'findings triaged by AI', v.actions?.fromKendra?.triage ? `${fmt(v.actions.fromKendra.triage)} run from Kendra` : '')}
+        ${tile(fmt(v.actions?.fixed ?? 0), 'fixes proposed by AI', v.actions?.fromKendra?.remediation ? `${fmt(v.actions.fromKendra.remediation)} run from Kendra` : '')}
         ${v.roi != null ? tile(`${v.roi}×`, 'return on credits', `${money(v.cost, cur)} of credits`) : ''}
       </div></div></section>
     <div class="grid-2" style="margin-bottom:16px">
       <section class="panel"><div class="head"><h3>Credits</h3>${d.canAllocate ? '<button class="btn sm" data-act="pool">Set the POV’s pool</button>' : ''}</div><div class="body stack">
         ${c ? `<div class="kv"><span>Left in the tenant</span><b>${num(c.available)}</b></div><div class="kv"><span>Used in 30 days</span><b>${num(c.used30d)}</b></div><div class="kv"><span>…by AI actions</span><b>${num(c.ai)}</b></div><div class="kv"><span>…by Fusion scans</span><b>${num(c.fusion)}</b></div>` : `<p class="muted" style="margin:0">${d.hasTenant ? 'The tenant does not report credits (no AI licence, or the key lacks the permission).' : 'Connect a tenant to see its credits.'}</p>`}
         <hr class="sep"><div class="kv"><span>POV pool</span><b>${p.size == null ? 'Not set' : `${fmt(p.left)} left of ${fmt(p.size)}`}</b></div>
-        ${p.size != null ? `<div class="bar-track"><i style="width:${Math.min(100, Math.round(((p.spent + (p.reserved ?? 0)) / Math.max(1, p.size)) * 100))}%"></i></div><p class="small muted" style="margin:0">${fmt(p.spent)} spent from Meridian${p.setBy ? ` · set by ${esc(p.setBy)}` : ''}</p>` : '<p class="small muted" style="margin:0">A manager sets how many credits this POV may spend from Meridian.</p>'}
+        ${p.size != null ? `<div class="bar-track"><i style="width:${Math.min(100, Math.round(((p.spent + (p.reserved ?? 0)) / Math.max(1, p.size)) * 100))}%"></i></div><p class="small muted" style="margin:0">${fmt(p.spent)} spent from Kendra${p.setBy ? ` · set by ${esc(p.setBy)}` : ''}</p>` : '<p class="small muted" style="margin:0">A manager sets how many credits this POV may spend from Kendra.</p>'}
       </div></section>
       <section class="panel"><div class="head"><h3>AI backlog</h3><span class="small muted">on the latest scans</span></div><div class="body stack">
         ${b ? `<div class="kv"><span>Findings to triage</span><b>${fmt(b.toTriage)}</b></div><div class="kv"><span>Confirmed, to fix</span><b>${fmt(b.toFix)}</b></div><div class="kv"><span>Credits to clear it with AI</span><b>${fmt(b.credits)}</b></div>
@@ -51,8 +51,8 @@ export async function wireAiTab(main, oppId, { canEdit, rerender }) {
       <div class="wz-chips">${SEVERITIES.map((s) => `<button type="button" class="wz-chip ${['Critical', 'High'].includes(s) ? 'must' : ''}" data-sev="${s}" aria-pressed="${['Critical', 'High'].includes(s)}">${s}</button>`).join('')}</div>
       <div class="row"><button class="btn" data-act="plan">See what it would cost</button><span class="small muted" id="aiPlan"></span></div>
     </div></section>` : ''}
-    <section class="panel" style="margin-bottom:16px"><div class="head"><h3>Runs from Meridian</h3></div>
-      ${(d.ledger ?? []).length ? `<div class="list" style="padding:8px 16px">${d.ledger.slice(0, 30).map((e) => `<div class="item"><div class="top"><b>${e.action === 'triage' ? 'AI Triage' : 'AI Remediation'} · ${fmt(e.findings)} finding${e.findings === 1 ? '' : 's'}</b><span class="small muted">${esc(when(e.at))}</span></div><div class="small muted">${esc(e.by ?? '')} · ${fmt(e.credits ?? 0)} credits · ${esc(e.outcome)}</div></div>`).join('')}</div>` : '<p class="empty-line" style="padding:16px">No runs from Meridian yet.</p>'}</section>
+    <section class="panel" style="margin-bottom:16px"><div class="head"><h3>Runs from Kendra</h3></div>
+      ${(d.ledger ?? []).length ? `<div class="list" style="padding:8px 16px">${d.ledger.slice(0, 30).map((e) => `<div class="item"><div class="top"><b>${e.action === 'triage' ? 'AI Triage' : 'AI Remediation'} · ${fmt(e.findings)} finding${e.findings === 1 ? '' : 's'}</b><span class="small muted">${esc(when(e.at))}</span></div><div class="small muted">${esc(e.by ?? '')} · ${fmt(e.credits ?? 0)} credits · ${esc(e.outcome)}</div></div>`).join('')}</div>` : '<p class="empty-line" style="padding:16px">No runs from Kendra yet.</p>'}</section>
     <section class="panel"><div class="head"><h3>Value rates</h3>${d.canEditRates ? '<button class="btn sm" data-act="rates">Change for this POV</button>' : ''}</div><div class="body small">
       ${num(v.rates?.triageMinutes)} minutes saved per finding triaged · ${num(v.rates?.fixMinutes)} minutes per fix · ${money(v.rates?.hourlyRate, cur)} an hour · ${v.rates?.creditPrice ? `${money(v.rates.creditPrice, cur)} a credit` : 'credit price not set'}${Object.keys(d.ownRates ?? {}).length ? ' · <b>set for this POV</b>' : ' · organisation rates'}
     </div></section>`;
@@ -100,7 +100,7 @@ export async function wireAiTab(main, oppId, { canEdit, rerender }) {
   // The pool and the rates
   box.querySelector('[data-act="pool"]')?.addEventListener('click', () =>
     openDialog(
-      `<form id="poolF" class="dbody"><h2>The POV’s credit pool</h2><p class="small muted">How many credits this POV may spend on AI actions run from Meridian. Empty removes the limit.</p>
+      `<form id="poolF" class="dbody"><h2>The POV’s credit pool</h2><p class="small muted">How many credits this POV may spend on AI actions run from Kendra. Empty removes the limit.</p>
         <label class="field">Credits<input type="number" min="0" max="1000000" name="size" value="${esc(p.size ?? '')}"></label>
         <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Save</button></div></form>`,
       {

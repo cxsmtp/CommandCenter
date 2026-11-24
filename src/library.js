@@ -14,7 +14,7 @@
  */
 import { fail } from './db.js';
 
-/** The library's capabilities (CAP-xx) as Meridian's catalogue knows them, so the tenant can prove them. */
+/** The library's capabilities (CAP-xx) as Kendra's catalogue knows them, so the tenant can prove them. */
 export const CAP_TO_CATALOG = {
   'CAP-01': 'sast', 'CAP-02': 'sast', 'CAP-03': 'sast', 'CAP-04': 'fusion', 'CAP-05': 'dev-assist', 'CAP-06': 'secrets', 'CAP-07': 'secrets', 'CAP-08': 'iac', 'CAP-09': 'apisec', 'CAP-10': 'apisec',
   'CAP-11': 'sca', 'CAP-12': 'sca', 'CAP-13': 'sca', 'CAP-14': 'sbom', 'CAP-15': 'malicious', 'CAP-16': 'malicious', 'CAP-17': 'malicious', 'CAP-18': 'sca', 'CAP-19': 'containers', 'CAP-20': 'containers',

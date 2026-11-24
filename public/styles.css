@@ -1,4 +1,4 @@
-/* Meridian — looks are token sets on :root[data-look]; the mode (light/dark) is resolved by app.js into
+/* Kendra — looks are token sets on :root[data-look]; the mode (light/dark) is resolved by app.js into
    data-theme, so each look needs only its light and dark values. */
 :root {
   --bg: #f4f2ec; --panel: #ffffff; --panel-2: #f8f7f3; --ink: #1b1f24; --muted: #646b73; --line: #e2dfd6;
@@ -365,7 +365,7 @@ body.drawer-open table[data-table="dash"] td:first-child { min-width: 0; }
 .check-row:first-child { border-top: 0; }
 .check-row .badge { justify-content: center; }
 
-/* Meridian mark */
+/* Kendra mark */
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark { width: 26px; height: 26px; color: var(--accent); flex: none; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 45%, transparent)); }
 .brand-name { display: block; }

@@ -1,5 +1,5 @@
 /**
- * HTTPS served by Meridian itself (adapted from the FTR command center), when there is no reverse proxy in front.
+ * HTTPS served by Kendra itself (adapted from the FTR command center), when there is no reverse proxy in front.
  *
  * Certificates, in order of preference:
  *   1. TLS_CERT_FILE + TLS_KEY_FILE (PEM; the certificate file may carry the chain), TLS_KEY_PASSPHRASE when needed;
@@ -108,7 +108,7 @@ export const isIp = (name) => /^\d{1,3}(\.\d{1,3}){3}$/.test(name) || name.inclu
 export function selfSignedCertificate(names, now = Date.now()) {
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const cn = names.find((n) => !isIp(n)) ?? 'localhost';
-  const cert = makeCertificate({ subject: { cn, o: 'Meridian (self-signed)' }, names, publicKey, signerKey: privateKey, now });
+  const cert = makeCertificate({ subject: { cn, o: 'Kendra (self-signed)' }, names, publicKey, signerKey: privateKey, now });
   return { cert, key: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
 }
 

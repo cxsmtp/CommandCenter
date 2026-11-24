@@ -50,7 +50,7 @@ const cols = () =>
       ]
     : [
         { label: 'When', html: (r) => `<span title="${esc(r.at)}">${esc(when(r.at))}</span>` },
-        { label: 'Who', html: (r) => `${esc(r.byName || 'Meridian')}${r.role ? `<div class="small muted">${esc(state.meta?.roles?.[r.role] ?? r.role)}</div>` : ''}` },
+        { label: 'Who', html: (r) => `${esc(r.byName || 'Kendra')}${r.role ? `<div class="small muted">${esc(state.meta?.roles?.[r.role] ?? r.role)}</div>` : ''}` },
         { label: 'What', html: (r) => `${esc(r.what)}${r.imported ? ' <span class="small muted">(earlier log)</span>' : ''}` },
         { label: 'POV', html: (r) => (r.opp ? `<a href="#/opp/${esc(r.opp)}">${esc(r.customer || 'opportunity')}</a>` : `<span class="small muted">${esc(r.type)}</span>`) },
       ];

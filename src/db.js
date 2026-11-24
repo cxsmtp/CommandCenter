@@ -55,7 +55,7 @@ export class Db {
 
   /**
    * The data's key must be the key the data was written with. If it is not (CC_SECRET missing or changed, a lost
-   * secret.key), nothing could be read and Meridian would start empty with a new Admin: it refuses to start instead.
+   * secret.key), nothing could be read and Kendra would start empty with a new Admin: it refuses to start instead.
    */
   #guardKey() {
     const mark = path.join(this.#dir, 'key.fingerprint');
@@ -64,7 +64,7 @@ export class Db {
     try {
       known = fs.readFileSync(mark, 'utf8').trim();
     } catch {}
-    if (known && known !== this.#vault.fingerprint) throw stateError(`The encryption key is not the one this data was written with (expected key ${known}, got ${this.#vault.fingerprint} from ${this.#vault.source}). Start Meridian with its original key: the same CC_SECRET, CC_SECRET_FILE or data/secret.key as before. Nothing was changed.`);
+    if (known && known !== this.#vault.fingerprint) throw stateError(`The encryption key is not the one this data was written with (expected key ${known}, got ${this.#vault.fingerprint} from ${this.#vault.source}). Start Kendra with its original key: the same CC_SECRET, CC_SECRET_FILE or data/secret.key as before. Nothing was changed.`);
     if (!known && fs.existsSync(users)) {
       // Data from before the fingerprint was kept: the key must at least open the accounts.
       try {
@@ -75,7 +75,7 @@ export class Db {
           this.#vault.readJson(`${users}.prev`);
           opened = true;
         } catch {}
-        if (!opened) throw stateError(`The encryption key (${this.#vault.source}) cannot open this data's accounts. Start Meridian with its original key: the same CC_SECRET, CC_SECRET_FILE or data/secret.key as before. Nothing was changed.`);
+        if (!opened) throw stateError(`The encryption key (${this.#vault.source}) cannot open this data's accounts. Start Kendra with its original key: the same CC_SECRET, CC_SECRET_FILE or data/secret.key as before. Nothing was changed.`);
       }
     }
     if (!known) fs.writeFileSync(mark, `${this.#vault.fingerprint}\n`, { mode: 0o600 });
@@ -121,7 +121,7 @@ export class Db {
       } catch {}
     }
     this.repairs.push({ name, from: null, at: new Date().toISOString(), error: String(error.message).slice(0, 200) });
-    // Accounts, POVs and settings are never replaced by an empty list: Meridian stops and says why instead.
+    // Accounts, POVs and settings are never replaced by an empty list: Kendra stops and says why instead.
     if (CRITICAL.has(name)) throw stateError(`${name}.json cannot be read and no good copy was found (its previous copy and every backup were tried): ${error.message}. Restore a backup of the data folder, or put ${name}.json back. Nothing was changed.`);
     console.error(`Could not read ${name}.json and found no good copy (${error.message}); it was set aside.`);
     try {

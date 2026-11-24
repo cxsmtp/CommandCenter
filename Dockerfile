@@ -1,4 +1,4 @@
-# Meridian — one image for Docker and Podman (amd64 and arm64). Everything it keeps lives in the /data volume.
+# Kendra — one image for Docker and Podman (amd64 and arm64). Everything it keeps lives in the /data volume.
 #
 #   podman build -t meridian .
 #   podman run -d --name meridian -p 8443:8443 -v meridian-data:/data -e TLS_HOSTNAMES=meridian.company.com meridian

@@ -29,7 +29,7 @@ export const local = {
 export class ApiError extends Error {}
 
 // ——— Staying connected ———
-// While Meridian restarts (an update, a restore) requests wait and try again for up to 45 s, with a small notice,
+// While Kendra restarts (an update, a restore) requests wait and try again for up to 45 s, with a small notice,
 // instead of failing. A session that ended opens a sign-in box over the page: nothing on screen is lost, and the
 // request that met the end runs again once signed in.
 const RETRY_MS = 45_000;
@@ -39,7 +39,7 @@ function reconnectNotice(on) {
   let el = document.getElementById('reconnect');
   if (!reconnecting) return el?.remove();
   if (!el) {
-    el = Object.assign(document.createElement('div'), { id: 'reconnect', role: 'status', textContent: 'Meridian is restarting — reconnecting…' });
+    el = Object.assign(document.createElement('div'), { id: 'reconnect', role: 'status', textContent: 'Kendra is restarting — reconnecting…' });
     document.body.append(el);
   }
 }
@@ -66,13 +66,13 @@ function signInAgain() {
     d.querySelector('form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = e.target;
-      const r = await fetch('/api/login', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: f.email.value, password: f.password.value }) }).catch(() => null);
+      const r = await fetch('/api/login', { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: f.email.value, password: f.password.value }) }).catch(() => null);
       const j = (await r?.json().catch(() => ({}))) ?? {};
       if (r?.ok) {
         if (state.session) state.session.expiresAt = j.expiresAt;
         return done(true);
       }
-      f.querySelector('.form-error').textContent = j.error || 'Meridian cannot be reached right now.';
+      f.querySelector('.form-error').textContent = j.error || 'Kendra cannot be reached right now.';
     });
   });
   return reauth;
@@ -85,7 +85,7 @@ export async function api(path, { method = 'GET', body } = {}) {
     for (;;) {
       let res;
       try {
-        res = await fetch(`/api${path}`, { method, headers: { 'X-Requested-With': 'Meridian', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+        res = await fetch(`/api${path}`, { method, headers: { 'X-Requested-With': 'Kendra', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
       } catch {
         // Not reached at all (the server is between processes): nothing was done, so it is safe to try again.
         if (Date.now() - started < RETRY_MS) {
@@ -93,7 +93,7 @@ export async function api(path, { method = 'GET', body } = {}) {
           await new Promise((r) => setTimeout(r, 1500));
           continue;
         }
-        throw new ApiError('Meridian cannot be reached. Check your connection, then try again.');
+        throw new ApiError('Kendra cannot be reached. Check your connection, then try again.');
       }
       const data = await res.json().catch(() => ({}));
       if (res.status === 503 && data.restarting && Date.now() - started < RETRY_MS) {
@@ -168,7 +168,7 @@ new MutationObserver(() => {
 
 /** POST that returns a file: saved through a temporary link. */
 export async function download(path, body, fallbackName = 'download') {
-  const res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'X-Requested-With': 'Meridian', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'X-Requested-With': 'Kendra', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) throw new ApiError((await res.json().catch(() => ({}))).error || `${res.status} ${res.statusText}`);
   const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
   const url = URL.createObjectURL(await res.blob());

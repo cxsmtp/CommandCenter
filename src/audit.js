@@ -18,7 +18,7 @@ export class Audit {
   record(actor, type, what, detail = {}, { opp = null } = {}) {
     return this.#trail.change({
       by: actor?.id ?? '',
-      byName: actor?.name ?? (actor ? '' : 'Meridian'),
+      byName: actor?.name ?? (actor ? '' : 'Kendra'),
       role: actor?.role ?? '',
       type: text(type, 30),
       what: text(what, 400),

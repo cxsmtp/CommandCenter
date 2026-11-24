@@ -1,6 +1,6 @@
 /**
  * The evidence slides' numbers, from the latest read of the tenant (what the portal's pages show, drawn by
- * Meridian instead of photographed): integrations in use, triage, supply chain and governance, scan activity.
+ * Kendra instead of photographed): integrations in use, triage, supply chain and governance, scan activity.
  * Counts and names of tools only; no project, person or finding names.
  */
 const day = (iso) => String(iso ?? '').slice(0, 10);

@@ -1,6 +1,6 @@
 /**
  * The capability catalogue: every Checkmarx One touch point a POV can test, the name Checkmarx One gives it, and how
- * Meridian recognises it was tested.
+ * Kendra recognises it was tested.
  *
  * `detect` rules are read against what the tenant shows (its scans and credits):
  *   engines    engine names in completed scans (sast, sca, kics, containers, apisec, microengines, ai, …)
@@ -44,7 +44,7 @@ export const CATEGORIES = [
 /**
  * c(id, category, name, cxName, detect, { proof, tech, isNew })
  *   proof  what the SE shows the customer before marking it met
- *   tech   how Meridian recognises it in Checkmarx One (the API and the field it reads)
+ *   tech   how Kendra recognises it in Checkmarx One (the API and the field it reads)
  */
 const c = (id, category, name, cxName, detect = {}, { proof = '', tech = '', isNew = false, description = '' } = {}) => ({ id, category, name, cxName, description, proof, tech, isNew, detect: { engines: [], scanTypes: [], origins: [], repoHosts: [], actions: [], aspm: [], keywords: [], ...detect } });
 const SCANS = 'GET /api/scans (last 7 days): a Completed or Partial scan whose engines include';

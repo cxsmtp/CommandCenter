@@ -194,7 +194,7 @@ test('a sign-in survives a restart; sign-out and a password change end sessions 
   u3.stop();
 });
 
-test('a changed encryption key never wipes the accounts: Meridian refuses to start and says why', async () => {
+test('a changed encryption key never wipes the accounts: Kendra refuses to start and says why', async () => {
   const dir = tmp();
   const saved = process.env.CC_SECRET;
   try {
@@ -227,7 +227,7 @@ test('one server per data folder, crash leftovers cleared, Node.js checked, Admi
   const dir = tmp();
   // Another live server holds the folder: refused. A dead one's lock is taken over.
   fs.writeFileSync(path.join(dir, 'instance.lock'), JSON.stringify({ pid: process.ppid, host: (await import('node:os')).hostname(), at: Date.now() }));
-  assert.throws(() => lockDataDir(dir), (e) => e.code === 'STATE' && /Another Meridian/.test(e.message));
+  assert.throws(() => lockDataDir(dir), (e) => e.code === 'STATE' && /Another Kendra/.test(e.message));
   fs.writeFileSync(path.join(dir, 'instance.lock'), JSON.stringify({ pid: 999999, host: (await import('node:os')).hostname(), at: Date.now() }));
   const release = lockDataDir(dir);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'instance.lock'), 'utf8')).pid, process.pid);
@@ -248,7 +248,7 @@ test('one server per data folder, crash leftovers cleared, Node.js checked, Admi
   const sent = [];
   let level = 'bad';
   const corrections = [];
-  const alerts = new AdminAlerts({ db, org: 'Meridian', mailer: { configured: true, send: async (m) => sent.push(m) }, admins: () => ['ops@x.com'], checks: () => [{ key: 'backup', label: 'Backups', level, text: 'The last backup failed.', fix: 'Check the disk.' }], corrections: () => corrections });
+  const alerts = new AdminAlerts({ db, org: 'Kendra', mailer: { configured: true, send: async (m) => sent.push(m) }, admins: () => ['ops@x.com'], checks: () => [{ key: 'backup', label: 'Backups', level, text: 'The last backup failed.', fix: 'Check the disk.' }], corrections: () => corrections });
   await alerts.tick();
   assert.equal(sent.length, 0, 'not on the first bad check');
   await alerts.tick();
@@ -295,7 +295,7 @@ test('the troubleshooting report: everything to see what went wrong, and no secr
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
   try {
-    const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@meridian.local', password: 'admin-password-123' }) });
+    const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@meridian.local', password: 'admin-password-123' }) });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const r = await fetch(`${base}/api/system/report`, { headers: { Cookie: cookie } });
     assert.equal(r.status, 200);

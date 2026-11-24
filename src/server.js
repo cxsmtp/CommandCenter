@@ -1,5 +1,5 @@
 /**
- * Meridian: discovery → technical sessions → POV → outcome, for every SE in a team, in one place.
+ * Kendra: discovery → technical sessions → POV → outcome, for every SE in a team, in one place.
  *
  * One dependency (nodemailer). Everything it keeps lives in the data folder (CC_DATA_DIR, /data in the container).
  */
@@ -61,7 +61,7 @@ const MAX_BODY = 512 * 1024;
 const DAY = 86_400_000;
 const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']);
 const POLLED_STAGES = new Set(['pov']);
-const DEFAULT_SETTINGS = { orgName: 'Meridian', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true, reportStyle: 'classic' };
+const DEFAULT_SETTINGS = { orgName: 'Kendra', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true, reportStyle: 'classic' };
 
 export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null, backupOptions = null, startBackground = true, tls = false } = {}) {
   // HTTPS served here (src/tls.js): the given certificate, else a self-signed one; cookies are then always Secure.
@@ -85,6 +85,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // What the page may see of the settings: never the email server's or the proxy's secrets.
   const settings = () => {
     const { smtp, network, lastWeeklyDrafts, salesforce, sharepoint: _sp, ...rest } = { ...DEFAULT_SETTINGS, ...db.read('settings', {}) };
+    // The product's old names, saved as the organisation's name before it was renamed Kendra, read as Kendra.
+    if (['Meridian', 'CommandCenter', 'Command Center'].includes(rest.orgName)) rest.orgName = 'Kendra';
     return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
   };
   const fullSettings = () => db.read('settings', {});
@@ -95,7 +97,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const templates = new Templates(db, { users, catalog });
   opps.onHistory = ({ opp, actor, what }) => {
     const who = actor?.id ? users.get(actor.id) ?? actor : null;
-    trail.change({ by: who?.id ?? '', byName: who?.name ?? 'Meridian', role: who?.role ?? '', type: 'opportunity', what, opp: opp.id, customer: opp.customer });
+    trail.change({ by: who?.id ?? '', byName: who?.name ?? 'Kendra', role: who?.role ?? '', type: 'opportunity', what, opp: opp.id, customer: opp.customer });
   };
   const ai = new AiActions({ db });
   const orgRates = () => ratesFor(db.read('settings', {}).valueRates ?? {});
@@ -209,7 +211,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     setTimeout(wait, 150);
   }
   const restartServer = (actor, why) => {
-    if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start Meridian with "npm start" or the container image.');
+    if (!updater.launched) throw fail(409, 'Restarting needs the launcher: start Kendra with "npm start" or the container image.');
     audit.record(actor, 'system', `Restarted the server (${why})`);
     gracefulExit(RESTART_CODE, why);
   };
@@ -422,7 +424,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       .flatMap((o) => eventsOf(monitor.snapshot(o.id), { povId: o.id, since }).filter((e) => !(o.mute?.projects ?? []).includes(e.projectId)).slice(0, 30))
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
       .slice(0, 250);
-    // What the team did in Meridian (notes, stage changes, criteria met), newest first.
+    // What the team did in Kendra (notes, stage changes, criteria met), newest first.
     const activity = list
       .flatMap((o) => (o.history ?? []).slice(-40).map((h) => ({ ...h, oppId: o.id, opp: o.name, byName: users.get(h.by)?.name ?? '' })))
       .sort((a, b) => b.at.localeCompare(a.at))
@@ -561,7 +563,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
-    if (m !== 'GET' && !['Meridian', 'CommandCenter'].includes(req.headers['x-requested-with'])) return send(res, 403, { error: 'Missing request header.' });
+    if (m !== 'GET' && !['Kendra', 'Meridian', 'CommandCenter'].includes(req.headers['x-requested-with'])) return send(res, 403, { error: 'Missing request header.' });
 
     if (route === 'POST /logout') {
       users.signOut(cookie(req, 'cc_session'));
@@ -657,7 +659,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
     if (route === 'GET /stream') {
       // A handful of tabs per person; a browser stuck reconnecting cannot use up the server.
-      if ([...clients].filter((c) => c.userId === user.id).length >= 6) return send(res, 429, { error: 'Too many open Meridian tabs: close a few.' }, { 'Retry-After': '30' });
+      if ([...clients].filter((c) => c.userId === user.id).length >= 6) return send(res, 429, { error: 'Too many open Kendra tabs: close a few.' }, { 'Retry-After': '30' });
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
       res.write(`event: hello\ndata: ${JSON.stringify({ version: VERSION })}\n\n`);
       const client = { res, userId: user.id };
@@ -1793,7 +1795,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     };
   }
 
-  /** The results presentation: Classic (Meridian's own design), or Team (the WIP design, in the team's template). */
+  /** The results presentation: Classic (Kendra's own design), or Team (the WIP design, in the team's template). */
   function deckOf(opp, style = null) {
     // The POV's presentation template (or one asked for: a template id, or the older 'classic' / 'team').
     const own = db.read('deckTemplates', []);
@@ -1810,7 +1812,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (!opp.tenant) throw fail(400, 'Connect a Checkmarx One tenant first.');
     const snap = monitor.snapshot(opp.id);
     const live = monitor.live(opp.id);
-    const lines = [`Meridian troubleshooting bundle — ${opp.customer} — tenant ${opp.tenant.tenant} (${opp.tenant.regionLabel})`, `Made ${new Date().toISOString()}`, `API ${opp.tenant.baseUrl}`, `Last read: ${snap?.at ?? 'never'} (${snap?.ms ?? '?'} ms)${live.error ? `; last error ${live.error.at}: ${live.error.message}` : ''}`, ...(snap?.errors ?? []).map((e) => `Part not read: ${e.part}: ${e.message}`), ''];
+    const lines = [`Kendra troubleshooting bundle — ${opp.customer} — tenant ${opp.tenant.tenant} (${opp.tenant.regionLabel})`, `Made ${new Date().toISOString()}`, `API ${opp.tenant.baseUrl}`, `Last read: ${snap?.at ?? 'never'} (${snap?.ms ?? '?'} ms)${live.error ? `; last error ${live.error.at}: ${live.error.message}` : ''}`, ...(snap?.errors ?? []).map((e) => `Part not read: ${e.part}: ${e.message}`), ''];
     const failed = (snap?.scans ?? []).filter((s) => /fail|partial/i.test(s.status)).slice(0, 10);
     lines.push(`${failed.length} failed or partial scan(s) in the last ${SCAN_WINDOW_DAYS} days${failed.length === 10 ? ' (newest 10)' : ''}`, '');
     const connection = opps.connection(opp.id);
@@ -1871,7 +1873,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
 
   const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
-    if (draining && url.pathname.startsWith('/api/')) return send(res, 503, { error: 'Meridian is restarting. Try again in a few seconds.', restarting: true }, { 'Retry-After': '3' });
+    if (draining && url.pathname.startsWith('/api/')) return send(res, 503, { error: 'Kendra is restarting. Try again in a few seconds.', restarting: true }, { 'Retry-After': '3' });
     if (url.pathname !== '/api/stream') {
       inFlight += 1;
       res.once('close', () => (inFlight -= 1));
@@ -2088,7 +2090,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   } catch (error) {
     console.error(`[start] The earlier WIP template could not become a presentation template: ${error.message}`);
   }
-  /** The presentation template a POV's decks use, with its design's file (or none for Meridian's own). */
+  /** The presentation template a POV's decks use, with its design's file (or none for Kendra's own). */
   const deckFor = (opp, chosen = null) => {
     const tpl = (chosen && deckTemplates.get(chosen)) || deckTemplates.resolve(opp, { legacyStyle: settings().reportStyle });
     const file = tpl?.design && fs.existsSync(deckTemplates.fileOf(tpl.id)) ? db.vault.readFile(deckTemplates.fileOf(tpl.id)) : null;
@@ -2166,7 +2168,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   };
   /** Every connection the server makes or takes, for the network team. */
   const allowlist = () => {
-    const out = [{ direction: 'in', host: 'this server', port: Number(process.env.PORT) || 4310, why: 'People opening Meridian (HTTPS when behind your reverse proxy)' }];
+    const out = [{ direction: 'in', host: 'this server', port: Number(process.env.PORT) || 4310, why: 'People opening Kendra (HTTPS when behind your reverse proxy)' }];
     const seen = new Set();
     for (const o of opps.raw().filter((x) => x.tenant && !['won', 'lost'].includes(x.stage))) {
       for (const [label, addr] of [['IAM (sign-in, users)', o.tenant.iamUrl], ['API (projects, scans, results, credits, logs)', o.tenant.baseUrl]]) {
@@ -2298,7 +2300,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   } catch (error) {
     if (error.code !== 'STATE') throw error;
     // A problem with the data or its key: say what and how to fix it; the launcher waits instead of rolling back.
-    console.error(`\n  Meridian did not start: ${error.message}\n`);
+    console.error(`\n  Kendra did not start: ${error.message}\n`);
     process.exit(error.exitCode);
   }
   if (app.firstAdmin) {
@@ -2306,7 +2308,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   app.server.listen(port, host, () => {
     if (app.server.tlsInfo) console.log(`[https] ${app.server.tlsInfo.selfSigned ? 'Self-signed certificate (browsers warn until it is trusted; set TLS_CERT_FILE and TLS_KEY_FILE for your own)' : 'Certificate'}: ${app.server.tlsInfo.description}`);
-    console.log(`Meridian ${VERSION} on ${app.server.tlsInfo ? 'https' : 'http'}://${host}:${port} — reading POV tenants every ${app.monitor.intervalMs / 60_000} min`);
+    console.log(`Kendra ${VERSION} on ${app.server.tlsInfo ? 'https' : 'http'}://${host}:${port} — reading POV tenants every ${app.monitor.intervalMs / 60_000} min`);
     app.monitor.start();
   });
   // A clean stop within seconds: open live-update streams are closed rather than waited for (Podman and Docker give

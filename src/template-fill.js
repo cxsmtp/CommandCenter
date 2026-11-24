@@ -69,7 +69,7 @@ export function fillCover(xml, { customer, results, people = [], date = '' }) {
   const lines = [...people.map((p) => `${p.name}${p.title ? ` | ${p.title}` : ''}`), date].filter(Boolean);
   if (lines.length) {
     const paras = lines.map((l, i) => `<a:p><a:r><a:rPr lang="en-US" sz="${i < people.length ? 1500 : 1300}"><a:solidFill><a:srgbClr val="${i < people.length ? '8F7BFF' : 'FFFFFF'}"/></a:solidFill><a:latin typeface="Arial"/></a:rPr><a:t>${esc(l)}</a:t></a:r></a:p>`).join('');
-    out = out.replace('</p:spTree>', `<p:sp><p:nvSpPr><p:cNvPr id="9900" name="Meridian: prepared by"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="640080" y="5900000"/><a:ext cx="7000000" cy="1300000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paras}</p:txBody></p:sp></p:spTree>`);
+    out = out.replace('</p:spTree>', `<p:sp><p:nvSpPr><p:cNvPr id="9900" name="Kendra: prepared by"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="640080" y="5900000"/><a:ext cx="7000000" cy="1300000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paras}</p:txBody></p:sp></p:spTree>`);
   }
   return out;
 }

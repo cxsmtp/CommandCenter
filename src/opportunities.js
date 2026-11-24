@@ -211,7 +211,7 @@ export class Opportunities {
       const c = (opp.criteria ?? []).find((x) => x.id === criterionId);
       if (!c || c.statusSource === 'manual' || !['not_started', 'in_progress'].includes(c.status)) continue;
       Object.assign(c, { status: 'met', statusSource: 'tenant', proofType: 'tenant', confirmedBy: '', confirmedAt: now, autoEvidence: evidence.slice(0, 5) });
-      (opp.history ??= []).push({ at: now, by: '', byName: 'Meridian', what: text(`Completed in the tenant: ${c.title} — ${evidence[0] ?? ''}`, 400) });
+      (opp.history ??= []).push({ at: now, by: '', byName: 'Kendra', what: text(`Completed in the tenant: ${c.title} — ${evidence[0] ?? ''}`, 400) });
       this.onHistory?.({ opp, actor: null, what: text(`Completed in the tenant: ${c.title} — ${evidence[0] ?? ''}`, 400) });
       done.push(c.title);
     }
@@ -387,7 +387,7 @@ const CLEANERS = {
       proofType: status === 'met' && (c.proofType ?? existing?.proofType) === 'demo' ? 'demo' : 'tenant',
       demo: cleanDemo(c.demo ?? existing?.demo ?? null, existing?.demo ?? null),
       // Who set the status: 'tenant' (completed by itself from the tenant's evidence) or 'manual' (a person). Once a
-      // person sets it, Meridian never changes it again.
+      // person sets it, Kendra never changes it again.
       // (Only autoComplete() sets 'tenant'; whatever a request sends for these fields is ignored.)
       statusSource: existing && status !== existing.status ? 'manual' : existing?.statusSource ?? '',
       autoEvidence: existing?.statusSource === 'tenant' && status === existing.status ? existing.autoEvidence ?? [] : [],

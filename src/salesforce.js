@@ -6,13 +6,13 @@
  *   - the report's subscription email, read from a mailbox (src/sf-mailbox.js): the attached file, or the table in
  *     the email itself when the org does not allow attachments.
  * Each row is matched to a POV by the Opportunity ID in the POV's Salesforce link (15 or 18 characters), else by the
- * opportunity name and account. Only the fields below are kept; Meridian never writes them back.
+ * opportunity name and account. Only the fields below are kept; Kendra never writes them back.
  *
- * Out — Email to Salesforce: each person's private address (Salesforce → Settings → My Email to Salesforce). Meridian
+ * Out — Email to Salesforce: each person's private address (Salesforce → Settings → My Email to Salesforce). Kendra
  * copies it on the POV emails it sends, and sends it short, structured log messages (a task, a note, a stage change,
  * the POV result). Salesforce saves each as an activity on the contacts, leads and opportunities it can match; one it
  * cannot match waits in My Unresolved Items. Salesforce only accepts mail from an address on the person's
- * "My Acceptable Email Addresses" list: Meridian's sending address has to be added there once.
+ * "My Acceptable Email Addresses" list: Kendra's sending address has to be added there once.
  */
 import JSZip from 'jszip';
 
@@ -239,9 +239,9 @@ export function logMessage(opp, { kind, title, lines = [], due = '', by = '', li
     `Customer: ${opp.customer}${opp.name && opp.name !== opp.customer ? ` · ${opp.name}` : ''}`,
     opp.salesforceUrl ? `Salesforce: ${opp.salesforceUrl}` : '',
     by ? `By: ${by}` : '',
-    link ? `In Meridian: ${link}` : '',
+    link ? `In Kendra: ${link}` : '',
     '',
-    '— Logged from Meridian',
+    '— Logged from Kendra',
   ].filter((l, i, a) => l !== '' || (a[i - 1] !== '' && i > 0));
   return { subject, body: body.join('\n') };
 }

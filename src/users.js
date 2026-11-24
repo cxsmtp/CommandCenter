@@ -23,7 +23,7 @@ export const PERMISSIONS = {
   'tenant.logs': 'Download scan logs and troubleshooting bundles',
   'ai.run': 'Run AI Triage and AI Remediation on a POV tenant (within its credit pool)',
   'credits.allocate': 'Set the credit pool of POVs in their team',
-  'mail.send': 'Send email from Meridian',
+  'mail.send': 'Send email from Kendra',
   'users.manage': 'Add and edit people below them',
   'catalog.manage': 'Edit the capability catalogue and its Checkmarx One mapping',
   'templates.manage': 'Make success criteria templates for their team (or everyone)',

@@ -12,7 +12,7 @@ import { draft } from '../src/mail.js';
 
 let mock, app, base, dataDir;
 const jar = new Map();
-const H = { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/json' };
+const H = { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/json' };
 async function call(who, p, { method = 'GET', body, raw = false } = {}) {
   const r = await fetch(`${base}${p}`, { method, headers: { ...H, Cookie: jar.get(who) ?? '' }, body: body ? JSON.stringify(body) : undefined });
   const set = r.headers.get('set-cookie');
@@ -319,9 +319,9 @@ test('a criterion demonstrated by the SE, with a short video that plays in the r
   assert.equal(after.proofType, 'demo');
   assert.equal(r.body.row.progress.demonstrated >= 1, true);
   const video = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'scripts', 'demo-assets', 'ai-inventory-demo.mp4'));
-  const up = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=demo.mp4`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'Meridian', 'Content-Type': 'video/mp4' }, body: video });
+  const up = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=demo.mp4`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'Kendra', 'Content-Type': 'video/mp4' }, body: video });
   assert.equal(up.status, 200);
-  const bad = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=x.exe`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'Meridian', 'Content-Type': 'application/octet-stream' }, body: 'MZ' });
+  const bad = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video?name=x.exe`, { method: 'PUT', headers: { Cookie: jar.get('se1'), 'X-Requested-With': 'Kendra', 'Content-Type': 'application/octet-stream' }, body: 'MZ' });
   assert.equal(bad.status, 415, 'only videos');
   const part = await fetch(`${base}/api/opportunities/${ids.alpha}/criteria/${c.id}/demo-video`, { headers: { Cookie: jar.get('tl'), Range: 'bytes=0-99' } });
   assert.equal(part.status, 206);
@@ -398,7 +398,7 @@ test('Salesforce: a dropped report fills each POV, gaps compare it with the POV,
   assert.equal((await call('se1', `/api/opportunities/${ids.alpha}`, { method: 'PATCH', body: { salesforceUrl: link } })).status, 200);
   const csv = 'Opportunity ID,Opportunity Name,Account Name,Stage,Amount,Close Date\n006Ab00000Xyz12,Alpha deal,Alpha Bank,Negotiation,"$420,000",2029-06-30\n006Zz00000Nope1,Other,Nobody,Prospecting,10,2029-01-01\n';
   const up = async (who, body) => {
-    const r = await fetch(`${base}/api/salesforce/import`, { method: 'POST', headers: { Cookie: jar.get(who), 'X-Requested-With': 'Meridian', 'X-File-Name': 'report.csv', 'Content-Type': 'text/csv' }, body });
+    const r = await fetch(`${base}/api/salesforce/import`, { method: 'POST', headers: { Cookie: jar.get(who), 'X-Requested-With': 'Kendra', 'X-File-Name': 'report.csv', 'Content-Type': 'text/csv' }, body });
     return { status: r.status, body: await r.json() };
   };
   const r = await up('se1', csv);
@@ -683,7 +683,7 @@ test('the SEAL library: business goals become the bank, the first call fills the
     assert.match(all, /<a:t>1\.1/);
   }
 
-  // Admins edit the bank in Meridian: SEs may not; edits stand until the SEAL files are imported again.
+  // Admins edit the bank in Kendra: SEs may not; edits stand until the SEAL files are imported again.
   assert.equal((await call('se1', '/api/bank/goals', { method: 'POST', body: { title: 'Nope' } })).status, 403);
   const eid = bank.entries[0].id;
   const ed = await call('admin', `/api/bank/entries/${eid}`, { method: 'PUT', body: { goal: 'BG-01', title: 'Find flaws before release, in hours', test: 'Scan the two pilot apps on every pull request.', benefit: 'Flaws are fixed the day they are written.', capabilityId: 'sast' } });
@@ -775,7 +775,7 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
   assert.equal(opp.plan.outOfScope, 'Production');
 
   // The APMA report: optional, read when it is added, kept encrypted.
-  const up = await fetch(`${base}/api/opportunities/${opp.id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', Cookie: jar.get('se1') }, body: pdf });
+  const up = await fetch(`${base}/api/opportunities/${opp.id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/pdf', Cookie: jar.get('se1') }, body: pdf });
   assert.equal(up.status, 200);
   const upBody = await up.json();
   assert.equal(upBody.found, 5);
@@ -803,19 +803,19 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
 
   // The team's template: only those who manage settings upload it; its look is kept, its slides are not.
   const tpl = plain;
-  const deny = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', Cookie: jar.get('se1') }, body: tpl });
+  const deny = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', Cookie: jar.get('se1') }, body: tpl });
   assert.equal(deny.status, 403);
-  const ok = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', Cookie: jar.get('admin'), 'X-File-Name': 'team.pptx' }, body: tpl });
+  const ok = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', Cookie: jar.get('admin'), 'X-File-Name': 'team.pptx' }, body: tpl });
   assert.equal(ok.status, 200);
   assert.equal((await ok.json()).template.closing, true);
-  const bad = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', Cookie: jar.get('admin') }, body: Buffer.from('nope') });
+  const bad = await fetch(`${base}/api/wip-template`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', Cookie: jar.get('admin') }, body: Buffer.from('nope') });
   assert.equal(bad.status, 400);
   const filled = await get();
   const z = await JSZip.loadAsync(filled);
   const pres = await z.file('ppt/presentation.xml').async('string');
   const count = [...pres.matchAll(/<p:sldId /g)].length;
   // One slide for each, the closing one from the template; a template environment slide also brings the full one to the appendix.
-  assert.ok(count >= (await slideTexts(plain)).length, 'every slide, and the template’s own versions with Meridian’s in the appendix');
+  assert.ok(count >= (await slideTexts(plain)).length, 'every slide, and the template’s own versions with Kendra’s in the appendix');
   const rels = await z.file('ppt/_rels/presentation.xml.rels').async('string');
   for (const m of rels.matchAll(/Target="(slides\/[^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${m[1]} is in the file`);
   for (const n of Object.keys(z.files).filter((x) => /^ppt\/slides\/_rels\/.+\.rels$/.test(x))) for (const m of (await z.file(n).async('string')).matchAll(/Target="\.\.\/([^"]+)"/g)) assert.ok(z.file(`ppt/${m[1]}`), `${n} points at ${m[1]}, which exists`);
@@ -1068,7 +1068,7 @@ test('What the POV changed: the Analytics dashboard read for the POV’s project
   // The Analytics criterion shows the numbers as its evidence.
   const facts = tenantFacts({ scans: [], projects: { list: [] }, analytics: now });
   assert.deepEqual(evaluate(DEFAULT_CATALOG.find((c) => c.id === 'analytics'), facts).evidence, ['Analytics shows critical fix time 6 days, 40% of findings triaged, 368 scans (last 90 days)']);
-  // The decks: Meridian's (and Version Kendra's) six tiles and the charts, and Classic's tiles.
+  // The decks: Kendra's (and Version Kendra's) six tiles and the charts, and Classic's tiles.
   const { wipDeck } = await import('../src/wip.js');
   const { finalDeck } = await import('../src/deck.js');
   const opp = { customer: 'Acme', startDate: '2026-09-01', endDate: '2026-11-30', criteria: [], sessions: [], stakeholders: [] };

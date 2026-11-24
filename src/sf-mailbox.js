@@ -1,8 +1,8 @@
 /**
  * The mailbox Salesforce report subscriptions are sent to (a shared or service mailbox, IMAP). Every half hour (or
- * when asked) Meridian reads the new messages from the allowed senders, takes the report from the attached .xlsx /
+ * when asked) Kendra reads the new messages from the allowed senders, takes the report from the attached .xlsx /
  * .csv or, when there is none, from the table in the email, and brings it in like a dropped file. Read messages are
- * marked read and moved to a "Meridian imported" folder; nothing is ever sent from this mailbox.
+ * marked read and moved to a "Kendra imported" folder; nothing is ever sent from this mailbox.
  *
  * Only messages from the allowed sender domains are read (Salesforce sends subscriptions from its own domain unless
  * your org set another), so an outsider mailing the box cannot change a POV.
@@ -69,7 +69,7 @@ export class SfMailbox {
       const lock = await c.getMailboxLock(s.folder || 'INBOX');
       try {
         const uids = ((await c.search({ seen: false }, { uid: true })) || []).slice(-MAX_MESSAGES);
-        const target = 'Meridian imported';
+        const target = 'Kendra imported';
         let canMove = true;
         try {
           await c.mailboxCreate(target);

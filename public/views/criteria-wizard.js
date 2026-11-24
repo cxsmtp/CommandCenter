@@ -332,7 +332,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       if (w.apiKey.trim()) body.apiKey = w.apiKey.trim();
       id = (await api('/opportunities', { method: 'POST', body })).opportunity.id;
       // Keep the APMA report itself with the POV too.
-      if (w.apmaFile) await fetch(`/api/opportunities/${id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(w.apmaFile.name) }, body: w.apmaFile }).catch(() => {});
+      if (w.apmaFile) await fetch(`/api/opportunities/${id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(w.apmaFile.name) }, body: w.apmaFile }).catch(() => {});
     } else {
       await api(`/opportunities/${id}/criteria/bulk`, { method: 'POST', body: { items, custom, templateIds, goalIds: [...w.goals].filter((k) => !(opp?.goals ?? []).some((g) => g.key === k)) } });
     }
@@ -406,7 +406,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const file = e.target.files[0];
       if (!file) return;
       keep(d);
-      const res = await fetch('/api/apma/read', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', 'X-Customer': encodeURIComponent(w.details.customer ?? '') }, body: file });
+      const res = await fetch('/api/apma/read', { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/pdf', 'X-Customer': encodeURIComponent(w.details.customer ?? '') }, body: file });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
       if (j.otherCustomer) toast('This APMA report looks like it was written for another company. Check it is the right file.', { bad: true });

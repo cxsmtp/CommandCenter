@@ -21,7 +21,7 @@ export async function renderCatalog(main, { crumbs }) {
   const tp = await getTemplates(true);
   const [lib, bankInfo, decks] = await Promise.all([api('/library'), api('/bank'), deckPanel()]);
   const all = can('templates.manage') && state.session.user.role === 'admin' ? await api('/templates?all=1') : tp;
-  main.innerHTML = `${libraryPanel(lib, bankInfo)}${decks}${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Meridian recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
+  main.innerHTML = `${libraryPanel(lib, bankInfo)}${decks}${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Kendra recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
   <div class="findbar"><input type="search" id="capQ" placeholder="Find a capability" aria-label="Find a capability"></div>
   ${categories
     .map(([key, label]) => {
@@ -60,7 +60,7 @@ function edit(c, categories) {
       <label class="field">Name in Checkmarx One<input name="cxName" value="${esc(c?.cxName ?? '')}"></label>
       <label class="field">Or a new group<input name="newGroup" placeholder="e.g. Runtime Security"></label>
       <label class="field">What the SE shows the customer to mark it met<textarea name="proof" rows="2">${esc(c?.proof ?? '')}</textarea></label>
-      <label class="field">How Meridian checks it (technical detail)<textarea name="tech" rows="2">${esc(c?.tech ?? '')}</textarea></label>
+      <label class="field">How Kendra checks it (technical detail)<textarea name="tech" rows="2">${esc(c?.tech ?? '')}</textarea></label>
       <label class="check"><input type="checkbox" name="isNew" ${c?.isNew ? 'checked' : ''}> Mark as new</label>
       <h3>Recognised by (comma separated)</h3>
       ${RULES.map(([k, l, ph]) => `<label class="field">${esc(l)}<input name="${k}" value="${esc((c?.detect?.[k] ?? []).join(', '))}" placeholder="${esc(ph)}"></label>`).join('')}
@@ -242,7 +242,7 @@ function wireLibrary(main) {
     }
   });
   main.querySelector('[data-act="lib-remove"]')?.addEventListener('click', async () => {
-    if (!(await ask('Remove the SEAL library from Meridian? Criteria already on POVs keep their wording.', { ok: 'Remove', danger: true }))) return;
+    if (!(await ask('Remove the SEAL library from Kendra? Criteria already on POVs keep their wording.', { ok: 'Remove', danger: true }))) return;
     if (await attempt(() => api('/library', { method: 'DELETE' }), 'Removed')) again();
   });
   const bankIn = main.querySelector('#bankFile');
@@ -250,7 +250,7 @@ function wireLibrary(main) {
   bankIn?.addEventListener('change', async () => {
     const file = bankIn.files[0];
     if (!file) return;
-    const res = await fetch('/api/bank/import', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+    const res = await fetch('/api/bank/import', { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
     toast(`Imported ${j.taken} criteria in ${j.goals} business goals`);

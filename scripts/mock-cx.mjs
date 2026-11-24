@@ -1,6 +1,6 @@
 /**
  * A tiny stand-in for Checkmarx One, for the tests and `npm run demo`: one HTTP server answering for any number of
- * tenants (realms), each with its own projects and scans. Plain http on 127.0.0.1, which Meridian accepts only
+ * tenants (realms), each with its own projects and scans. Plain http on 127.0.0.1, which Kendra accepts only
  * outside production.
  */
 import http from 'node:http';

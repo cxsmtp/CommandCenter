@@ -13,7 +13,7 @@ export async function deckPanel() {
     const shared = [t.orgDefault ? '<span class="badge accent">Everyone’s customer decks</span>' : '', t.myTeamDefault ? '<span class="badge ok">My team’s customer decks</span>' : ''].join('');
     return `<div class="tpl-card"><div class="row center" style="gap:8px;flex-wrap:wrap"><b>${esc(t.name)}</b>${t.builtIn ? '<span class="badge">Built in</span>' : t.scope === 'everyone' ? '<span class="badge accent">Everyone</span>' : '<span class="badge">Team</span>'}${shared}</div>
       <div class="small muted">${esc(t.description || '')}</div>
-      <div class="small">${t.classic ? 'The original results presentation' : t.design ? `Design: ${esc(t.design.name)}` : 'Meridian’s own design'} · results ${(t.layout?.results?.main ?? []).length} slides + ${(t.layout?.results?.appendix ?? []).length} in the appendix${t.ownerName ? ` · by ${esc(t.ownerName)}` : ''}</div>
+      <div class="small">${t.classic ? 'The original results presentation' : t.design ? `Design: ${esc(t.design.name)}` : 'Kendra’s own design'} · results ${(t.layout?.results?.main ?? []).length} slides + ${(t.layout?.results?.appendix ?? []).length} in the appendix${t.ownerName ? ` · by ${esc(t.ownerName)}` : ''}</div>
       ${d.canManage ? `<div class="row" style="margin-top:auto;flex-wrap:wrap">${t.canEdit ? `<button class="btn sm" data-deck-edit="${esc(t.id)}">Edit slides</button>` : ''}<button class="btn sm ghost" data-deck-copy="${esc(t.id)}">Copy</button>${t.myTeamDefault ? '' : `<button class="btn sm ghost" data-deck-team="${esc(t.id)}">Use for my team’s customer decks</button>`}${d.canSetOrg && !t.orgDefault ? `<button class="btn sm ghost" data-deck-org="${esc(t.id)}">Use for everyone</button>` : ''}${t.canEdit ? `<button class="btn sm ghost danger" data-deck-del="${esc(t.id)}">Remove</button>` : ''}</div>` : ''}
     </div>`;
   };
@@ -65,7 +65,7 @@ function editDeck(d, tpl, { copy = false } = {}) {
       <div class="row"><label class="field">Name<input name="name" required maxlength="80" value="${esc(copy ? `${tpl.name} (copy)` : tpl?.name ?? '')}"></label>
       <label class="field">For<select name="scope"><option value="team">My team</option>${shareWide ? `<option value="everyone" ${tpl?.scope === 'everyone' && !copy ? 'selected' : ''}>Everyone</option>` : ''}</select></label></div>
       <label class="field">Description<input name="description" maxlength="300" value="${esc(tpl?.description ?? '')}"></label>
-      <div class="field">Design ${editing ? (tpl.design ? `<span class="small">· ${esc(tpl.design.name)} <button type="button" class="linkish" data-act="design-del">use Meridian’s instead</button></span>` : '<span class="small muted">· Meridian’s own</span>') : '<span class="small muted">· upload it after saving</span>'}
+      <div class="field">Design ${editing ? (tpl.design ? `<span class="small">· ${esc(tpl.design.name)} <button type="button" class="linkish" data-act="design-del">use Kendra’s instead</button></span>` : '<span class="small muted">· Kendra’s own</span>') : '<span class="small muted">· upload it after saving</span>'}
         ${editing ? '<input type="file" id="deckDesign" accept=".pptx">' : ''}<span class="small muted">The team’s PowerPoint: its cover, toolchain, plan, environment and test plan slides are filled with each POV’s data; its look carries every other slide.</span></div>
       <div class="field">Slides <div class="seg" role="group" style="width:auto;align-self:flex-start"><button type="button" data-mode="results" aria-pressed="true">Final report</button><button type="button" data-mode="wip" aria-pressed="false">WIP deck</button></div></div>
       <div class="slide-list" id="slideList">${rowsHtml()}</div>
@@ -105,7 +105,7 @@ function editDeck(d, tpl, { copy = false } = {}) {
           redraw();
         });
         dl.querySelector('[data-act="design-del"]')?.addEventListener('click', async () => {
-          if (await attempt(() => api(`/deck-templates/${encodeURIComponent(tpl.id)}/design`, { method: 'DELETE' }), 'Back to Meridian’s design')) {
+          if (await attempt(() => api(`/deck-templates/${encodeURIComponent(tpl.id)}/design`, { method: 'DELETE' }), 'Back to Kendra’s design')) {
             closeDialog();
             document.dispatchEvent(new CustomEvent('cc:rerender'));
           }
@@ -119,7 +119,7 @@ function editDeck(d, tpl, { copy = false } = {}) {
             const r = await api(editing ? `/deck-templates/${encodeURIComponent(tpl.id)}` : '/deck-templates', { method: editing ? 'PUT' : 'POST', body });
             const file = dl.querySelector('#deckDesign')?.files?.[0];
             if (file) {
-              const res = await fetch(`/api/deck-templates/${encodeURIComponent(r.template.id)}/design`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': 'application/octet-stream' }, body: file });
+              const res = await fetch(`/api/deck-templates/${encodeURIComponent(r.template.id)}/design`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': 'application/octet-stream' }, body: file });
               if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'The design could not be used.');
             }
             closeDialog();

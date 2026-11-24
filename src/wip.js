@@ -961,7 +961,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
 
   // ——— The order: the WIP deck is the working document; the results deck is a short story, the detail behind it ———
   const heldNotes = (opp.sessions ?? []).some((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext));
-  // The order comes from the presentation template: its main deck, then its appendix. A Meridian variant that would
+  // The order comes from the presentation template: its main deck, then its appendix. A Kendra variant that would
   // repeat its template version exactly (no team design for it) is left out.
   const plan = layout?.[results ? 'results' : 'wip'] ?? DEFAULT_LAYOUT[results ? 'results' : 'wip'];
   const usedKeys = new Set([...plan.main, ...plan.appendix]);
@@ -1030,7 +1030,7 @@ async function readTemplate(zip) {
     const lx = await zip.file(f).async('string');
     const name = f.split('/').pop();
     layoutName[name] = /<p:cSld name="([^"]*)"/.exec(lx)?.[1] ?? '';
-    // Text, pictures, and above all lines (a divider would cut through Meridian's tables) make a layout busy.
+    // Text, pictures, and above all lines (a divider would cut through Kendra's tables) make a layout busy.
     busy[name] = (lx.match(/<a:t>/g) ?? []).length + (lx.match(/<p:pic>/g) ?? []).length + 50 * (lx.match(/<p:cxnSp>|prst="line"/g) ?? []).length;
   }
   const closingSlide = [...slides].reverse().find((sl) => /Secure\s+what\s+comes\s+next/i.test(sl.text));
@@ -1055,7 +1055,7 @@ async function readTemplate(zip) {
     // The template's own toolchain and platform slides (logos and icons), reused with this POV's items boxed
     devsecops: find(/Tailored\s+to\s+Your\s+DevSecOps/i) ?? null,
     components: find(/Components\s+of\s+the\s+platform/i) ?? null,
-    // Slides Meridian fills with the POV's data, used only in the shape the filler knows.
+    // Slides Kendra fills with the POV's data, used only in the shape the filler knows.
     cover: slides[0] && /customer\s*name/i.test(slides[0].text) ? slides[0] : null,
     plan: (() => {
       const sl = find(/POV\s+Plan/i);
@@ -1125,7 +1125,7 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
       const boxes = k.marks ? markShapes([...textShapes(layoutXml), ...textShapes(reuse.xml)], k.marks) : '';
       const FILL = { cover: fillCover, plan: fillPlan, env: fillEnvironment, test: fillTestPlan };
       const source = k.fill ? FILL[k.reuse](reuse.xml, k.fill) : reuse.xml;
-      // The template's example highlights (outlined boxes with no text) go: Meridian draws this POV's own.
+      // The template's example highlights (outlined boxes with no text) go: Kendra draws this POV's own.
       const clean = source.replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<\/p:sp>/g, (sp) => (!/<a:t>/.test(sp) && /prst="roundRect"/.test(sp) && /<a:ln\b/.test(sp) && !/<a:solidFill>(?:(?!<\/a:solidFill>)[\s\S])*<\/a:solidFill>\s*<a:ln/.test(sp) ? '' : sp));
       xml = clean.replace('</p:spTree>', `${boxes}</p:spTree>`);
       rels = reuse.rels.replace(/<Relationship\b[^>]*(notesSlide|comments|commentAuthors|tags)[^>]*\/>/g, '');
@@ -1199,7 +1199,7 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
   const title = (await gen.file('docProps/core.xml')?.async('string'))?.match(/<dc:title>([^<]*)<\/dc:title>/)?.[1] ?? '';
   zip.file(
     'docProps/core.xml',
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${title}</dc:title><dc:creator>Meridian</dc:creator><cp:lastModifiedBy>Meridian</cp:lastModifiedBy><cp:revision>1</cp:revision><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${title}</dc:title><dc:creator>Kendra</dc:creator><cp:lastModifiedBy>Kendra</cp:lastModifiedBy><cp:revision>1</cp:revision><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`,
   );
   const app = await zip.file('docProps/app.xml')?.async('string');
   if (app) zip.file('docProps/app.xml', app.replace(/<Slides>\d+<\/Slides>/, `<Slides>${newSlides.length}</Slides>`).replace(/<Company>[^<]*<\/Company>/, '<Company></Company>').replace(/<Manager>[^<]*<\/Manager>/, '').replace(/<Notes>\d+<\/Notes>/, '<Notes>0</Notes>'));
@@ -1223,7 +1223,7 @@ export async function checkTemplate(buf) {
 
 // ——— Marking what is in the POV on the template's own slides ———
 // The team template draws the toolchain and the platform components itself (logos, icons). Rather than redraw them,
-// Meridian keeps that slide and boxes what this POV uses, in orange, the way SEs mark it by hand.
+// Kendra keeps that slide and boxes what this POV uses, in orange, the way SEs mark it by hand.
 
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const ALIAS = { openai: ['chatgpt'], azurepipelines: ['azuredevops'], azurerepos: ['azuredevops'], jira: ['jira'], dockerhub: ['dockerhu'], anthropicclaude: ['claude', 'anthropic'], awskiro: ['kiro'], gitlabcicd: ['gitlabci'], developerassistagent: ['developerassistagent'] };
@@ -1312,7 +1312,7 @@ export function markShapes(shapes, names, { id = 9000 } = {}) {
       const top = Math.round(Math.min(ty, icon ? icon.y : ty) - pad * 0.6);
       const bottom = Math.round(Math.max(ty + lineH, icon ? icon.y + icon.h : 0) + pad * 0.6);
       const right = Math.round(tx + textW + pad);
-      return `<p:sp><p:nvSpPr><p:cNvPr id="${id + i}" name="Meridian: in this POV"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${left}" y="${top}"/><a:ext cx="${right - left}" cy="${bottom - top}"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 22000"/></a:avLst></a:prstGeom><a:solidFill><a:srgbClr val="F25928"><a:alpha val="12000"/></a:srgbClr></a:solidFill><a:ln w="15875"><a:solidFill><a:srgbClr val="F25928"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`;
+      return `<p:sp><p:nvSpPr><p:cNvPr id="${id + i}" name="Kendra: in this POV"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${left}" y="${top}"/><a:ext cx="${right - left}" cy="${bottom - top}"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 22000"/></a:avLst></a:prstGeom><a:solidFill><a:srgbClr val="F25928"><a:alpha val="12000"/></a:srgbClr></a:solidFill><a:ln w="15875"><a:solidFill><a:srgbClr val="F25928"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`;
     })
     .join('');
 }

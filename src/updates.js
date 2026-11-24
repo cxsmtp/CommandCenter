@@ -1,5 +1,5 @@
 /**
- * Updates: Meridian replaces its own code with a published release, without anyone signing in to the server.
+ * Updates: Kendra replaces its own code with a published release, without anyone signing in to the server.
  *
  *   check     the repository's releases (GitHub, CC_UPDATE_REPO), newest first, every 15 minutes (an Admin can
  *             change it, 5 to 1440) and on request. A private repository needs CC_UPDATE_TOKEN (or
@@ -167,7 +167,7 @@ export class Updater {
     let at = this.#checkUrl(url);
     let r;
     for (let hop = 0; hop < 5; hop += 1) {
-      const headers = { 'User-Agent': 'Meridian-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') };
+      const headers = { 'User-Agent': 'Kendra-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') };
       if (this.#token && at.host === apiHost) headers.Authorization = `Bearer ${this.#token}`;
       // A dropped connection (a reused one the far side had just closed) is tried once more before it counts.
       const once = () => this.#fetch(at, { headers, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
@@ -212,7 +212,7 @@ export class Updater {
 
   /** Install a version (the newest when none is named) and restart into it. */
   install(version, { by = '' } = {}) {
-    if (!this.launched) throw fail(409, 'Updates need the launcher: start Meridian with "npm start" or the container image.');
+    if (!this.launched) throw fail(409, 'Updates need the launcher: start Kendra with "npm start" or the container image.');
     if (this.#busy) throw fail(409, 'An update is already running.');
     this.#busy = this.#install(version, by).finally(() => {
       this.#busy = null;
@@ -285,7 +285,7 @@ export class Updater {
 
   /** Go back to the version before (or to the one built into the image). */
   rollback({ by = '' } = {}) {
-    if (!this.launched) throw fail(409, 'Rollback needs the launcher: start Meridian with "npm start" or the container image.');
+    if (!this.launched) throw fail(409, 'Rollback needs the launcher: start Kendra with "npm start" or the container image.');
     const s = this.state;
     if (!s.active) throw fail(409, 'This is the version built into the image: there is nothing to go back to.');
     const target = s.previous && fs.existsSync(path.join(this.#dataDir, 'app', 'versions', s.previous, 'src', 'server.js')) ? s.previous : null;

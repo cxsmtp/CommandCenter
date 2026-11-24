@@ -98,7 +98,7 @@ function shell() {
   const attention = state.overview?.totals?.needsAttention ?? 0;
   root.innerHTML = `<div class="shell">
     <nav class="nav" id="nav" aria-label="Main">
-      <div class="brand">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Meridian')}</span><span class="brand-tag">One line of sight</span></span></div>
+      <div class="brand">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Kendra')}</span><span class="brand-tag">One line of sight</span></span></div>
       ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.filter(([, , , need]) => !need || can(need)).map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
@@ -268,7 +268,7 @@ setInterval(() => document.visibilityState === 'visible' && !$('#dialog').open &
 // ——— Sign-in ———
 function showLogin(message = '') {
   root.innerHTML = `<div class="login"><form class="panel" id="loginForm">
-    <div class="brand" style="padding:0">${MARK}<h1 style="font-size:20px">${esc(state.session?.settings?.orgName || 'Meridian')}</h1></div>
+    <div class="brand" style="padding:0">${MARK}<h1 style="font-size:20px">${esc(state.session?.settings?.orgName || 'Kendra')}</h1></div>
     <p class="muted" style="margin:0">Every POV, the technical value it proves and the revenue it moves — in one line of sight.</p>
     <label class="field">Email<input name="email" type="email" autocomplete="username" required autofocus></label>
     <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
@@ -345,7 +345,7 @@ setInterval(() => {
   // Use renews a session: ask (without renewing it) whether it really ends soon before saying so.
   if (!warnBar && Date.now() - lastPeek > 25_000) {
     lastPeek = Date.now();
-    fetch('/api/session', { headers: { 'X-Requested-With': 'Meridian', 'X-Peek': '1' } })
+    fetch('/api/session', { headers: { 'X-Requested-With': 'Kendra', 'X-Peek': '1' } })
       .then((r) => r.json())
       .then((s) => {
         if (s?.expiresAt) state.session.expiresAt = s.expiresAt;
