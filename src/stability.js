@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { stateError } from './db.js';
 
 // ——— One server per data folder ———
@@ -153,5 +154,80 @@ export class AdminAlerts {
     if (!mails.length || !to.length || !mailer.configured) return { sent: 0, mails };
     await mailer.send({ to: to.join(', '), subject: `${this.#o.org}: ${mails.length === 1 ? mails[0].split(' — ')[0] : `${mails.length} things about the server`}`, body: `${mails.join('\n\n')}\n\nSettings → System shows every check.\n— Meridian` });
     return { sent: 1, mails };
+  }
+}
+
+// ——— The code that runs is the code that was installed ———
+
+const MANIFEST = '.meridian-files.json';
+
+/** Every file of an installed version, with its SHA-256 (the data folder never lives there). */
+export function fingerprintDir(dir) {
+  const files = {};
+  const walk = (d, rel = '') => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (!rel && (e.name === MANIFEST || e.name === 'data')) continue;
+      const p = path.join(d, e.name);
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(p, r);
+      else if (e.isFile()) files[r] = createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+    }
+  };
+  walk(dir);
+  return files;
+}
+
+/** Written when a version is installed. */
+export function writeManifest(dir) {
+  fs.writeFileSync(path.join(dir, MANIFEST), JSON.stringify({ at: new Date().toISOString(), files: fingerprintDir(dir) }), { mode: 0o600 });
+}
+
+/** Checked before a version is started: { ok, checked, changed: [files] }. A version without a manifest is trusted. */
+export function verifyManifest(dir) {
+  let m;
+  try {
+    m = JSON.parse(fs.readFileSync(path.join(dir, MANIFEST), 'utf8'));
+  } catch {
+    return { ok: true, checked: false, changed: [] };
+  }
+  const now = fingerprintDir(dir);
+  const changed = [...new Set([...Object.keys(m.files), ...Object.keys(now)])].filter((f) => m.files[f] !== now[f]);
+  return { ok: !changed.length, checked: true, changed: changed.slice(0, 20) };
+}
+
+// ——— A server log that never fills the disk ———
+export class ErrorLog {
+  #file;
+  #max;
+  constructor(dataDir, { maxBytes = 10 * 1048576, keep = 3 } = {}) {
+    this.#file = path.join(dataDir, 'logs', 'server.log');
+    this.#max = maxBytes;
+    this.keep = keep;
+  }
+
+  get file() {
+    return this.#file;
+  }
+
+  write(kind, message) {
+    try {
+      fs.mkdirSync(path.dirname(this.#file), { recursive: true, mode: 0o700 });
+      try {
+        if (fs.statSync(this.#file).size > this.#max) {
+          for (let i = this.keep - 1; i >= 1; i -= 1) if (fs.existsSync(`${this.#file}.${i}`)) fs.renameSync(`${this.#file}.${i}`, `${this.#file}.${i + 1}`);
+          fs.renameSync(this.#file, `${this.#file}.1`);
+          fs.rmSync(`${this.#file}.${this.keep + 1}`, { force: true });
+        }
+      } catch {}
+      fs.appendFileSync(this.#file, `${new Date().toISOString()} ${kind} ${String(message).replace(/\s+/g, ' ').slice(0, 2000)}\n`, { mode: 0o600 });
+    } catch {}
+  }
+
+  tail(lines = 100) {
+    try {
+      return fs.readFileSync(this.#file, 'utf8').trim().split('\n').slice(-lines);
+    } catch {
+      return [];
+    }
   }
 }

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { readState, writeState, RESTART_CODE } from './updates.js';
 import { probe } from './probe.js';
 import { Db, STATE_EXIT } from './db.js';
+import { verifyManifest } from './stability.js';
 
 const BUILTIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = process.env.CC_DATA_DIR || path.join(BUILTIN, 'data');
@@ -38,7 +39,20 @@ const log = (...a) => console.log(`[launcher ${new Date().toISOString()}]`, ...a
 /** Which code to run: the active version's folder, or the one built into the image. */
 export function chooseDir(state, dataDir = DATA, builtin = BUILTIN) {
   const dir = state.active ? path.join(dataDir, 'app', 'versions', state.active) : builtin;
-  return fs.existsSync(path.join(dir, 'src', 'server.js')) ? dir : builtin;
+  if (!fs.existsSync(path.join(dir, 'src', 'server.js'))) return builtin;
+  // An installed version runs only as it was installed: a changed file means the image's own version runs instead.
+  if (dir !== builtin) {
+    const v = verifyManifest(dir);
+    if (!v.ok) {
+      log(`Version ${state.active} was changed after it was installed (${v.changed.slice(0, 5).join(', ')}); running the built-in version instead.`);
+      try {
+        const s = readState(dataDir);
+        writeState(dataDir, { ...s, lastFailure: { at: new Date().toISOString(), version: state.active, message: `Its files were changed after installing (${v.changed.slice(0, 5).join(', ')}): not run.` }, history: [...(s.history ?? []), { at: new Date().toISOString(), event: 'integrity', version: state.active, message: v.changed.slice(0, 5).join(', ') }].slice(-50) });
+      } catch {}
+      return builtin;
+    }
+  }
+  return dir;
 }
 
 /** The environment for the server: the saved proxy and trusted certificates. */

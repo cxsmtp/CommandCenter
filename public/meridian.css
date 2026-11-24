@@ -324,3 +324,4 @@ dialog.reauth { max-width: 420px; }
 .slide-row.off { opacity: .55; }
 .seg.sm button { padding: 3px 8px; font-size: 12px; }
 .slide-row > .grow { flex: 1; min-width: 0; }
+#sessionWarn { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--warn); border-radius: 12px; padding: 8px 12px; box-shadow: var(--shadow); font-size: 13.5px; }

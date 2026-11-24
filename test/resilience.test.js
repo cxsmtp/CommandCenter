@@ -339,3 +339,58 @@ test('filling the template’s own slides: runs replaced in place, table rows cl
   const env = fillEnvironment(`<a:tbl><a:tr h="1">${cell('Environment Details')}${cell('')}</a:tr><a:tr h="1">${cell('POV duration')}${cell('', false)}</a:tr></a:tbl>`, { env: { 'POV duration': '4 weeks' } });
   assert.match(env, /<a:pPr algn="l" rtl="0"\/><a:r><a:rPr lang="en-US" sz="1000"\/><a:t>4 weeks<\/a:t>/, 'styled like its label, left to right');
 });
+
+test('installed versions run only as installed; the restore drill; the error log rotates; a peek never renews a session', async () => {
+  const { writeManifest, verifyManifest, ErrorLog } = await import('../src/stability.js');
+  const dir = tmp();
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'server.js'), 'console.log(1)');
+  writeManifest(dir);
+  assert.equal(verifyManifest(dir).ok, true);
+  fs.writeFileSync(path.join(dir, 'src', 'server.js'), 'console.log(2)');
+  assert.deepEqual(verifyManifest(dir).changed, ['src/server.js'], 'a changed file is caught');
+  assert.equal(verifyManifest(tmp()).checked, false, 'no manifest: trusted (versions from before)');
+  // The launcher falls back to the image's own version.
+  const { chooseDir } = await import('../src/launcher.js');
+  const data = tmp();
+  const vdir = path.join(data, 'app', 'versions', '9.9.9');
+  fs.mkdirSync(path.join(vdir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(vdir, 'src', 'server.js'), 'x');
+  writeManifest(vdir);
+  assert.equal(chooseDir({ active: '9.9.9' }, data, '/builtin'), vdir);
+  fs.writeFileSync(path.join(vdir, 'src', 'server.js'), 'tampered');
+  assert.equal(chooseDir({ active: '9.9.9' }, data, '/builtin'), '/builtin');
+  // The log never grows past its size.
+  const logDir = tmp();
+  const log = new ErrorLog(logDir, { maxBytes: 200, keep: 2 });
+  for (let i = 0; i < 30; i += 1) log.write('error', `line ${i} `.repeat(5));
+  assert.ok(fs.statSync(log.file).size < 600 && fs.existsSync(`${log.file}.1`) && !fs.existsSync(`${log.file}.3`));
+  // The drill restores the newest backup into a scratch folder and reads it back.
+  const ddir = tmp();
+  const db = new Db(ddir);
+  db.write('users', [{ id: 'u1' }]);
+  db.write('opportunities', []);
+  db.write('settings', {});
+  const b = new Backups({ dataDir: ddir, vault: db.vault });
+  b.take('manual');
+  const r = b.drill({ open: (d) => { fs.copyFileSync(path.join(ddir, 'secret.key'), path.join(d, 'secret.key')); const x = new Db(d); return { users: x.read('users', []).length, opportunities: x.read('opportunities', []).length, settings: true }; } });
+  assert.equal(r.ok, true, r.message);
+  assert.equal(r.users, 1);
+  assert.ok(!fs.readdirSync(ddir).some((n) => n.startsWith('.drill-')), 'the scratch folder is gone');
+  // A peek at the session does not renew it.
+  const { Users } = await import('../src/users.js');
+  const udb = new Db(tmp());
+  process.env.CC_ADMIN_PASSWORD = 'admin-password-123';
+  const users = new Users(udb);
+  users.ensureAdmin();
+  users.sessionMs = 3_600_000;
+  const { token } = users.signIn('admin@meridian.local', 'admin-password-123');
+  const before = users.expiresAt(token);
+  await new Promise((r2) => setTimeout(r2, 5));
+  users.sessionMs = 7_200_000;
+  users.fromToken(token, { slide: false });
+  assert.equal(users.expiresAt(token), before);
+  users.fromToken(token);
+  assert.notEqual(users.expiresAt(token), before, 'use renews it');
+  users.stop();
+});

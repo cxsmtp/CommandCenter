@@ -18,7 +18,7 @@
  * Everything lives under <data>/app: versions/<version>/ (one folder per release), state.json (which one runs,
  * which ran before, what was tried) and <data>/backups/ (a copy of the data before each update; the last 5 kept).
  */
-import { nodeSatisfies } from './stability.js';
+import { nodeSatisfies, writeManifest } from './stability.js';
 import fs from 'node:fs';
 import { Backups } from './backups.js';
 import path from 'node:path';
@@ -120,6 +120,7 @@ export class Updater {
       launched: this.launched,
       repo: this.#repo,
       signed: Boolean(this.#pubkey),
+      clockSkewMs: this.clockSkewMs ?? null,
       active: s.active ?? null,
       previous: s.previous ?? null,
       lastCheck: s.lastCheck ?? null,
@@ -169,6 +170,9 @@ export class Updater {
       const headers = { 'User-Agent': 'Meridian-updater', Accept: accept ?? (json ? 'application/vnd.github+json' : 'application/octet-stream') };
       if (this.#token && at.host === apiHost) headers.Authorization = `Bearer ${this.#token}`;
       r = await this.#fetch(at, { headers, redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+      // The server's clock against GitHub's: sign-ins, certificates and the audit trail rely on it.
+      const theirs = Date.parse(r.headers?.get?.('date') ?? '');
+      if (Number.isFinite(theirs)) this.clockSkewMs = Date.now() - theirs;
       if (![301, 302, 303, 307, 308].includes(r.status)) break;
       at = this.#checkUrl(new URL(r.headers.get('location'), at));
     }
@@ -239,6 +243,8 @@ export class Updater {
       const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
       if (pkg.version !== release.version) throw fail(400, `The bundle says it is ${pkg.version}, not ${release.version}: not installed.`);
       if (!nodeSatisfies(pkg.engines?.node)) throw fail(409, `Version ${release.version} needs Node.js ${pkg.engines.node}; this server runs ${process.versions.node}. Update the container image (podman pull), then it installs.`);
+      // Every file fingerprinted: the launcher checks them before each start and refuses a version that was changed.
+      writeManifest(dir);
       const backup = this.backup(`before-${release.version}`);
       this.#save({ previous: this.state.active ?? null, active: release.version, pending: { version: release.version, from: this.#current, startedAt: new Date().toISOString(), by, backup } });
       this.#log({ event: 'install', version: release.version, from: this.#current, by, backup });

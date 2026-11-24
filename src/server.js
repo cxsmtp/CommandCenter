@@ -30,7 +30,7 @@ import { finalDeck } from './deck.js';
 import { wipDeck, checkTemplate } from './wip.js';
 import { SharePoint } from './sharepoint.js';
 import { DeckTemplates, SLIDES, DEFAULT_LAYOUT } from './deck-templates.js';
-import { lockDataDir, preflight, AdminAlerts } from './stability.js';
+import { lockDataDir, preflight, AdminAlerts, ErrorLog } from './stability.js';
 import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
 import { predict, gaps, rollups } from './insights.js';
@@ -546,7 +546,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const { token, user } = users.signIn(body.email, body.password);
       return send(res, 200, { user, expiresAt: users.expiresAt(token) }, { 'Set-Cookie': sessionCookie(token, 30 * 86400) });
     }
-    const user = users.fromToken(cookie(req, 'cc_session'));
+    // A look at the session that does not renew it (the browser's expiry warning).
+    const user = users.fromToken(cookie(req, 'cc_session'), { slide: req.headers['x-peek'] !== '1' });
     if (route === 'GET /session') {
       return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode }, version: VERSION });
     }
@@ -906,7 +907,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         launched: updater.launched,
         disk,
         signedIn: users.sessionCount,
-        checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo() }),
+        checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null) }),
+        log: errorLog.tail(80),
         versions: { active: u.active ?? null, previous: u.previous ?? null, lastFailure: u.lastFailure ?? null, history: u.history ?? [] },
         corrections: watchdog.corrections,
         repairs: db.repairs,
@@ -920,7 +922,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (route === 'GET /system/health') {
       need(user, 'settings.manage');
-      return send(res, 200, { checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo() }), corrections: watchdog.corrections, repairs: db.repairs, backups: backupStore.list(), offsite: backupStore.offsite, key: { source: db.vault.source, fingerprint: db.vault.fingerprint }, launched: updater.launched });
+      return send(res, 200, { checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null) }), corrections: watchdog.corrections, repairs: db.repairs, backups: backupStore.list(), offsite: backupStore.offsite, key: { source: db.vault.source, fingerprint: db.vault.fingerprint }, launched: updater.launched });
+    }
+    if (route === 'POST /system/drill') {
+      need(user, 'settings.manage');
+      const r = runDrill();
+      audit.record(user, 'system', `Ran the restore drill: ${r.message}`);
+      return send(res, 200, r);
     }
     if (route === 'POST /system/backup') {
       need(user, 'settings.manage');
@@ -1798,6 +1806,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         console.error(error);
         recentErrors.unshift({ at: new Date().toISOString(), path: url.pathname.replace(/[0-9a-f-]{36}/gi, ':id'), message: scrubText(String(error.message ?? error)).slice(0, 300) });
         recentErrors.length = Math.min(recentErrors.length, 50);
+        errorLog.write('error', `${req.method} ${recentErrors[0].path} ${recentErrors[0].message}`);
       }
       if (!res.headersSent) send(res, status === 401 && !String(error.message).includes('match') ? 400 : status, { error: scrubText(String(error.message ?? error)) });
     }
@@ -1931,6 +1940,20 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // ——— Results pages: one per POV; a final copy kept when it is marked successful ———
   const WIP_TEMPLATE = path.join(dataDir, 'templates', 'wip-template.pptx');
   const recentErrors = [];
+  const errorLog = new ErrorLog(dataDir);
+  // The weekly restore drill: the newest backup, restored into a scratch folder and opened with the same key.
+  const runDrill = () => {
+    const r = backupStore.drill({
+      open: (dir) => {
+        if (!process.env.CC_SECRET && !process.env.CC_SECRET_FILE && fs.existsSync(path.join(dataDir, 'secret.key'))) fs.copyFileSync(path.join(dataDir, 'secret.key'), path.join(dir, 'secret.key'));
+        const d = new Db(dir);
+        return { users: d.read('users', []).length, opportunities: d.read('opportunities', []).length, settings: Boolean(d.read('settings', null)) };
+      },
+    });
+    db.write('drill', r);
+    if (!r.ok) errorLog.write('drill', r.message);
+    return r;
+  };
   const sharepoint = new SharePoint();
   // Presentation templates (design, slides, words), set by managers; the template uploaded before them becomes the first.
   const deckTemplates = new DeckTemplates(db, { users, dataDir });
@@ -2048,7 +2071,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     setTimeout(() => trail.maintain(), 20_000).unref();
     setInterval(() => trail.maintain(), 6 * 3_600_000).unref();
   }
-  const watchdog = new Watchdog({ monitor, launched: updater.launched, restart: () => gracefulExit(RESTART_CODE, 'watchdog') });
+  const watchdog = new Watchdog({ monitor, launched: updater.launched, restart: () => gracefulExit(RESTART_CODE, 'watchdog'), onNote: (what, action) => errorLog.write('watchdog', `${what} — ${action}`) });
   if (startBackground) watchdog.start();
   if (startBackground) sfMailbox.start();
 
@@ -2057,11 +2080,15 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     db,
     mailer,
     org: settings().orgName,
-    checks: () => healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo() }),
+    checks: () => healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null) }),
     corrections: () => watchdog.corrections,
     admins: () => users.list().filter((u) => u.role === 'admin' && u.active !== false && u.email && !u.email.endsWith('@meridian.local')).map((u) => u.email),
   });
   if (startBackground) alerts.start();
+  if (startBackground) {
+    setTimeout(() => runDrill(), 10 * 60_000).unref();
+    setInterval(() => runDrill(), 7 * 86_400_000).unref();
+  }
 
   server.on('close', () => {
     alerts.stop();
@@ -2075,7 +2102,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     monitor.stop();
     clearInterval(hourly);
   });
-  return { server, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit, trail, backups: backupStore, watchdog };
+  return { server, errorLog, runDrill, db, users, opps, catalog, monitor, mailer, firstAdmin, weeklyDrafts, updater, audit, trail, backups: backupStore, watchdog };
 }
 
 /**
@@ -2181,6 +2208,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   process.on('uncaughtException', (error) => {
     console.error('Uncaught exception, restarting:', error);
     try {
+      app.errorLog.write('crash', error?.stack ?? error);
       app.users.stop();
       app.trail.stop();
     } catch {}

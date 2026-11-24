@@ -44,6 +44,7 @@ export class Watchdog {
   }
 
   #note(what, action) {
+    this.#o.onNote?.(what, action);
     this.corrections.unshift({ at: new Date().toISOString(), what, action });
     this.corrections.length = Math.min(this.corrections.length, 50);
     console.error(`Watchdog: ${what} — ${action}`);
@@ -81,7 +82,7 @@ export class Watchdog {
 }
 
 /** The checks, worst first: { key, label, level: ok | warn | bad, text, fix }. */
-export function healthChecks({ db, backups, monitor, audit, updater, watchdog, version, certValidTo = null }) {
+export function healthChecks({ db, backups, monitor, audit, updater, watchdog, version, certValidTo = null, drill = null }) {
   const out = [];
   const add = (key, label, level, text, fix = '') => out.push({ key, label, level, text, fix });
 
@@ -135,6 +136,16 @@ export function healthChecks({ db, backups, monitor, audit, updater, watchdog, v
     const days = Math.floor((Date.parse(certValidTo) - Date.now()) / 86_400_000);
     add('cert', 'HTTPS certificate', days < 7 ? 'bad' : days < 30 ? 'warn' : 'ok', days < 0 ? `The certificate expired ${-days} days ago: browsers refuse the site.` : `The certificate is valid for ${days} more days (until ${new Date(certValidTo).toISOString().slice(0, 10)}).`, days < 30 ? 'Replace TLS_CERT_FILE and TLS_KEY_FILE with a renewed certificate, then restart.' : '');
   }
+
+  // The weekly restore drill
+  if (drill) {
+    const days = Math.floor((Date.now() - Date.parse(drill.at)) / 86_400_000);
+    add('drill', 'Restore drill', !drill.ok ? 'bad' : days > 8 ? 'warn' : 'ok', drill.ok ? `${drill.message} (${days ? `${days} days ago` : 'today'})` : drill.message, drill.ok ? '' : 'Check the newest backup below, and that the encryption key is the one the data was written with.');
+  }
+
+  // The server's clock (sign-ins, certificates and the audit trail depend on it)
+  const skew = updater.status().clockSkewMs;
+  if (skew != null && Math.abs(skew) > 5 * 60_000) add('clock', 'Clock', 'warn', `The server’s clock is ${Math.round(Math.abs(skew) / 60_000)} minutes ${skew > 0 ? 'ahead' : 'behind'}.`, 'Turn on time sync on the host (timedatectl set-ntp true).');
 
   // Updates
   const u = updater.status();

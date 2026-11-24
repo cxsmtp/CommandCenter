@@ -327,3 +327,40 @@ async function start() {
 }
 
 start().catch((e) => showLogin(e.message));
+
+// ——— A warning before a session ends ———
+// Five minutes before, a bar offers to stay signed in (one request renews the session); the sign-in box would
+// otherwise only open on the next click, with nothing lost either way.
+let warnBar = null;
+let lastPeek = 0;
+setInterval(() => {
+  const exp = Date.parse(state.session?.expiresAt ?? '');
+  if (!state.session?.user || !exp) return;
+  const left = exp - Date.now();
+  if (left > 5 * 60_000 || left <= 0) {
+    warnBar?.remove();
+    warnBar = null;
+    return;
+  }
+  // Use renews a session: ask (without renewing it) whether it really ends soon before saying so.
+  if (!warnBar && Date.now() - lastPeek > 25_000) {
+    lastPeek = Date.now();
+    fetch('/api/session', { headers: { 'X-Requested-With': 'Meridian', 'X-Peek': '1' } })
+      .then((r) => r.json())
+      .then((s) => {
+        if (s?.expiresAt) state.session.expiresAt = s.expiresAt;
+      })
+      .catch(() => {});
+    return; // shown on the next look if it still ends within five minutes
+  }
+  if (warnBar) return void (warnBar.querySelector('b').textContent = `${Math.max(1, Math.round(left / 60_000))} min`);
+  warnBar = Object.assign(document.createElement('div'), { id: 'sessionWarn', role: 'alert' });
+  warnBar.innerHTML = `Your session ends in <b>${Math.max(1, Math.round(left / 60_000))} min</b>. <button class="btn sm primary" type="button">Stay signed in</button>`;
+  warnBar.querySelector('button').addEventListener('click', async () => {
+    const s = await api('/session').catch(() => null);
+    if (s?.expiresAt) state.session.expiresAt = s.expiresAt;
+    warnBar?.remove();
+    warnBar = null;
+  });
+  document.body.append(warnBar);
+}, 30_000);

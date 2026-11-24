@@ -299,13 +299,13 @@ export class Users {
     return { token, user: publicUser(user) };
   }
 
-  fromToken(token) {
+  fromToken(token, { slide = true } = {}) {
     if (!token) return null;
     const s = this.#sessions.get(hashToken(token));
     const now = Date.now();
     if (!s || s.exp < now || (s.created ?? now) + Users.MAX_SESSION_MS < now) return null;
     // Slide the expiry, saved within 30 s (a minute's renewals are one write).
-    if (now + this.sessionMs - s.exp > 60_000) {
+    if (slide && now + this.sessionMs - s.exp > 60_000) {
       s.exp = now + this.sessionMs;
       this.#dirty = true;
     }

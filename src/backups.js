@@ -190,6 +190,31 @@ export class Backups {
     }
   }
 
+  /**
+   * The restore drill: the newest backup restored into a scratch folder and opened as Meridian would open it, with the
+   * same key. Passes when the accounts, POVs and settings all read (and there is at least one account).
+   */
+  drill({ open }) {
+    const newest = this.list().find((b) => b.verified !== false);
+    const at = new Date().toISOString();
+    if (!newest) return { at, ok: false, message: 'No backup to restore yet.' };
+    const tmp = fs.mkdtempSync(path.join(this.#dir, '.drill-'));
+    try {
+      const src = this.#path(newest.name);
+      for (const rel of Object.keys(this.manifest(newest.name).files)) {
+        if (!/\.json$/.test(rel) || rel.includes('/')) continue; // the records are what a restore must bring back
+        fs.copyFileSync(path.join(src, rel), path.join(tmp, rel));
+      }
+      const counts = open(tmp);
+      const ok = counts.users > 0;
+      return { at, ok, backup: newest.name, ...counts, message: ok ? `Restored ${newest.name}: ${counts.users} accounts, ${counts.opportunities} POVs and the settings read back.` : `Restored ${newest.name}, but it holds no accounts.` };
+    } catch (error) {
+      return { at, ok: false, backup: newest.name, message: `Restoring ${newest.name} failed: ${error.message}` };
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
   /** A restore chosen before the restart: applied now, before the records are read. Returns its name or null. */
   applyPending() {
     const file = path.join(this.#dir, 'restore-pending.json');
