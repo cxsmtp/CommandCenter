@@ -394,3 +394,14 @@ test('installed versions run only as installed; the restore drill; the error log
   assert.notEqual(users.expiresAt(token), before, 'use renews it');
   users.stop();
 });
+
+test('software integrity: a changed file shows as a bad health check, a genuine install as genuine', async () => {
+  const { integrityCheck } = await import('../src/health.js');
+  const at = new Date().toISOString();
+  const bad = integrityCheck({ at, ok: false, checked: true, changed: ['src/server.js'] }, '1.0.9');
+  assert.equal(bad.level, 'bad');
+  assert.match(bad.text, /src\/server\.js/);
+  assert.match(integrityCheck({ at, ok: true, checked: true, changed: [] }, '1.0.9').text, /^Genuine/);
+  assert.match(integrityCheck({ at, ok: true, checked: false, changed: [] }, '1.0.9').text, /image’s own version/);
+  assert.equal(integrityCheck(null, '1.0.9'), null);
+});

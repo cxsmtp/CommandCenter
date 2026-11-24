@@ -102,7 +102,7 @@ function shell() {
       ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.filter(([, , , need]) => !need || can(need)).map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
-      <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button></div>
+      <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button>${state.session.version ? `<a class="nav-version" href="#/settings/${can('settings.manage') ? 'updates' : 'about'}" title="${can('settings.manage') ? 'Update & recovery' : 'About Kendra'}">Kendra ${esc(state.session.version)}</a>` : ''}</div>
     </nav>
     <div>
       <header class="topbar">
@@ -134,6 +134,7 @@ function openMore() {
         <a href="#/settings">${ICON.settings}<span>Settings</span></a>
         <button type="button" data-action="refresh-all">${ICON.refresh}<span>Read every POV tenant now</span></button>
         <button type="button" data-action="signout">${ICON.out}<span>Sign out</span></button>
+        ${state.session.version ? `<a href="#/settings/${can('settings.manage') ? 'updates' : 'about'}" class="small muted" style="padding:10px 14px">Kendra ${esc(state.session.version)}</a>` : ''}
       </nav></div>`,
     { onOpen: (d) => {
       d.querySelector('[data-close]').addEventListener('click', () => closeDialog());

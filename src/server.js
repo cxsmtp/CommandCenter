@@ -32,7 +32,7 @@ import { finalDeck } from './deck.js';
 import { wipDeck, checkTemplate } from './wip.js';
 import { SharePoint } from './sharepoint.js';
 import { DeckTemplates, SLIDES, DEFAULT_LAYOUT } from './deck-templates.js';
-import { lockDataDir, preflight, AdminAlerts, ErrorLog } from './stability.js';
+import { lockDataDir, preflight, AdminAlerts, ErrorLog, verifyManifest } from './stability.js';
 import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
 import { predict, gaps, rollups } from './insights.js';
@@ -90,6 +90,18 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
   };
   const fullSettings = () => db.read('settings', {});
+  // Software integrity: the files running are the ones installed (checked at start, every 6 hours, and on demand).
+  let integrity = null;
+  const checkIntegrity = () => {
+    try {
+      integrity = { at: new Date().toISOString(), ...verifyManifest(ROOT) };
+    } catch (error) {
+      integrity = { at: new Date().toISOString(), ok: true, checked: false, changed: [], error: String(error.message ?? error).slice(0, 200) };
+    }
+    return integrity;
+  };
+  checkIntegrity();
+  if (startBackground) setInterval(checkIntegrity, 6 * 3_600_000).unref();
   const firstAdmin = users.ensureAdmin();
   // The audit trail: every change (kept for good) and every request (kept CC_ACCESS_DAYS days), chained and encrypted.
   const trail = new Trail({ dataDir, vault: db.vault });
@@ -917,7 +929,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         launched: updater.launched,
         disk,
         signedIn: users.sessionCount,
-        checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null) }),
+        checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null), integrity }),
         log: errorLog.tail(80),
         versions: { active: u.active ?? null, previous: u.previous ?? null, lastFailure: u.lastFailure ?? null, history: u.history ?? [] },
         corrections: watchdog.corrections,
@@ -932,7 +944,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     }
     if (route === 'GET /system/health') {
       need(user, 'settings.manage');
-      return send(res, 200, { checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null) }), corrections: watchdog.corrections, repairs: db.repairs, backups: backupStore.list(), offsite: backupStore.offsite, key: { source: db.vault.source, fingerprint: db.vault.fingerprint }, launched: updater.launched });
+      return send(res, 200, { checks: healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null), integrity }), corrections: watchdog.corrections, repairs: db.repairs, backups: backupStore.list(), offsite: backupStore.offsite, key: { source: db.vault.source, fingerprint: db.vault.fingerprint }, launched: updater.launched });
     }
     if (route === 'POST /system/drill') {
       need(user, 'settings.manage');
@@ -968,6 +980,10 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       tar.stdout.pipe(res);
       tar.on('error', () => res.end());
       return;
+    }
+    if (route === 'GET /system/integrity') {
+      need(user, 'settings.manage');
+      return send(res, 200, { integrity: url.searchParams.get('now') ? checkIntegrity() : integrity });
     }
     if (route === 'GET /system/about') {
       return send(res, 200, { version: VERSION, node: process.version, repo: updater.status().repo, licence: 'Internal use', startedAt: STARTED_AT, launched: updater.launched, dataDir: can(user, 'settings.manage') ? dataDir : undefined, backups: can(user, 'settings.manage') ? backupStore.list().slice(0, 10).map((x) => x.name) : undefined, audit: can(user, 'settings.manage') ? audit.verify() : undefined });
@@ -2202,7 +2218,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     db,
     mailer,
     org: settings().orgName,
-    checks: () => healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null) }),
+    checks: () => healthChecks({ db, backups: backupStore, monitor, audit, updater, watchdog, version: VERSION, certValidTo: certValidTo(), drill: db.read('drill', null), integrity }),
     corrections: () => watchdog.corrections,
     admins: () => users.list().filter((u) => u.role === 'admin' && u.active !== false && u.email && !u.email.endsWith('@meridian.local')).map((u) => u.email),
   });

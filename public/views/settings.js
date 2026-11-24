@@ -1,5 +1,6 @@
-// Settings: your profile and look, and (by permission) the organisation, the email server and the roles.
-import { $, $$, esc, api, state, can, attempt, toast, formData, when, ago, ask } from '../core.js';
+// Settings: your profile and look; and (by permission) the organisation, connections, the server's security, health,
+// backups, updates and recovery; and About.
+import { $, $$, esc, api, state, can, attempt, toast, formData, when, ago, ask, day } from '../core.js';
 
 const LOOKS = {
   orbit: ['Orbit — launch control', ['#03050b', '#5ce1ff', '#8b7cff']],
@@ -16,24 +17,26 @@ const LOOKS = {
   studio: ['Studio', ['#f5f4fa', '#1d1933', '#6b4fd6']],
   classic: ['Classic', ['#f5f7fa', '#ffffff', '#2563eb']],
 };
+// Settings, grouped as in CxMissionZero: a side menu by subject, each page one job.
+const MANAGE = () => can('settings.manage');
 const TABS = [
-  ['profile', 'Profile & look', () => true],
-  ['organisation', 'Organisation', () => can('settings.manage')],
-  ['email', 'Email server', () => can('settings.manage')],
-  ['roles', 'Roles & permissions', () => can('roles.manage')],
-  ['salesforce', 'Salesforce', () => can('settings.manage')],
-  ['system', 'System & backups', () => can('settings.manage')],
+  ['You', [['profile', 'Profile & look', () => true]]],
+  ['Organisation', [['organisation', 'Organisation', MANAGE], ['roles', 'Roles & permissions', () => can('roles.manage')], ['salesforce', 'Salesforce', MANAGE]]],
+  ['Connections', [['email', 'Email server', MANAGE], ['network', 'Network & certificates', MANAGE]]],
+  ['Server', [['security', 'Security & sign-in', MANAGE], ['system', 'Health & backups', MANAGE], ['updates', 'Update & recovery', MANAGE]]],
+  ['', [['about', 'About', () => true]]],
 ];
 
 export async function renderSettings(main, tab, { crumbs, applyLook }) {
   crumbs('<h2 style="font-size:16px">Settings</h2>');
-  const tabs = TABS.filter(([, , ok]) => ok());
-  const active = tabs.some(([k]) => k === tab) ? tab : 'profile';
+  const groups = TABS.map(([g, items]) => [g, items.filter(([, , ok]) => ok())]).filter(([, items]) => items.length);
+  const all = groups.flatMap(([, items]) => items);
+  const active = all.some(([k]) => k === tab) ? tab : 'profile';
   const data = await api('/settings');
-  main.innerHTML = `<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === active}" data-tab="${k}">${l}</button>`).join('')}</div><div id="sBody"></div>`;
-  for (const b of $$('[data-tab]', main)) b.addEventListener('click', () => (location.hash = `#/settings/${b.dataset.tab}`));
+  main.innerHTML = `<div class="set-layout"><nav class="set-nav" aria-label="Settings">${groups.map(([g, items]) => `${g ? `<div class="set-group">${esc(g)}</div>` : '<div class="set-sep"></div>'}${items.map(([k, l]) => `<a href="#/settings/${k}" class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''}>${esc(l)}</a>`).join('')}`).join('')}</nav>
+    <div class="set-main"><h1 class="set-title">${esc(all.find(([k]) => k === active)[1])}</h1><div id="sBody"></div></div></div>`;
   const body = $('#sBody');
-  ({ profile, organisation, email, roles, salesforce, system })[active](body, data, applyLook);
+  ({ profile, organisation, email, roles, salesforce, system, security, network, updates, about })[active](body, data, applyLook);
 }
 
 function profile(body, data, applyLook) {
@@ -149,7 +152,7 @@ const LEVEL = { ok: ['ok', 'Good'], warn: ['warn', 'Look'], bad: ['bad', 'Act'] 
 const size = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 async function system(body) {
-  const [h, u] = await Promise.all([api('/system/health'), api('/updates')]);
+  const h = await api('/system/health');
   const worst = h.checks[0]?.level ?? 'ok';
   body.innerHTML = `<div class="stack">
     <section class="panel sys-head ${worst}"><div class="body row center" style="gap:14px">
@@ -162,7 +165,7 @@ async function system(body) {
       ${h.checks.map((c) => `<div class="check-row ${c.level}"><span class="badge ${LEVEL[c.level][0]}">${LEVEL[c.level][1]}</span><div><b>${esc(c.label)}</b><div>${esc(c.text)}</div>${c.fix ? `<div class="small muted">${esc(c.fix)}</div>` : ''}</div></div>`).join('')}
     </div></section>
 
-    <section class="panel"><div class="head"><h3>Backups</h3><div class="row center"><a class="btn" href="/api/system/backup/download">Download the data (encrypted)</a><button class="btn primary" data-act="backup">Back up now</button></div></div>
+    <section class="panel"><div class="head"><h3>Backups</h3><div class="row center"><a class="btn" href="/api/system/backup/download">Download the data (encrypted)</a><button class="btn" data-act="drill" title="Restore the newest backup into a scratch folder and read it back">Run a restore drill</button><button class="btn primary" data-act="backup">Back up now</button></div></div>
       <div class="body small muted" style="padding-bottom:0">Taken by itself every few hours, before every update and every restore. Each one is opened and checked when it is taken. Records stay encrypted and the key is never in a backup — keep the key safe somewhere else.${h.offsite ? ` Each is also copied to <span class="mono">${esc(h.offsite)}</span>.` : ''}</div>
       <div class="table-wrap"><table><thead><tr><th>Taken</th><th>Why</th><th>Version</th><th class="n">Files</th><th class="n">Size</th><th>Check</th>${h.offsite ? '<th>Off the server</th>' : ''}<th></th></tr></thead><tbody>
       ${h.backups.map((b) => `<tr><td>${esc(b.at ? when(b.at) : b.name)}<div class="small muted">${b.at ? esc(ago(b.at)) : ''}</div></td><td>${esc(b.label === 'auto' ? 'Automatic' : b.label === 'manual' ? 'By hand' : b.label === 'before-restore' ? 'Before a restore' : b.label.startsWith('before-') ? `Before update ${b.label.slice(7)}` : b.label)}</td><td class="mono">${esc(b.version)}</td><td class="n">${b.files}</td><td class="n">${size(b.bytes)}</td>
@@ -171,20 +174,10 @@ async function system(body) {
         <td class="row" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn sm ghost" data-verify="${esc(b.name)}">Check</button>${h.launched ? `<button class="btn sm" data-restore="${esc(b.name)}" data-at="${esc(b.at ? when(b.at) : b.name)}">Restore</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">No backup yet — the first is taken a minute after the server starts.</td></tr>'}
       </tbody></table></div></section>
 
-    <div class="grid2">
-      <section class="panel"><div class="head"><h3>Corrected by itself</h3></div><div class="body stack" style="gap:8px">
+    <section class="panel"><div class="head"><h3>Corrected by itself</h3></div><div class="body stack" style="gap:8px">
         ${[...h.corrections.map((c) => ({ at: c.at, text: `${c.what} — ${c.action}` })), ...h.repairs.map((r) => ({ at: r.at, text: r.from ? `${r.name} was damaged — repaired from ${r.from}` : `${r.name} was damaged — no good copy, set aside` }))].sort((a, b) => b.at.localeCompare(a.at)).map((c) => `<div><div class="small muted">${esc(when(c.at))}</div>${esc(c.text)}</div>`).join('') || '<span class="muted">Nothing needed correcting since the server started.</span>'}
       </div></section>
-      <section class="panel"><div class="head"><h3>Updates</h3><button class="btn sm" data-act="check-updates">Check now</button></div><div class="body stack" style="gap:10px">
-        <div>Running <b class="mono">${esc(u.current)}</b>${u.updateAvailable ? ` · <span class="badge accent">${esc(u.available[0].version)} available</span>` : u.checkError ? ' · <span class="warn-t">could not check</span>' : ' · up to date'}${u.lastCheck ? `<div class="small muted">Last checked ${esc(ago(u.lastCheck))}${u.checkError ? ` · ${esc(u.checkError)}` : ''}</div>` : ''}</div>
-        ${u.lastFailure ? `<div class="small bad-t">${esc(u.lastFailure.version)} failed to start and was rolled back by itself.</div>` : ''}
-        <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''}> Keep up to date by itself — check every <select id="autoEvery">${[5, 10, 15, 30, 60, 240, 1440].map((m) => `<option value="${m}" ${u.auto.everyMinutes === m ? 'selected' : ''}>${m < 60 ? `${m} minutes` : m === 60 ? 'hour' : m === 1440 ? 'day' : `${m / 60} hours`}</option>`).join('')}</select></label>
-        <div class="small muted">Every change pushed to main is published as a release; this server installs it as soon as it sees it. A checked backup is taken first, people see a few seconds’ pause, and a version that does not start is rolled back by itself and never tried again.${u.heldBack ? ` Held back: ${esc(u.heldBack)} and older (you went back from it).` : ''}</div>
-        ${u.launched ? '' : '<div class="small warn-t">This server was not started by the launcher (npm start or the container image), so it cannot update itself.</div>'}
-        ${u.token ? '' : '<div class="small muted">For a private repository, set CC_UPDATE_TOKEN (a read-only GitHub token) on the server.</div>'}
-        <div class="row">${u.updateAvailable && u.launched ? `<button class="btn primary" data-act="install">Install ${esc(u.available[0].version)}</button>` : ''}${u.previous && u.launched ? `<button class="btn ghost" data-act="rollback">Go back to ${esc(u.previous)}</button>` : ''}</div>
-      </div></section>
-    </div></div>`;
+    </div>`;
   const again = () => system(body);
   $('[data-act="recheck"]', body).addEventListener('click', again);
   $('[data-act="backup"]', body).addEventListener('click', async () => (await attempt(() => api('/system/backup', { method: 'POST', body: {} }), 'Backup taken and checked')) && again());
@@ -198,16 +191,166 @@ async function system(body) {
       if (!(await ask(`Put back the data as it was at ${b.dataset.at}? Everything since then is replaced (a backup of it is taken first, so this can be undone). The server restarts.`, { ok: 'Restore', danger: true }))) return;
       if (await attempt(() => api('/system/restore', { method: 'POST', body: { name: b.dataset.restore } }), 'Restored — restarting')) setTimeout(() => location.reload(), 6000);
     });
-  $('[data-act="check-updates"]', body).addEventListener('click', async () => (await attempt(() => api('/updates/check', { method: 'POST', body: {} }))) && again());
+  $('[data-act="drill"]', body).addEventListener('click', async () => {
+    const r = await attempt(() => api('/system/drill', { method: 'POST', body: {} }));
+    if (r) {
+      toast(r.ok ? 'Restore drill passed: the newest backup opens and reads back' : `Restore drill failed: ${r.message}`, { bad: !r.ok });
+      again();
+    }
+  });
+}
+
+// ——— Security & sign-in ———
+function security(body, data) {
+  const sec = data.settings.security ?? { sessionHours: 12, maxAttempts: 10 };
+  body.innerHTML = `<div class="stack">
+    <section class="panel"><div class="head"><h3>Sessions</h3></div><form id="secForm" class="body stack" style="gap:12px;max-width:720px">
+      <div class="row"><label class="field">A sign-in lasts, while in use <span class="small muted">hours, 1 to 168</span><input type="number" name="sessionHours" min="1" max="168" value="${esc(sec.sessionHours)}" required></label>
+        <label class="field">Attempts before a pause <span class="small muted">per person and address, per 15 minutes</span><input type="number" name="maxAttempts" min="3" max="100" value="${esc(sec.maxAttempts)}" required></label></div>
+      <p class="small muted" style="margin:0">Each use extends the sign-in; it ends after this long without use, and after 30 days in any case. Five minutes before it ends, people are offered to stay signed in. Sign-ins survive restarts and updates.</p>
+      <div class="row"><button class="btn primary">Save</button></div></form></section>
+    <section class="panel"><div class="head"><h3>How sign-in is protected</h3></div><div class="body"><ul class="facts-list">
+      <li><b>Passwords</b> of at least 10 characters, stored as salted scrypt hashes; a first password must be changed at the first sign-in.</li>
+      <li><b>Changing a password</b> ends every other sign-in of that person.</li>
+      <li><b>Cookies</b> are HTTP-only and SameSite=Strict; every change also needs Kendra’s own request header, so another site cannot act for you.</li>
+      <li><b>Locked out?</b> On the server: <span class="mono">node src/reset-password.js you@company.com</span> sets a new temporary password.</li>
+      <li><b>Every request</b> is in the audit trail (Audit), chained so a change to it shows.</li></ul></div></section></div>`;
+  $('#secForm', body).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = formData(e.target);
+    await attempt(() => api('/settings/security', { method: 'PUT', body: { sessionHours: Number(b.sessionHours), maxAttempts: Number(b.maxAttempts) } }), 'Saved');
+  });
+}
+
+// ——— Network & certificates ———
+async function network(body) {
+  const n = await api('/settings/network');
+  const net = n.network;
+  const sheet = n.allowlist.map((a) => `${a.direction === 'in' ? 'IN ' : 'OUT'}  ${a.host}:${a.port}  ${a.why}`).join('\n');
+  body.innerHTML = `<div class="stack">
+    ${n.restartNeeded ? `<section class="panel notice warn"><div class="body row center"><div style="flex:1"><b>Restart to apply</b><div class="small muted">The proxy or the trusted certificates changed: they take effect when the server restarts (a few seconds).</div></div>${n.launched ? '<button class="btn primary" data-act="restart">Restart now</button>' : '<span class="small muted">Restart the container to apply.</span>'}</div></section>` : ''}
+    <section class="panel"><div class="head"><h3>Company proxy</h3>${net.proxy ? (net.active ? '<span class="badge ok">In use</span>' : '<span class="badge warn">Saved, applies at the next restart</span>') : net.active ? '<span class="badge">From the server’s environment</span>' : '<span class="badge">None</span>'}</div>
+      <form id="netForm" class="body stack" style="gap:12px;max-width:760px">
+        <label class="field">Proxy address <span class="small muted">for every call out (Checkmarx One, GitHub releases, Microsoft Graph); empty for none</span><input name="proxy" value="${esc(net.proxy)}" placeholder="http://proxy.company.com:8080"></label>
+        <div class="row"><label class="field">User<input name="proxyUser" value="${esc(net.proxyUser)}" autocomplete="off" placeholder="optional"></label><label class="field">Password<input name="proxyPass" type="password" autocomplete="new-password" placeholder="${net.hasProxyPass ? 'kept (type to replace)' : ''}"></label></div>
+        <label class="field">Go direct to <span class="small muted">NO_PROXY: hosts or domains, comma separated</span><input name="noProxy" value="${esc(net.noProxy)}" placeholder="localhost, .company.local"></label>
+        <div class="row"><button class="btn primary" name="go" value="restart">Save and restart</button><button class="btn" name="go" value="save">Save</button></div>
+      </form></section>
+    <section class="panel"><div class="head"><h3>What the network must allow</h3><div class="row"><button class="btn sm" data-act="copy-sheet">Copy</button><a class="btn sm" download="kendra-network.txt" href="data:text/plain;charset=utf-8,${encodeURIComponent(sheet)}">Download</a></div></div>
+      <div class="body small muted" style="padding-bottom:0">For the network team: every connection this server makes, from its own settings and the tenants it reads.</div>
+      <div class="table-wrap"><table><thead><tr><th>Direction</th><th>Host</th><th class="n">Port</th><th>Why</th></tr></thead><tbody>${n.allowlist.map((a) => `<tr><td>${a.direction === 'in' ? 'In' : 'Out'}</td><td class="mono">${esc(a.host)}</td><td class="n">${esc(a.port)}</td><td>${esc(a.why)}</td></tr>`).join('')}</tbody></table></div></section>
+    <section class="panel"><div class="head"><h3>Trusted certificates</h3><button class="btn sm" data-act="cert-add">Add a certificate</button></div>
+      <div class="body small muted" style="padding-bottom:0">A company proxy that inspects HTTPS (Zscaler, Netskope, Palo Alto…) shows its own certificate: add its root here, as a PEM file, so calls out are trusted.</div>
+      <div class="table-wrap"><table><thead><tr><th>Certificate</th><th>Issued by</th><th>Valid until</th><th>Added</th><th></th></tr></thead><tbody>${n.certs.map((c) => `<tr><td>${esc(c.subject)}${c.ca ? ' <span class="badge">CA</span>' : ''}<div class="small muted mono">${esc(c.fingerprint.slice(0, 29))}…</div></td><td>${esc(c.issuer)}</td><td>${esc(day(c.validTo))}</td><td>${c.addedAt ? `${esc(ago(c.addedAt))}${c.addedBy ? `<div class="small muted">${esc(c.addedBy)}</div>` : ''}` : '—'}</td><td><button class="btn sm ghost danger" data-cert-del="${esc(c.fingerprint)}">Remove</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">None: the usual public certificates are trusted.</td></tr>'}</tbody></table></div>
+      <input type="file" id="certFile" accept=".pem,.crt,.cer,text/plain" hidden></section></div>`;
+  const again = () => network(body);
+  const restart = async () => (await attempt(() => api('/system/restart', { method: 'POST', body: {} }), 'Restarting')) && setTimeout(() => location.reload(), 6000);
+  $('[data-act="restart"]', body)?.addEventListener('click', restart);
+  $('#netForm', body).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = formData(e.target);
+    const go = e.submitter?.value === 'restart';
+    const r = await attempt(() => api('/settings/network', { method: 'PUT', body: { proxy: b.proxy, proxyUser: b.proxyUser, proxyPass: b.proxyPass, noProxy: b.noProxy, restart: go } }), go ? 'Saved — restarting' : 'Saved');
+    if (r?.restarting) setTimeout(() => location.reload(), 6000);
+    else if (r) again();
+  });
+  $('[data-act="copy-sheet"]', body).addEventListener('click', () => navigator.clipboard?.writeText(sheet).then(() => toast('Copied'), () => toast('Could not copy', { bad: true })));
+  const fileIn = $('#certFile', body);
+  $('[data-act="cert-add"]', body).addEventListener('click', () => fileIn.click());
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files[0];
+    if (!f) return;
+    const pem = await f.text();
+    const r = await attempt(() => api('/settings/certs', { method: 'POST', body: { pem } }));
+    if (r) {
+      toast(r.added ? `${r.added} certificate${r.added === 1 ? '' : 's'} trusted` : 'Already trusted');
+      again();
+    }
+  });
+  for (const b of $$('[data-cert-del]', body))
+    b.addEventListener('click', async () => {
+      if (!(await ask('Stop trusting this certificate? Calls through a proxy that uses it will fail.', { ok: 'Remove', danger: true }))) return;
+      if (await attempt(() => api(`/settings/certs/${encodeURIComponent(b.dataset.certDel)}`, { method: 'DELETE' }), 'Removed')) again();
+    });
+}
+
+// ——— Update & recovery ———
+const EVENT = { install: 'Installed', started: 'Started', failed: 'Failed to install', rollback: 'Went back', 'auto-rollback': 'Rolled back by itself', crash: 'Stopped unexpectedly', integrity: 'Files changed: not run' };
+async function updates(body) {
+  const [u, ig] = await Promise.all([api('/updates'), api('/system/integrity')]);
+  const i = ig.integrity;
+  const installed = new Set(u.installed ?? []);
+  const tone = i?.checked && !i.ok ? 'bad' : 'ok';
+  const shown = Number(body.dataset.more || 10);
+  const notes = (t) => esc(String(t || '').replace(/\r/g, '').trim()).replace(/\n{2,}/g, '</p><p>').replace(/\n- /g, '<br>• ').replace(/\n/g, ' ');
+  body.innerHTML = `<div class="stack">
+    <section class="panel sys-head ${u.updateAvailable ? 'warn' : 'ok'}"><div class="body row center" style="gap:14px;flex-wrap:wrap">
+      <span class="sys-dot ${u.updateAvailable ? 'warn' : 'ok'}"></span>
+      <div style="flex:1;min-width:240px"><h3 style="margin:0">Running <span class="mono">${esc(u.current)}</span>${u.updateAvailable ? ` · <span class="accent-t">${esc(u.available[0].version)} available</span>` : u.checkError ? ' · <span class="warn-t">could not check</span>' : ' · up to date'}</h3>
+        <div class="small muted">${u.lastCheck ? `Last checked ${esc(ago(u.lastCheck))}` : 'Not checked yet'}${u.checkError ? ` · ${esc(u.checkError)}` : ''}${u.signed ? ' · releases must be signed' : ''}</div></div>
+      <button class="btn" data-act="check">Check now</button>${u.updateAvailable && u.launched ? `<button class="btn primary" data-install="${esc(u.available[0].version)}">Install ${esc(u.available[0].version)}</button>` : ''}</div></section>
+    ${u.lastFailure ? `<section class="panel notice bad"><div class="body"><b>${esc(u.lastFailure.version)} did not start</b> and the server went back by itself; it is never installed by itself again.<div class="small muted">${esc(u.lastFailure.message ?? '')}</div></div></section>` : ''}
+    <div class="grid2">
+      <section class="panel"><div class="head"><h3>Keep up to date</h3></div><div class="body stack" style="gap:10px">
+        <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''}> Install new versions by itself, checking every <select id="autoEvery">${[5, 10, 15, 30, 60, 240, 1440].map((m) => `<option value="${m}" ${u.auto.everyMinutes === m ? 'selected' : ''}>${m < 60 ? `${m} minutes` : m === 60 ? 'hour' : m === 1440 ? 'day' : `${m / 60} hours`}</option>`).join('')}</select></label>
+        <p class="small muted" style="margin:0">A checked backup is taken first; people see a pause of a few seconds. A version that does not start is rolled back by itself and never tried again.${u.heldBack ? ` Held back: ${esc(u.heldBack)} and older (you went back from it).` : ''}</p>
+        ${u.launched ? '' : '<p class="small warn-t" style="margin:0">This server was not started by the launcher (the container image or npm start), so it cannot update itself.</p>'}
+        <div class="row">${u.previous && u.launched ? `<button class="btn ghost" data-act="rollback">Go back to ${esc(u.previous)}</button>` : ''}${u.launched ? '<button class="btn ghost" data-act="restart">Restart the server</button>' : ''}<a class="btn ghost" href="/api/system/report" download>Troubleshooting report</a></div>
+      </div></section>
+      <section class="panel"><div class="head"><h3>Software integrity</h3><span class="badge ${tone}">${i?.checked ? (i.ok ? 'Genuine' : 'Files changed') : 'Image version'}</span></div><div class="body stack" style="gap:10px">
+        <p style="margin:0">${i?.checked ? (i.ok ? `Every file of ${esc(u.current)} matches what was installed.` : `${i.changed.length} file${i.changed.length === 1 ? '' : 's'} changed since it was installed: <span class="mono small">${esc(i.changed.slice(0, 6).join(', '))}</span>`) : `${esc(u.current)} is the container image’s own version; its files were checked when the image was built.`}</p>
+        <p class="small muted" style="margin:0">Each installed version keeps a fingerprint of its files: they are checked before it starts, every 6 hours and when you ask; the Admins are emailed if one changes.${i?.at ? ` Last checked ${esc(ago(i.at))}.` : ''}</p>
+        <div class="row"><button class="btn sm" data-act="integrity">Check now</button></div>
+      </div></section>
+    </div>
+    <section class="panel"><div class="head"><h3>Versions</h3><span class="small muted">every release, newest first</span></div>
+      <div class="versions">${(u.available ?? []).slice(0, shown).map((r) => `<details class="version${r.version === u.current ? ' current' : ''}"><summary><span class="mono"><b>${esc(r.version)}</b></span>${r.version === u.current ? '<span class="badge ok">Running</span>' : r.newer ? '<span class="badge accent">Newer</span>' : installed.has(r.version) ? '<span class="badge">Installed</span>' : ''}${(u.failed ?? []).includes(r.version) ? '<span class="badge bad">Did not start</span>' : ''}<span class="v-title">${esc(String(r.notes || r.name || '').split('\n')[0].slice(0, 120))}</span><span class="small muted">${r.publishedAt ? esc(when(r.publishedAt)) : ''}</span>
+          ${u.launched && r.version !== u.current ? `<button class="btn sm${r.newer ? ' primary' : ' ghost'}" data-install="${esc(r.version)}">${r.newer ? 'Install' : 'Switch to it'}</button>` : '<span></span>'}</summary>
+          <div class="v-notes"><p>${notes(String(r.notes || '').split('\n').slice(1).join('\n')) || '<span class="muted">No notes.</span>'}</p>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" class="small">On GitHub ↗</a>` : ''}</div></details>`).join('') || '<p class="muted" style="padding:14px">No release read yet: press Check now.</p>'}</div>
+      ${(u.available ?? []).length > shown ? `<div class="body"><button class="btn sm" data-act="more">Show 10 more</button></div>` : ''}</section>
+    <section class="panel"><div class="head"><h3>Recent events</h3></div><div class="table-wrap"><table><thead><tr><th>When</th><th>What</th><th>Version</th><th>Detail</th></tr></thead><tbody>
+      ${(u.history ?? []).map((h) => `<tr><td>${esc(when(h.at))}<div class="small muted">${esc(ago(h.at))}</div></td><td>${esc(EVENT[h.event] ?? h.event)}</td><td class="mono">${esc(h.version ?? '')}${h.from ? ` <span class="muted">from ${esc(h.from)}</span>` : ''}</td><td class="small">${esc(h.message ?? (h.by ? `by ${h.by}` : ''))}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nothing yet.</td></tr>'}
+    </tbody></table></div></section></div>`;
+  const again = () => updates(body);
+  const reloadSoon = () => setTimeout(() => location.reload(), 8000);
+  $('[data-act="check"]', body).addEventListener('click', async () => (await attempt(() => api('/updates/check', { method: 'POST', body: {} }))) && again());
+  $('[data-act="integrity"]', body).addEventListener('click', async () => {
+    const r = await attempt(() => api('/system/integrity?now=1'));
+    if (r) toast(r.integrity.checked ? (r.integrity.ok ? 'Genuine: every file matches' : 'Files changed since install') : 'The image’s own version: nothing to compare');
+    again();
+  });
+  $('[data-act="more"]', body)?.addEventListener('click', () => ((body.dataset.more = String(shown + 10)), again()));
   const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, everyMinutes: Number($('#autoEvery').value) } }), 'Saved');
-  $('#autoOn').addEventListener('change', saveAuto);
-  $('#autoEvery').addEventListener('change', saveAuto);
-  $('[data-act="install"]', body)?.addEventListener('click', async () => {
-    if ((await ask(`Install ${u.available[0].version}? People see a short pause while the server restarts.`, { ok: 'Install' })) && (await attempt(() => api('/updates/install', { method: 'POST', body: { version: u.available[0].version } }), 'Installing — restarting'))) setTimeout(() => location.reload(), 8000);
-  });
+  $('#autoOn', body).addEventListener('change', saveAuto);
+  $('#autoEvery', body).addEventListener('change', saveAuto);
+  for (const b of $$('[data-install]', body))
+    b.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const v = b.dataset.install;
+      if ((await ask(`Install ${v}? A checked backup is taken first; people see a short pause while the server restarts.`, { ok: 'Install' })) && (await attempt(() => api('/updates/install', { method: 'POST', body: { version: v } }), 'Installing — restarting'))) reloadSoon();
+    });
   $('[data-act="rollback"]', body)?.addEventListener('click', async () => {
-    if ((await ask(`Go back to ${u.previous}?`, { ok: 'Go back' })) && (await attempt(() => api('/updates/rollback', { method: 'POST', body: {} }), 'Going back — restarting'))) setTimeout(() => location.reload(), 8000);
+    if ((await ask(`Go back to ${u.previous}?`, { ok: 'Go back' })) && (await attempt(() => api('/updates/rollback', { method: 'POST', body: {} }), 'Going back — restarting'))) reloadSoon();
   });
+  $('[data-act="restart"]', body)?.addEventListener('click', async () => {
+    if ((await ask('Restart the server? People see a pause of a few seconds; nothing is lost.', { ok: 'Restart' })) && (await attempt(() => api('/system/restart', { method: 'POST', body: {} }), 'Restarting'))) setTimeout(() => location.reload(), 6000);
+  });
+}
+
+// ——— About ———
+async function about(body, data) {
+  const a = await api('/system/about');
+  body.innerHTML = `<div class="stack">
+    <section class="panel about-card"><div class="body">
+      <div class="about-name">Kendra</div><div class="muted">One line of sight across every Checkmarx One POV</div>
+      <dl class="about-facts"><dt>Version</dt><dd class="mono">${esc(a.version)}</dd><dt>Organisation</dt><dd>${esc(data.settings.orgName)}</dd><dt>Running since</dt><dd>${esc(when(a.startedAt))} <span class="muted">(${esc(ago(a.startedAt))})</span></dd><dt>Node.js</dt><dd class="mono">${esc(a.node)}</dd>${a.repo ? `<dt>Releases from</dt><dd class="mono">${esc(a.repo)}</dd>` : ''}${a.dataDir ? `<dt>Data folder</dt><dd class="mono">${esc(a.dataDir)}</dd>` : ''}<dt>Licence</dt><dd>${esc(a.licence)}</dd></dl>
+      ${can('settings.manage') ? '<div class="row" style="margin-top:14px"><a class="btn" href="#/settings/updates">Update &amp; recovery</a><a class="btn ghost" href="#/settings/system">Health &amp; backups</a></div>' : ''}
+    </div></section>
+    <section class="panel"><div class="head"><h3>Your data stays yours</h3></div><div class="body"><ul class="facts-list">
+      <li><b>On your server.</b> Kendra runs where you put it and keeps everything in its own data folder, encrypted (AES-256).</li>
+      <li><b>No telemetry.</b> Nothing calls home. It connects only to what you connect it to: the Checkmarx One tenants of your POVs, your email server, GitHub for its own releases, and Microsoft Graph or Salesforce if you set them up (Network &amp; certificates lists them).</li>
+      <li><b>Reads, never writes, a tenant</b> — except AI triage and remediation, and only when a person plans them, sees the credits they cost and confirms.</li>
+      <li><b>Keys never leave the server:</b> API keys, passwords and addresses are sealed, and never sent back to a browser.</li></ul></div></section></div>`;
 }
 
 // ——— Your Email to Salesforce address ———

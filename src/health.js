@@ -82,7 +82,16 @@ export class Watchdog {
 }
 
 /** The checks, worst first: { key, label, level: ok | warn | bad, text, fix }. */
-export function healthChecks({ db, backups, monitor, audit, updater, watchdog, version, certValidTo = null, drill = null }) {
+/** The integrity health check: changed files are bad; a checked install is genuine; the image's own version is the image's. */
+export function integrityCheck(integrity, version) {
+  if (!integrity) return null;
+  const c = (level, text, fix = '') => ({ key: 'integrity', label: 'Software integrity', level, text, fix });
+  if (integrity.checked && !integrity.ok) return c('bad', `Files changed since this version was installed: ${integrity.changed.slice(0, 5).join(', ')}${integrity.changed.length > 5 ? '…' : ''}.`, 'Install the version again (Settings → Update & recovery), or go back to the previous one. If nobody here changed them, treat the server as compromised.');
+  if (integrity.checked) return c('ok', `Genuine: every file of ${version} matches what was installed (checked ${new Date(integrity.at).toISOString().slice(11, 16)} UTC).`);
+  return c('ok', `${version} is the container image’s own version: its files are the image’s, checked when it was built.`);
+}
+
+export function healthChecks({ db, backups, monitor, audit, updater, watchdog, version, certValidTo = null, drill = null, integrity = null }) {
   const out = [];
   const add = (key, label, level, text, fix = '') => out.push({ key, label, level, text, fix });
 
@@ -90,6 +99,10 @@ export function healthChecks({ db, backups, monitor, audit, updater, watchdog, v
   const v = db.vault;
   if (v.source.startsWith('key file')) add('key', 'Encryption', 'warn', `All data is encrypted (AES-256). The key is a file in the data folder (key ${v.fingerprint}).`, 'Set CC_SECRET_FILE to a secret mounted from outside the data volume, so a copy of the disk or of a backup is unreadable on its own. Keep a copy of the key in your password vault.');
   else add('key', 'Encryption', 'ok', `All data is encrypted (AES-256), with the key from ${v.source} (key ${v.fingerprint}).`);
+
+  // The software: the files running are the ones installed
+  const sw = integrityCheck(integrity, version);
+  if (sw) out.push(sw);
 
   // Backups
   const list = backups.list();

@@ -61,8 +61,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The notes are the change itself: the commit message (Settings -> Update & recovery shows them).
+          git log -1 --format=%B "$GITHUB_SHA" | grep -v -E '^(Co-Authored-By|Claude-Session):' > dist/NOTES.md
           gh release create "v${{ steps.v.outputs.version }}" dist/meridian-*.tar.gz dist/SHA256SUMS $(ls dist/SHA256SUMS.sig 2>/dev/null) \
-            --target "$GITHUB_SHA" --title "Kendra ${{ steps.v.outputs.version }}" --generate-notes --latest
+            --target "$GITHUB_SHA" --title "Kendra ${{ steps.v.outputs.version }}" --notes-file dist/NOTES.md --latest
       - if: steps.v.outputs.exists == 'no'
         uses: docker/setup-buildx-action@v3
       - if: steps.v.outputs.exists == 'no'
