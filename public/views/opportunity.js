@@ -597,6 +597,9 @@ function editPlan() {
         <label class="field">Support<textarea name="support" rows="4">${esc(lines(p.support?.length ? p.support : state.meta.planDefaults?.support))}</textarea></label>
         <label class="field">Success<textarea name="success" rows="4">${esc(lines(p.success?.length ? p.success : state.meta.planDefaults?.success))}</textarea></label></div>
       <div class="row"><label class="field">Out of scope<input name="outOfScope" value="${esc(p.outOfScope ?? '')}"></label><label class="field">Account name in the tenant<input name="accountName" value="${esc(p.accountName ?? '')}" placeholder="${esc(o.tenant?.tenant ?? '')}"></label></div>
+      <h3 class="sec-title">Environment</h3>
+      <div class="row"><label class="field">Repositories in scope <span class="muted small">names or a short list</span><input name="repositories" value="${esc(p.repositories ?? '')}" placeholder="e.g. payments-api, web-portal, 3 mobile apps"></label>
+        <label class="field">DAST and API targets<input name="targets" value="${esc(p.targets ?? '')}" placeholder="e.g. staging web app, orders API"></label></div>
       <label class="field">Executive overview letter <span class="muted small">leave empty and Meridian writes it from the POV; paragraphs separated by an empty line</span><textarea name="letter" rows="6">${esc(p.letter ?? '')}</textarea></label>
       <label class="field">Closing line of the letter<input name="quote" value="${esc(p.quote ?? '')}" placeholder="“From code to confidence: building security from the ground up with Checkmarx.”"></label>
       <p class="small muted">Meetings and their notes are under Notes → Sessions; people and their POV roles under Customer → Stakeholders.</p>
@@ -620,7 +623,7 @@ function editPlan() {
           toolchain.languages = v('languages');
           const split = (n) => v(n).split('\n').map((x) => x.trim()).filter(Boolean);
           try {
-            await api(`/opportunities/${oid()}`, { method: 'PATCH', body: { toolchain, plan: { scope: split('scope'), support: split('support'), success: split('success'), outOfScope: v('outOfScope'), accountName: v('accountName'), letter: v('letter'), quote: v('quote') } } });
+            await api(`/opportunities/${oid()}`, { method: 'PATCH', body: { toolchain, plan: { scope: split('scope'), support: split('support'), success: split('success'), outOfScope: v('outOfScope'), accountName: v('accountName'), repositories: v('repositories'), targets: v('targets'), letter: v('letter'), quote: v('quote') } } });
             closeDialog('ok');
             toast('Saved');
             rerender();

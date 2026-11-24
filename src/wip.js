@@ -842,6 +842,100 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     }
   };
 
+  // ——— Evidence from Checkmarx One (appendix): what the portal's pages show, drawn from the tenant's own numbers ———
+  const sTenantEvidence = () => {
+    const ev = story?.tenantEvidence;
+    if (!ev) return;
+    const I = ev.integrations;
+    const T = ev.triage;
+    const triaged = T.states.confirmed + T.states.urgent + T.states.notExploitable + T.states.proposedNotExploitable;
+    const G = ev.governance;
+    const has = {
+      integrations: I.origins.length || I.tools.length || I.hosts.length || I.feedback.length,
+      triage: triaged + T.states.toVerify > 0 || T.actions?.triage || T.actions?.remediation,
+      supply: (ev.supply.severities && Object.values(ev.supply.severities).some(Boolean)) || ev.supply.malicious || G.policies || G.sso || G.groups,
+      activity: ev.activity.days.length && ev.activity.perDay.length,
+    };
+    if (!Object.values(has).some(Boolean)) return;
+    const when = `From Checkmarx One, ${new Date(ev.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC`;
+    const COLORS = ['7A45FF', 'F25928', 'F5C518', '3CCF8E', '5CE1FF', 'C9B8FF'];
+    const axis = { catAxisLabelFontSize: 10, catAxisLabelColor: 'E6E0F2', catAxisLabelFontFace: FONT, catAxisLineColor: '4A3670', valAxisLabelFontSize: 8, valAxisLabelColor: '8C82A3', valGridLine: { color: '3A2A57', size: 0.5 }, plotArea: { fill: { color: PANEL } }, chartArea: { fill: { color: PANEL } } };
+    const stampOn = (sl) => sl.addText(when, { x: L, y: 6.9, w: W, h: 0.25, fontFace: FONT, fontSize: 9, color: MUTED, align: 'right', margin: 0 });
+    const bars = (sl, title, items, x, y, w, h, color) => {
+      card(sl, x, y, w, h);
+      label(sl, title, x + 0.2, y + 0.15, w - 0.4);
+      if (!items.length) return sl.addText('Nothing yet', { x: x + 0.2, y: y + 0.6, w: w - 0.4, h: 0.3, fontFace: FONT, fontSize: 11, color: MUTED, margin: 0 });
+      sl.addChart(pptx.charts.BAR, [{ name: title, labels: items.map((i) => i.name), values: items.map((i) => i.count) }], { x: x + 0.1, y: y + 0.5, w: w - 0.2, h: h - 0.6, barDir: 'bar', chartColors: [color], showValue: true, dataLabelColor: 'FFFFFF', dataLabelFontSize: 9, catAxisOrientation: 'maxMin', valAxisHidden: true, ...axis });
+    };
+    const tile = (sl, value, text, x, y, w, color = WHITE) => {
+      card(sl, x, y, w, 1.3);
+      sl.addText(String(value), { x: x + 0.15, y: y + 0.12, w: w - 0.3, h: 0.65, fontFace: FONT, fontSize: 28, bold: true, color, align: 'center', valign: 'middle', margin: 0, fit: 'shrink' });
+      sl.addText(text, { x: x + 0.15, y: y + 0.8, w: w - 0.3, h: 0.4, fontFace: FONT, fontSize: 9.5, color: MUTED, align: 'center', valign: 'top', margin: 0 });
+    };
+    const d = add('section');
+    d.addText('Evidence from Checkmarx One', { x: 0.8, y: 3.1, w: 11.5, h: 1, fontFace: FONT, fontSize: 40, bold: true, color: WHITE, margin: 0 });
+    d.addText('What the tenant shows, drawn from its own numbers', { x: 0.8, y: 4.05, w: 11, h: 0.4, fontFace: FONT, fontSize: 16, color: MUTED, margin: 0 });
+    if (has.integrations) {
+      const sl = add('content');
+      head(sl, 'Integrations in Use', 'Where', `${C}’s scans and developers come from`);
+      const w3 = (W - 0.5) / 3;
+      bars(sl, 'Scans came from (7 days)', I.origins, L, 1.5, w3, 5.25, '7A45FF');
+      bars(sl, 'Developers by tool', I.tools, L + w3 + 0.25, 1.5, w3, 5.25, 'F25928');
+      const x = L + 2 * (w3 + 0.25);
+      card(sl, x, 1.5, w3, 5.25);
+      label(sl, 'Repositories by host', x + 0.2, 1.65, w3 - 0.4);
+      sl.addText(I.hosts.length ? I.hosts.map((h) => ({ text: `${h.name}  ·  ${h.count} project${h.count === 1 ? '' : 's'}`, options: { breakLine: true } })) : 'None connected yet', { x: x + 0.2, y: 2.05, w: w3 - 0.4, h: 1.7, fontFace: FONT, fontSize: 12, color: I.hosts.length ? WHITE : MUTED, valign: 'top', margin: 0, paraSpaceAfter: 6 });
+      label(sl, 'Feedback apps', x + 0.2, 3.95, w3 - 0.4);
+      sl.addText(I.feedback.length ? I.feedback.map((f) => ({ text: `${f.name}  ·  ${f.projects} project${f.projects === 1 ? '' : 's'}`, options: { breakLine: true } })) : 'None set up yet', { x: x + 0.2, y: 4.35, w: w3 - 0.4, h: 2.2, fontFace: FONT, fontSize: 12, color: I.feedback.length ? WHITE : MUTED, valign: 'top', margin: 0, paraSpaceAfter: 6 });
+      stampOn(sl);
+    }
+    if (has.triage) {
+      const sl = add('content');
+      head(sl, 'Triage', 'How the findings were', 'worked through');
+      const st = T.states;
+      bars(sl, 'Findings by state (latest scans)', [['To verify', st.toVerify], ['Confirmed', st.confirmed], ['Urgent', st.urgent], ['Not exploitable', st.notExploitable], ['Proposed not exploitable', st.proposedNotExploitable]].map(([name, count]) => ({ name, count })), L, 1.5, 7.4, 5.25, '7A45FF');
+      const x = L + 7.65;
+      const w = W - 7.65;
+      const total = triaged + st.toVerify;
+      tile(sl, total ? `${Math.round((100 * triaged) / total)}%` : '—', 'of findings triaged', x, 1.5, (w - 0.2) / 2, '3CCF8E');
+      tile(sl, T.customStates ?? '—', 'triage states of their own', x + (w + 0.2) / 2, 1.5, (w - 0.2) / 2);
+      tile(sl, T.actions?.triage ?? '—', 'AI triage actions (30 days)', x, 3.0, (w - 0.2) / 2, ORANGE);
+      tile(sl, T.actions?.remediation ?? '—', 'AI remediation actions (30 days)', x + (w + 0.2) / 2, 3.0, (w - 0.2) / 2, ORANGE);
+      sl.addText('Confirmed, Urgent and Not exploitable are set by people; Proposed not exploitable is AI triage’s proposal, for a person to confirm.', { x, y: 4.6, w, h: 1, fontFace: FONT, fontSize: 10.5, color: MUTED, valign: 'top', margin: 0 });
+      stampOn(sl);
+    }
+    if (has.supply) {
+      const sl = add('content');
+      head(sl, 'Supply Chain and Governance', 'Open risk, and the', 'controls around it');
+      const sev = ev.supply.severities ?? {};
+      const w4 = (W - 0.6) / 4;
+      label(sl, 'Open findings, latest scans', L, 1.45, W);
+      [['critical', 'Critical', 'A98BFF'], ['high', 'High', ORANGE], ['medium', 'Medium', 'F5C518'], ['low', 'Low', MUTED]].forEach(([k, l, c], i) => tile(sl, sev[k] ?? '—', l, L + i * (w4 + 0.2), 1.8, w4, c));
+      label(sl, 'Controls', L, 3.35, W);
+      const m = ev.supply.malicious;
+      const P = G.policies;
+      const items = [
+        [m ? m.risks : '—', m ? `malicious or suspicious packages (${m.checked} projects checked)` : 'malicious package check'],
+        [P ? P.applied : '—', P ? `policies applied${P.breakBuild ? `, ${P.breakBuild} breaking the build` : ''}` : 'policies'],
+        [P?.violations ?? '—', 'policy violations raised'],
+        [G.sso ? G.ssoKinds.join(' / ') || G.sso : '—', G.sso ? 'single sign-on' : 'single sign-on'],
+        [G.groups ?? '—', 'access groups'],
+        [G.applications ?? '—', `applications${G.risks ? `, ${G.risks} risks orchestrated` : ''}`],
+      ];
+      const w3 = (W - 0.4) / 3;
+      items.forEach(([v, t], i) => tile(sl, v, t, L + (i % 3) * (w3 + 0.2), 3.7 + Math.floor(i / 3) * 1.5, w3));
+      stampOn(sl);
+    }
+    if (has.activity) {
+      const sl = add('content');
+      head(sl, 'Scan Activity', 'Completed scans per day,', 'by engine');
+      card(sl, L, 1.5, W, 5.25);
+      const labels = ev.activity.days.map((x) => new Date(`${x}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }));
+      sl.addChart(pptx.charts.BAR, ev.activity.perDay.map((e) => ({ name: e.engine.toUpperCase(), labels, values: e.values })), { x: L + 0.15, y: 1.65, w: W - 0.3, h: 5.0, barDir: 'col', barGrouping: 'stacked', chartColors: COLORS, showLegend: true, legendPos: 'b', legendFontSize: 10, legendColor: 'E6E0F2', legendFontFace: FONT, ...axis });
+      stampOn(sl);
+    }
+  };
+
   // ——— POV screenshots: a divider, then each picture the SE added, titled and fitted below its title ———
   const sScreenshots = () => {
     if (!screenshots.length) return;
@@ -898,6 +992,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     goalsPlan: sGoalsPlan,
     impact: sImpact,
     screenshots: sScreenshots,
+    tenantEvidence: sTenantEvidence,
     analyticsDetail: sAnalyticsDetail,
   };
   const keep = (k) => MAKE[k] && !(same[k] && same[k][1] && usedKeys.has(same[k][0]));

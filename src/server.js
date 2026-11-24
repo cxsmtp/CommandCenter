@@ -19,6 +19,7 @@ import { SfMailbox } from './sf-mailbox.js';
 import { Templates } from './templates.js';
 import { Bank } from './bank.js';
 import { rwReport } from './guide.js';
+import { tenantEvidence } from './tenant-evidence.js';
 import { Library } from './library.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
@@ -1743,6 +1744,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       ...storyOf(opp, criteria, snap),
       tenant: opp.tenant ? monitor.live(opp.id).summary : null,
       analytics: opp.tenant ? monitor.analytics(opp.id) : null,
+      tenantEvidence: opp.tenant ? tenantEvidence(monitor.snapshot(opp.id)) : null,
       sessions: [...(opp.sessions ?? [])].sort((a, b) => a.date.localeCompare(b.date)).map((x) => ({ date: x.date, title: x.title, type: SESSION_TYPES[x.type] ?? '' })),
       next: (opp.tasks ?? []).filter((t) => !t.done).map((t) => t.title).slice(0, 8),
     };

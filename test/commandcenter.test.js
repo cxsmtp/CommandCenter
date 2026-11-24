@@ -1132,3 +1132,37 @@ test('POV screenshots: added, ordered and named by the SE; Chakra puts them befo
   assert.equal((await call('se1', `/api/opportunities/${o.id}`)).body.opportunity.screenshots.length, 1);
   await call('se1', `/api/opportunities/${o.id}`, { method: 'DELETE' });
 });
+
+test('Evidence from Checkmarx One: integrations, triage, supply chain and governance, scan activity, in the appendix', async () => {
+  const { tenantEvidence } = await import('../src/tenant-evidence.js');
+  const snap = {
+    at: '2026-11-24T14:00:00.000Z',
+    scans: [
+      { createdAt: '2026-11-22T10:00:00Z', status: 'Completed', engines: ['sast', 'sca'], origin: 'VS Code' },
+      { createdAt: '2026-11-22T11:00:00Z', status: 'Completed', engines: ['sast'], origin: 'Jenkins' },
+      { createdAt: '2026-11-23T09:00:00Z', status: 'Failed', engines: ['kics'], origin: 'Jenkins' },
+    ],
+    projects: { list: [{ repoUrl: 'https://github.com/acme/payments' }, { repoUrl: 'https://bitbucket.org/acme/web' }, { repoUrl: '' }] },
+    findings: { critical: 3, high: 10, medium: 20, low: 5, byProject: { p1: { toVerify: 30, confirmed: 4, urgent: 1, notExploitable: 2, proposedNotExploitable: 3 } } },
+    credits: { actions: { triage: 12, remediation: 4 } },
+    aspm: { contributors: { tools: { 'VS Code': 90, Cursor: 19 } }, feedback: { jira: { apps: 1, projects: 3 } }, triage: { customStates: 2 }, supplyChain: { checked: 5, risks: 1 }, policies: { made: 2, applied: 1, breakBuild: 1, violations: 7 }, access: { sso: 1, ssoKinds: ['SAML'], groups: 4 }, applications: { total: 3 }, risks: { total: 229 } },
+  };
+  const ev = tenantEvidence(snap);
+  assert.deepEqual(ev.integrations.origins, [{ name: 'Jenkins', count: 2 }, { name: 'VS Code', count: 1 }]);
+  assert.deepEqual(ev.integrations.hosts, [{ name: 'GitHub', count: 1 }, { name: 'Bitbucket', count: 1 }]);
+  assert.deepEqual(ev.integrations.feedback, [{ name: 'Jira', projects: 3 }]);
+  assert.deepEqual(ev.triage.states, { toVerify: 30, confirmed: 4, urgent: 1, notExploitable: 2, proposedNotExploitable: 3 });
+  assert.deepEqual(ev.activity.days, ['2026-11-22', '2026-11-23']);
+  assert.deepEqual(ev.activity.perDay.find((e) => e.engine === 'sast').values, [2, 0], 'completed scans only');
+  assert.equal(tenantEvidence(null), null);
+  const { wipDeck } = await import('../src/wip.js');
+  const buf = await wipDeck({ customer: 'Acme', criteria: [], sessions: [], stakeholders: [] }, { story: { tenantEvidence: ev, criteria: [], goals: [] }, layout: { wip: { main: ['cover'], appendix: ['tenantEvidence'] } } });
+  const JSZip = (await import('jszip')).default;
+  const z = await JSZip.loadAsync(buf);
+  const text = (await Promise.all(Object.keys(z.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).map((n) => z.file(n).async('string')))).join(' ');
+  for (const t of ['Appendix', 'Evidence from Checkmarx One', 'Integrations in Use', 'Triage', 'Supply Chain and Governance', 'Scan Activity', 'From Checkmarx One, 24 Nov 2026']) assert.ok(text.includes(t), t);
+  assert.ok(!/acme\/payments/.test(text), 'no repository names');
+  // Nothing from the tenant: no evidence slides at all.
+  const empty = await JSZip.loadAsync(await wipDeck({ customer: 'Acme', criteria: [], sessions: [], stakeholders: [] }, { story: { tenantEvidence: null, criteria: [], goals: [] }, layout: { wip: { main: ['cover'], appendix: ['tenantEvidence'] } } }));
+  assert.ok(Object.keys(empty.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).length <= 2);
+});

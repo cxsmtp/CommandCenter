@@ -38,6 +38,7 @@ export const SLIDES = {
   evidence: 'Evidence for every criterion',
   impact: 'What the POV changed (Analytics: fix time, triage, scans)',
   screenshots: 'POV screenshots (a divider, then each screenshot the SE added)',
+  tenantEvidence: 'Evidence from Checkmarx One: integrations, triage, supply chain and governance, scan activity (drawn from the tenant)',
   analyticsDetail: 'Fix time and ageing charts (Analytics)',
   goals: 'Business goals at a glance (Version Kendra)',
   goalsPlan: 'Business goals and success criteria: numbered, with milestones and tracker references (Version Kendra)',
@@ -47,19 +48,19 @@ export const SLIDES = {
 const MAIN = ['cover', 'age', 'devsecops', 'components', 'plan', 'env', 'tests', 'closing'];
 export const DEFAULT_LAYOUT = {
   wip: { main: MAIN, appendix: ['overview', 'apma', 'devsecopsFull', 'planFull', 'envFull', 'notes'] },
-  results: { main: [...MAIN.slice(0, -1), 'impact', 'closing'], appendix: ['challenges', 'glance', 'expansion', 'next', 'apma', 'tenant', 'analyticsDetail', 'devsecopsFull', 'planFull', 'envFull', 'testsFull', 'evidence', 'notes'] },
+  results: { main: [...MAIN.slice(0, -1), 'impact', 'closing'], appendix: ['challenges', 'glance', 'expansion', 'next', 'apma', 'tenant', 'analyticsDetail', 'tenantEvidence', 'devsecopsFull', 'planFull', 'envFull', 'testsFull', 'evidence', 'notes'] },
 };
 
 /** Version Kendra: Meridian's own slides, every engine and touch point, and the guide's business goals and criteria. */
 export const KENDRA_LAYOUT = {
   wip: { main: ['cover', 'age', 'goals', 'devsecopsFull', 'components', 'planFull', 'envFull', 'goalsPlan', 'closing'], appendix: ['overview', 'apma', 'notes'] },
-  results: { main: ['cover', 'age', 'glance', 'impact', 'goals', 'goalsPlan', 'components', 'expansion', 'next', 'closing'], appendix: ['challenges', 'analyticsDetail', 'devsecopsFull', 'planFull', 'envFull', 'apma', 'tenant', 'evidence', 'notes'] },
+  results: { main: ['cover', 'age', 'glance', 'impact', 'goals', 'goalsPlan', 'components', 'expansion', 'next', 'closing'], appendix: ['challenges', 'analyticsDetail', 'tenantEvidence', 'devsecopsFull', 'planFull', 'envFull', 'apma', 'tenant', 'evidence', 'notes'] },
 };
 
 /** Chakra: the order of the team's POV WIP deck, screenshots before the appendix and the closing slide last. */
 export const CHAKRA_LAYOUT = {
-  wip: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'screenshots'], appendix: ['notes', 'closing'] },
-  results: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'impact', 'screenshots'], appendix: ['evidence', 'notes', 'closing'] },
+  wip: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'screenshots'], appendix: ['tenantEvidence', 'notes', 'closing'] },
+  results: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'impact', 'screenshots'], appendix: ['tenantEvidence', 'evidence', 'notes', 'closing'] },
 };
 
 /** Meridian's own design, the Classic results deck, Version Kendra and Chakra: always there. */

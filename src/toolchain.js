@@ -64,6 +64,9 @@ export function cleanPlan(p) {
     success: list(p.success),
     outOfScope: text(p.outOfScope, 600),
     accountName: text(p.accountName, 120),
+    // The environment: what is scanned and tested (the RW report and the environment slides show them).
+    repositories: text(p.repositories, 600),
+    targets: text(p.targets, 600),
     letter: String(p.letter ?? '').replace(/\r/g, '').slice(0, 6000).trim(),
     quote: text(p.quote, 200),
   };
