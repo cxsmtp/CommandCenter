@@ -13,7 +13,7 @@
  *              policy (a policy applied), violations (policy violations raised), feedback:jira|azure|servicenow|
  *              email|slack|teams (a feedback app of that kind set up), sso, ldap, groups (access),
  *              triaged (findings triaged by hand), custom-states, custom-presets (triage states and
- *              SAST presets of their own)
+ *              SAST presets of their own), malicious (supply chain risk checked on SCA scans)
  *   keywords   words looked for in the opportunity's own notes, discovery and sessions (a hint, never proof)
  *
  * Evidence only ever suggests: the SE confirms a criterion is met. An Admin (or anyone with catalog.manage) edits
@@ -55,7 +55,7 @@ export const DEFAULT_CATALOG = [
   c('iac', 'code', 'IaC Security', 'IaC Security (KICS)', { engines: ['kics'], keywords: ['iac', 'terraform', 'kics', 'cloudformation', 'helm', 'kubernetes manifest'] }, { proof: 'Scan Terraform/CloudFormation/Kubernetes files; show misconfigurations and their fixes.', tech: `${SCANS} "kics".` }),
   c('apisec', 'code', 'API Security', 'API Security', { engines: ['apisec', 'api-security'], keywords: ['api security', 'swagger', 'openapi', 'shadow api'] }, { proof: 'Show the API inventory found in code (including shadow and zombie APIs) and its risks.', tech: `${SCANS} "apisec".` }),
   // ——— Supply Chain Security ———
-  c('malicious', 'supply', 'Malicious Packages', 'SCA — Malicious Package Protection', { keywords: ['malicious package', 'typosquat', 'malicious packages'] }, { proof: 'Show a malicious package being flagged (and blocked at install time where agreed).', tech: `A scan with the "sca" engine is a prerequisite; malicious-package results themselves are not counted by the read here. ${MANUAL}` }),
+  c('malicious', 'supply', 'Malicious Packages', 'SCA — Malicious Package Protection', { aspm: ['malicious'], keywords: ['malicious package', 'typosquat', 'malicious packages'] }, { proof: 'Show a malicious package being flagged (and blocked at install time where agreed).', tech: 'Supply chain risks of each project’s latest SCA scan (POST /api/sca/graphql/graphql, supplyChainRisksByScanId), as the SCA results page asks for them.' }),
   c('sca', 'supply', 'SCA', 'SCA (Software Composition Analysis)', { engines: ['sca'], keywords: ['sca', 'open source', 'dependencies', 'third-party', 'licence', 'license'] }, { proof: 'Show vulnerable direct and transitive dependencies, exploitable path, licences and the upgrade advice.', tech: `${SCANS} "sca".` }),
   c('containers', 'supply', 'Container Security', 'Container Security', { engines: ['containers'], keywords: ['container', 'docker', 'image scan', 'dockerfile'] }, { proof: 'Scan the agreed images; show base-image findings and the recommended base image.', tech: `${SCANS} "containers".` }),
   c('scorecard', 'supply', 'Repository Health', 'Repository Health (OpenSSF Scorecard, micro engines)', { engines: ['scorecard', 'repository-health'], keywords: ['scorecard', 'repository health', 'repo health'] }, { proof: 'Show the repository health score and the checks that failed.', tech: `${SCANS} "scorecard" (some tenants report it under "microengines": confirm by hand then).` }),
@@ -234,6 +234,7 @@ function aspmFacts(a, findings = null) {
   const moved = per.reduce((t, p) => t + (p.confirmed ?? 0) + (p.urgent ?? 0) + (p.notExploitable ?? 0), 0);
   if (moved > 0) out.set('triaged', `${n(moved, 'finding')} triaged by hand to Confirmed, Urgent or Not exploitable, in ${n(per.filter((p) => (p.confirmed ?? 0) + (p.urgent ?? 0) + (p.notExploitable ?? 0) > 0).length, 'project')}`);
   if (!a) return out;
+  if (a.supplyChain?.checked > 0) out.set('malicious', `Supply chain risk checked on the latest SCA scan of ${n(a.supplyChain.checked, 'project')}: ${a.supplyChain.risks ? n(a.supplyChain.risks, 'malicious or suspicious package') + ' found' : 'none found'}`);
   if (a.applications?.total > 0) out.set('applications', `${n(a.applications.total, 'application')} defined${a.applications.projects ? `, holding ${n(a.applications.projects, 'project')}` : ''}`);
   if (a.armScores?.scored > 0) out.set('risk-scores', `Application Risk Management scored ${n(a.armScores.scored, 'application')}${a.armScores.top != null ? ` (highest ${a.armScores.top.toFixed(1)})` : ''}`);
   if (a.risks?.total > 0) out.set('risks', `Risk Orchestration lists ${n(a.risks.total, 'risk')} across engines`);

@@ -354,6 +354,24 @@ function feedbackOf(appsBody, profilesBody) {
   return out;
 }
 
+const SUPPLY_CHAIN_QUERY = 'query ($scanId: UUID!, $where: SupplyChainExtendedDtoFilterInput) { supplyChainRisksByScanId (scanId: $scanId, where: $where) { totalCount, risksLevelCounts { critical, high, medium, low } } }';
+/**
+ * Malicious and suspicious packages (SCA's supply chain risks), as the SCA results page asks for them: POST
+ * /api/sca/graphql/graphql, one question per project's latest scan (at most 20). Null when nothing answers.
+ */
+export async function supplyChain(client, scanIds) {
+  let checked = 0;
+  let risks = 0;
+  for (const scanId of scanIds.slice(0, 20)) {
+    const r = await client.request('/api/sca/graphql/graphql', { method: 'POST', body: { query: SUPPLY_CHAIN_QUERY, variables: { scanId, where: { and: [{ and: [{ isIgnore: { eq: false } }] }] } } }, retries: 1 }).catch(() => null);
+    const d = r?.data?.supplyChainRisksByScanId;
+    if (!d) continue;
+    checked += 1;
+    risks += n0(d.totalCount) ?? 0;
+  }
+  return checked ? { checked, risks } : null;
+}
+
 /** The tenant's AI settings (GET /api/configuration/tenant): Fusion on, LLM-based scanning on, the model. */
 async function tenantAi(client) {
   const body = await quietly(() => client.request('/api/configuration/tenant', { retries: 1 }));
@@ -506,6 +524,14 @@ export async function collect(connection, { client = new CxClient(connection), n
     ? [previous.credits ?? null, previous.ai ?? null, previous.people ?? null, previous.aspm ?? null]
     : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null), part('aspm', () => aspm(client, connection), null)]);
   const findings = projects.list.length ? await part('findings', () => latestFindings(client, projects.list.map((p) => p.id)), null) : { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, byProject: {} };
+  // Malicious packages: asked of the latest scans with the slow parts, kept in between.
+  if (aspmInfo && findings?.byProject) {
+    if (keep) aspmInfo.supplyChain = previous.aspm?.supplyChain ?? null;
+    else {
+      const latest = Object.values(findings.byProject).filter((p) => p.scanId).sort((a, b) => timeOf(b.scanAt) - timeOf(a.scanAt)).map((p) => p.scanId);
+      aspmInfo.supplyChain = latest.length ? await part('supplyChain', () => supplyChain(client, latest), null) : null;
+    }
+  }
   // Nothing at all could be read (a rejected key, an unreachable tenant): the read failed.
   if (['projects', 'scans', 'running'].every((name) => errors.some((e) => e.part === name))) {
     throw Object.assign(new Error(errors[0].message), { status: errors[0].status, errors });
