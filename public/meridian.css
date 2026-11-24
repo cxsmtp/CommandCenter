@@ -331,3 +331,31 @@ dialog.reauth { max-width: 420px; }
 .shots li{display:grid;grid-template-columns:96px 1fr auto;gap:10px;align-items:center}
 .shots img{width:96px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
 @media (max-width:640px){.shots li{grid-template-columns:72px 1fr}.shots li .row{grid-column:1/-1}}
+
+/* Portfolio table view: headings that sort, a filter row, scrolls sideways, the heading row stays in view */
+.seg-toggle{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;background:var(--panel)}
+.seg-toggle button{border:0;background:transparent;padding:6px 12px;border-radius:999px;cursor:pointer;color:var(--dim,inherit);font:inherit;font-size:13px}
+.seg-toggle button[aria-pressed="true"]{background:var(--accent,#6b34fd);color:#fff}
+.ptable-wrap{padding:0;overflow:hidden}
+.ptable-meta{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.ptable-meta .spacer{flex:1}
+.ptable-scroll{overflow:auto;max-height:calc(100vh - 260px)}
+.ptable{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.ptable thead th{position:sticky;top:0;background:var(--panel);z-index:2;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;padding:0}
+.ptable thead tr.frow th{top:34px;padding:4px 6px;z-index:1}
+.ptable thead th button{all:unset;cursor:pointer;display:block;padding:9px 10px;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.ptable thead th.n button{text-align:right}
+.ptable .frow input,.ptable .frow select{width:100%;min-width:70px;font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg,transparent);color:inherit;box-sizing:border-box}
+.ptable td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+.ptable td:last-child,.ptable td:nth-last-child(1){white-space:normal}
+.ptable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.ptable tbody tr{cursor:pointer}
+.ptable tbody tr:hover,.ptable tbody tr.selected{background:color-mix(in srgb,var(--accent,#6b34fd) 8%,transparent)}
+.ptable .score{display:inline-block;min-width:34px;text-align:center}
+.cols-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px 14px;margin:8px 0}
+
+/* Points of contact from Checkmarx One */
+.tp-list{display:grid;gap:6px;max-height:55vh;overflow:auto}
+.tp-row{display:grid;grid-template-columns:auto 1fr 190px 120px;gap:10px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
+.tp-row select{font:inherit;font-size:13px}
+@media (max-width:640px){.tp-row{grid-template-columns:auto 1fr}.tp-row select{grid-column:2}}

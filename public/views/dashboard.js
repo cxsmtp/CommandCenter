@@ -37,6 +37,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
   const closed = all.filter(isClosed);
   const counts = Object.fromEntries(Object.entries(FOCUS).map(([k, f]) => [k, o.rows.filter((r) => !isClosed(r) && f.test(r)).length]));
   const filters = activeFilters(owner, regions);
+  const table = (ui.view ?? defaultView()) === 'table';
 
   const running = o.rows.filter((r) => r.stage === 'pov').length;
   const summary = [`${o.rows.filter((r) => !isClosed(r)).length} open`, `${running} POV${running === 1 ? '' : 's'} running`, counts.needs ? `<span class="bad-t">${counts.needs} need${counts.needs === 1 ? 's' : ''} you</span>` : '<span class="ok-t">nothing needs you</span>', o.totals?.value?.hours ? `<span title="Time the AI actions in running tenants saved, at the value rates">AI saved ${Math.round(o.totals.value.hours)} h${o.totals.value.value ? ` (${new Intl.NumberFormat('en', { style: 'currency', currency: o.totals.value.currency || 'USD', maximumFractionDigits: 0 }).format(o.totals.value.value)})` : ''}</span>` : ''].filter(Boolean).join(' · ');
@@ -49,13 +50,16 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
     </div>
     <div class="findbar">
       <input type="search" id="fQ" placeholder="Find a customer, SE or tenant" value="${esc(ui.q ?? '')}" aria-label="Find">
+      <div class="seg-toggle" role="group" aria-label="View"><button type="button" data-view="cards" aria-pressed="${!table}">List</button><button type="button" data-view="table" aria-pressed="${table}">Table</button></div>
+      ${table ? '<button class="btn" data-act="cols">Columns</button><button class="btn" data-act="csv">Export CSV</button>' : ''}
       <button class="btn" data-act="filters">Filters${filters.length ? ` <span class="count-dot">${filters.length}</span>` : ''}</button>
       <button class="btn ghost" data-act="tools" aria-label="More actions">•••</button>
     </div>
     ${filters.length ? `<div class="chips">${filters.map(([k, label]) => `<button class="chip-x" data-clear="${k}" aria-label="Remove filter ${esc(label)}">${esc(label)}</button>`).join('')}</div>` : ''}
-    ${open_.length ? groupedRows(open_) : `<div class="panel empty-line" style="padding:16px">${ui.focus || filters.length || q ? 'Nothing matches. <button class="btn sm" data-act="reset">Show everything</button>' : 'No open opportunity.'}</div>`}
-    ${closed.length ? `<details class="closed-fold" ${ui.showClosed ? 'open' : ''}><summary>Won and lost <span class="muted">(${closed.length})</span></summary>${rowsHtml(closed)}</details>` : ''}`;
+    ${table ? tableHtml(all) : `${open_.length ? groupedRows(open_) : `<div class="panel empty-line" style="padding:16px">${ui.focus || filters.length || q ? 'Nothing matches. <button class="btn sm" data-act="reset">Show everything</button>' : 'No open opportunity.'}</div>`}
+    ${closed.length ? `<details class="closed-fold" ${ui.showClosed ? 'open' : ''}><summary>Won and lost <span class="muted">(${closed.length})</span></summary>${rowsHtml(closed)}</details>` : ''}`}`;
   wire(main, { owner, regions });
+  if (table) wireTable(main, all);
 }
 
 // The three numbers, each a question with a list behind it.
@@ -111,6 +115,143 @@ function rowsHtml(rows) {
     })
     .join('')}</div>`;
 }
+// ——— The table view: a heading for every column, sorted by a click, filtered column by column, exported ———
+const n0 = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+const COLS = [
+  { key: 'customer', label: 'Customer', on: true, filter: 'text', v: (r) => r.customer, html: (r) => `<b>${esc(r.customer)}</b>${r.name && r.name !== r.customer ? `<div class="small muted">${esc(r.name)}</div>` : ''}` },
+  { key: 'se', label: 'SE', on: true, filter: 'select', v: (r) => r.owner.name },
+  { key: 'manager', label: 'Manager', on: false, filter: 'select', v: (r) => r.managers?.[0]?.name ?? '' },
+  { key: 'region', label: 'Region', on: true, filter: 'select', v: (r) => r.region || '' },
+  { key: 'stage', label: 'Stage', on: true, filter: 'select', v: (r) => state.meta.stages[r.stage] ?? r.stage, html: (r) => stageBadge(r.stage) },
+  { key: 'start', label: 'Start', on: false, filter: 'text', v: (r) => r.startDate || '', html: (r) => (r.startDate ? day(r.startDate) : '—') },
+  { key: 'end', label: 'End', on: true, filter: 'text', v: (r) => r.endDate || '', html: (r) => (r.endDate ? day(r.endDate) : '—') },
+  { key: 'days', label: 'Days left', on: true, num: true, filter: 'num', v: (r) => (['pov', 'technical', 'discovery', 'first_call'].includes(r.stage) ? r.daysLeft : null), html: (r) => (['pov', 'technical', 'discovery', 'first_call'].includes(r.stage) && r.daysLeft !== null ? `<span class="${r.daysLeft < 0 ? 'bad-t' : r.daysLeft <= 7 ? 'warn-t' : ''}">${r.daysLeft}</span>` : '—') },
+  { key: 'criteria', label: 'Criteria met', on: true, num: true, filter: 'num', v: (r) => (r.progress.total ? Math.round((100 * r.progress.met) / r.progress.total) : null), html: (r) => (r.progress.total ? `${r.progress.met}/${r.progress.total} <span class="small muted">${Math.round((100 * r.progress.met) / r.progress.total)}%</span>` : '—') },
+  { key: 'must', label: 'Must-haves', on: true, num: true, filter: 'num', v: (r) => (r.progress.must ? r.progress.mustMet : null), html: (r) => (r.progress.must ? `<span class="${r.progress.mustMet === r.progress.must ? 'ok-t' : ''}">${r.progress.mustMet}/${r.progress.must}</span>` : '—') },
+  { key: 'tenant', label: 'Tenant', on: true, filter: 'text', v: (r) => r.tenant?.tenant ?? '', html: (r) => (r.tenant ? esc(r.tenant.tenant) : r.stage === 'pov' ? '<span class="warn-t">not connected</span>' : '—') },
+  { key: 'scans', label: 'Scans 7d', on: true, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.scans7d) },
+  { key: 'critical', label: 'Critical', on: true, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.findings?.critical) },
+  { key: 'high', label: 'High', on: false, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.findings?.high) },
+  { key: 'users', label: 'Users active', on: false, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.users?.active), html: (r) => (r.live?.summary?.users?.total != null ? `${r.live.summary.users.active}/${r.live.summary.users.total}` : '—') },
+  { key: 'credits', label: 'Credits used', on: false, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.credits?.used) },
+  { key: 'saved', label: 'AI saved (h)', on: false, num: true, filter: 'num', v: (r) => (r.value?.hours ? Math.round(r.value.hours) : null) },
+  { key: 'outlook', label: 'Outlook', on: true, num: true, filter: 'num', v: (r) => n0(r.prediction?.score), html: (r) => { const sc = r.prediction?.score; return sc == null ? '—' : `<span class="score ${sc >= 70 ? 'ok' : sc >= 40 ? 'warn' : 'bad'}" title="${esc(r.prediction?.label ?? '')}">${sc}</span>`; } },
+  { key: 'health', label: 'Health', on: true, filter: 'select', v: (r) => ({ bad: 'Needs you', warn: 'Watch', '': 'On track' })[why(r)[0]] ?? 'On track', html: (r) => { const t = why(r)[0]; return `<span class="badge ${t === 'bad' ? 'bad' : t === 'warn' ? 'warn' : 'ok'}">${t === 'bad' ? 'Needs you' : t === 'warn' ? 'Watch' : 'On track'}</span>`; } },
+  { key: 'status', label: 'What is going on', on: true, filter: 'text', v: (r) => why(r)[1], html: (r) => { const [t, x] = why(r); return `<span class="${t ? `${t}-t` : ''}">${esc(x)}</span>`; } },
+  { key: 'next', label: 'Next task', on: false, filter: 'text', v: (r) => (r.nextTask ? `${r.nextTask.title}${r.nextTask.due ? ` (${r.nextTask.due})` : ''}` : '') },
+  { key: 'sfStage', label: 'Salesforce stage', on: false, filter: 'select', v: (r) => r.sf?.stage ?? '' },
+  { key: 'amount', label: 'Amount', on: false, num: true, filter: 'num', v: (r) => n0(r.sf?.amount ?? r.amount) },
+  { key: 'note', label: 'Last note', on: false, filter: 'text', v: (r) => r.lastNoteAt ?? '', html: (r) => (r.lastNoteAt ? ago(r.lastNoteAt) : '—') },
+];
+const shownCols = () => COLS.filter((c) => (ui.cols ? ui.cols.includes(c.key) : c.on));
+/** "> 5", "<10", "=0" or plain text: what a filter box asks for. */
+function passes(col, r, want) {
+  if (!want) return true;
+  const v = col.v(r);
+  if (col.filter === 'select') return String(v ?? '') === want;
+  if (col.filter === 'num') {
+    const m = /^\s*(>=|<=|>|<|=)?\s*(-?\d+(?:\.\d+)?)\s*$/.exec(want);
+    if (!m) return String(v ?? '').includes(want);
+    if (v === null || v === undefined) return false;
+    const x = Number(m[2]);
+    return { '>': v > x, '<': v < x, '>=': v >= x, '<=': v <= x, '=': v === x, undefined: v === x }[m[1]];
+  }
+  return String(v ?? '').toLowerCase().includes(want.toLowerCase());
+}
+function tableRows(rows) {
+  const cols = shownCols();
+  const f = ui.colFilter ?? {};
+  let out = rows.filter((r) => cols.every((c) => passes(c, r, f[c.key])));
+  const s = ui.sort && COLS.find((c) => c.key === ui.sort.key);
+  if (s) {
+    const dir = ui.sort.dir === 'desc' ? -1 : 1;
+    out = [...out].sort((a, b) => {
+      const x = s.v(a);
+      const y = s.v(b);
+      if (x === y) return 0;
+      if (x === null || x === undefined || x === '') return 1;
+      if (y === null || y === undefined || y === '') return -1;
+      return (s.num ? x - y : String(x).localeCompare(String(y))) * dir;
+    });
+  }
+  return out;
+}
+function tableHtml(rows) {
+  const cols = shownCols();
+  const f = ui.colFilter ?? {};
+  const list = tableRows(rows);
+  const opts = (c) => [...new Set(rows.map((r) => String(c.v(r) ?? '')).filter(Boolean))].sort();
+  const arrow = (c) => (ui.sort?.key === c.key ? (ui.sort.dir === 'desc' ? ' ▼' : ' ▲') : '');
+  const any = Object.values(f).some(Boolean);
+  return `<div class="panel ptable-wrap"><div class="ptable-meta small muted">${list.length} of ${rows.length} shown${any ? ' · <button class="btn sm ghost" data-act="clear-cols">Clear column filters</button>' : ''}<span class="spacer"></span>Filters take text, a choice, or a number like &gt;5, &lt;10, =0</div>
+    <div class="ptable-scroll"><table class="ptable"><thead><tr>${cols.map((c) => `<th class="${c.num ? 'n' : ''}"><button type="button" data-sort="${c.key}" aria-label="Sort by ${esc(c.label)}">${esc(c.label)}${arrow(c)}</button></th>`).join('')}</tr>
+      <tr class="frow">${cols.map((c) => `<th>${c.filter === 'select' ? `<select data-cf="${c.key}" aria-label="Filter ${esc(c.label)}"><option value="">All</option>${opts(c).map((o) => `<option ${f[c.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : `<input data-cf="${c.key}" value="${esc(f[c.key] ?? '')}" placeholder="${c.filter === 'num' ? '>0' : 'Filter'}" aria-label="Filter ${esc(c.label)}">`}</th>`).join('')}</tr></thead>
+      <tbody>${list.map((r) => `<tr data-row="${esc(r.id)}" class="${ui.open === r.id ? 'selected' : ''}" tabindex="0">${cols.map((c) => `<td class="${c.num ? 'n' : ''}">${c.html ? c.html(r) : esc(c.v(r) ?? '—') || '—'}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">Nothing matches these filters.</td></tr>`}</tbody></table></div></div>`;
+}
+function wireTable(main, rows) {
+  const rerender = () => document.dispatchEvent(new CustomEvent('cc:rerender'));
+  for (const b of main.querySelectorAll('[data-sort]'))
+    b.addEventListener('click', () => {
+      const k = b.dataset.sort;
+      ui.sort = ui.sort?.key === k ? (ui.sort.dir === 'asc' ? { key: k, dir: 'desc' } : null) : { key: k, dir: 'asc' };
+      save();
+      rerender();
+    });
+  let timer;
+  for (const el of main.querySelectorAll('[data-cf]'))
+    el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        ui.colFilter = { ...(ui.colFilter ?? {}), [el.dataset.cf]: el.value };
+        save();
+        rerender();
+        setTimeout(() => {
+          const again = document.querySelector(`[data-cf="${el.dataset.cf}"]`);
+          if (again?.tagName === 'INPUT') {
+            again.focus();
+            again.setSelectionRange(again.value.length, again.value.length);
+          }
+        });
+      }, el.tagName === 'SELECT' ? 0 : 300);
+    });
+  main.querySelector('[data-act="clear-cols"]')?.addEventListener('click', () => ((ui.colFilter = {}), save(), rerender()));
+  const go = (id) => (location.hash = wide() ? `#/dashboard?open=${encodeURIComponent(id)}` : `#/opp/${encodeURIComponent(id)}`);
+  for (const tr of main.querySelectorAll('tr[data-row]')) {
+    tr.addEventListener('click', (e) => !e.target.closest('a,button,select,input') && go(tr.dataset.row));
+    tr.addEventListener('keydown', (e) => e.key === 'Enter' && go(tr.dataset.row));
+  }
+  main.querySelector('[data-act="cols"]')?.addEventListener('click', () => {
+    const on = new Set(shownCols().map((c) => c.key));
+    openDialog(
+      `<form class="dbody" id="colsForm"><h2>Columns</h2><div class="cols-pick">${COLS.map((c) => `<label class="check"><input type="checkbox" name="${c.key}" ${on.has(c.key) ? 'checked' : ''} ${c.key === 'customer' ? 'disabled checked' : ''}> ${esc(c.label)}</label>`).join('')}</div>
+        <div class="dialog-actions"><button type="button" class="btn ghost" data-default>Default columns</button><span class="spacer"></span><button class="btn primary">Show</button></div></form>`,
+      {
+        onOpen(d) {
+          const form = d.querySelector('form');
+          d.querySelector('[data-default]').addEventListener('click', () => ((ui.cols = null), save(), closeDialog(), rerender()));
+          form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            ui.cols = ['customer', ...COLS.filter((c) => c.key !== 'customer' && form[c.key].checked).map((c) => c.key)];
+            save();
+            closeDialog();
+            rerender();
+          });
+        },
+      },
+    );
+  });
+  main.querySelector('[data-act="csv"]')?.addEventListener('click', () => {
+    const cols = shownCols();
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = [cols.map((c) => cell(c.label)).join(','), ...tableRows(rows).map((r) => cols.map((c) => cell(c.v(r))).join(','))].join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    a.download = `Kendra portfolio ${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+}
+
 function groupedRows(rows) {
   const by = ui.groupBy ?? 'none';
   if (by === 'none') return rowsHtml(rows);
@@ -147,6 +288,7 @@ function wire(main, { owner, regions }) {
     rerender();
   });
   main.querySelector('.closed-fold')?.addEventListener('toggle', (e) => ((ui.showClosed = e.target.open), save()));
+  for (const b of main.querySelectorAll('[data-view]')) b.addEventListener('click', () => ((ui.view = b.dataset.view), save(), rerender()));
   main.querySelector('[data-act="filters"]').addEventListener('click', () => openFilters(owner, regions));
   main.querySelector('[data-act="tools"]').addEventListener('click', () => openTools());
   pageDrop();

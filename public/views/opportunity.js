@@ -510,7 +510,7 @@ function email(d) {
     { label: 'Gets emails', key: (p) => p.notify, html: (p) => (p.notify ? '✓' : '—') },
     { label: '', html: (p) => (current.canEdit ? `<button class="btn sm" data-edit-person="${esc(p.id)}">Edit</button> <button class="btn sm ghost danger" data-del-person="${esc(p.id)}">Remove</button>` : '') },
   ];
-  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders</h3>${current.canEdit ? '<button class="btn sm" data-act="add-person">Stakeholder</button>' : ''}</div>${table('people', cols, o.stakeholders ?? [], { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
+  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders</h3>${current.canEdit ? `<span class="row">${d.tenant?.people?.users?.length ? '<button class="btn sm" data-act="add-from-tenant">Add from Checkmarx One</button>' : ''}<button class="btn sm" data-act="add-person">Stakeholder</button></span>` : ''}</div>${table('people', cols, o.stakeholders ?? [], { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
   <div class="layout"><section class="panel"><div class="head"><h3>Write an email</h3></div><div class="body"><p class="small muted" style="margin:0 0 8px">Pick one: Kendra writes it from the POV, with the stakeholders filled in.</p><div class="row center">${Object.entries(state.meta.templates).map(([k, l]) => `<button class="btn sm" data-template="${k}">${esc(l)}</button>`).join('')}</div></div>
     <form id="mailForm" class="body stack" style="gap:8px" ${wants('completion') ? '' : 'hidden'}>
       <input type="hidden" name="template">
@@ -861,6 +861,7 @@ const WIRES = {
       copy(`To: ${m.to}\n${m.cc ? `Cc: ${m.cc}\n` : ''}Subject: ${m.subject}\n\n${m.body}`);
     });
     on(main, '[data-act="add-person"]', () => editPerson(null));
+    on(main, '[data-act="add-from-tenant"]', () => addFromTenant(d));
     on(main, '[data-edit-person]', (b) => editPerson(d.opportunity.stakeholders.find((x) => x.id === b.dataset.editPerson)));
     on(main, '[data-del-person]', (b) => removeItem('stakeholders', b.dataset.delPerson, 'this stakeholder'));
   },
@@ -1138,6 +1139,60 @@ function editSession(x) {
      <label class="field">Follow-ups<textarea name="followUps" rows="2">${esc(x?.followUps ?? '')}</textarea></label>`,
     (b) => api(`/opportunities/${oid()}/sessions${x ? `/${x.id}` : ''}`, { method: 'POST', body: b }),
     { wide: true },
+  );
+}
+
+/** The POV's points of contact, picked from the people Checkmarx One knows in the tenant (its IAM and who scanned). */
+function addFromTenant(d) {
+  const have = new Set((d.opportunity.stakeholders ?? []).map((p) => (p.email || '').toLowerCase()).filter(Boolean));
+  const myDomain = (state.session.user.email || '').split('@')[1]?.toLowerCase() ?? '';
+  const people = (d.tenant?.people?.users ?? []).filter((p) => p.email).sort((a, b) => Number(have.has(a.email.toLowerCase())) - Number(have.has(b.email.toLowerCase())) || String(b.lastActiveAt ?? '').localeCompare(String(a.lastActiveAt ?? '')));
+  const roles = state.meta.povRoles ?? [];
+  const nameOf = (p) => p.name || p.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  openDialog(
+    `<form class="dbody" id="tenantPeople"><h2>Points of contact from Checkmarx One</h2>
+      <p class="small muted" style="margin-top:0">The people in this POV’s tenant, the most recently active first. Tick the ones to add, with their role in the POV.</p>
+      <input type="search" id="tpFind" placeholder="Find a name or email" style="margin-bottom:8px">
+      <div class="tp-list">${people.map((p, i) => {
+        const on = have.has(p.email.toLowerCase());
+        const internal = myDomain && p.email.toLowerCase().endsWith(`@${myDomain}`);
+        return `<label class="tp-row${on ? ' muted' : ''}" data-find="${esc(`${nameOf(p)} ${p.email}`.toLowerCase())}"><input type="checkbox" name="pick" value="${i}" ${on ? 'disabled' : ''}>
+          <span><b>${esc(nameOf(p))}</b><span class="small muted"> ${esc(p.email)}${on ? ' · already on the POV' : p.lastActiveAt ? ` · active ${ago(p.lastActiveAt)}` : ' · not active yet'}</span></span>
+          <select name="role_${i}" aria-label="POV role" ${on ? 'disabled' : ''}><option value="">POV role…</option>${roles.map((r) => `<option>${esc(r)}</option>`).join('')}</select>
+          <select name="side_${i}" aria-label="Side" ${on ? 'disabled' : ''}><option value="customer" ${internal ? '' : 'selected'}>Customer</option><option value="internal" ${internal ? 'selected' : ''}>Internal</option></select></label>`;
+      }).join('') || '<p class="muted">Nobody yet: the tenant’s people appear once its API key may read them.</p>'}</div>
+      <p class="form-error" id="tpErr" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Add the people ticked</button></div></form>`,
+    {
+      wide: true,
+      onOpen(dl) {
+        dl.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+        dl.querySelector('#tpFind').addEventListener('input', (e) => {
+          const q = e.target.value.toLowerCase();
+          for (const r of dl.querySelectorAll('.tp-row')) r.hidden = Boolean(q) && !r.dataset.find.includes(q);
+        });
+        dl.querySelector('form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const f = e.target;
+          const picked = [...f.querySelectorAll('[name="pick"]:checked')].map((x) => Number(x.value));
+          if (!picked.length) return ($('#tpErr').textContent = 'Tick at least one person.');
+          const btn = f.querySelector('.btn.primary');
+          btn.disabled = true;
+          try {
+            for (const i of picked) {
+              const p = people[i];
+              await api(`/opportunities/${oid()}/stakeholders`, { method: 'POST', body: { name: nameOf(p), email: p.email, title: '', side: f[`side_${i}`].value, povRole: f[`role_${i}`].value, notify: f[`side_${i}`].value === 'customer' } });
+            }
+            closeDialog('ok');
+            toast(`${picked.length} ${picked.length === 1 ? 'person' : 'people'} added`);
+            document.dispatchEvent(new CustomEvent('cc:rerender'));
+          } catch (error) {
+            $('#tpErr').textContent = error.message;
+            btn.disabled = false;
+          }
+        });
+      },
+    },
   );
 }
 
