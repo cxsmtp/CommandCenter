@@ -418,6 +418,33 @@ export async function exportSbom(client, scanId, format = 'cyclonedx', { waitMs 
   throw Object.assign(new Error('The SBOM is taking long: try again in a minute.'), { status: 504 });
 }
 
+/**
+ * What the Analytics dashboard shows (POST /api/data_analytics/kpi/query/…, as the portal asks): mean time to
+ * resolution by severity, open findings by age, findings by state, and the scan activity (scans, projects scanned,
+ * lines of code), over the last 30 or 90 days, for the POV's projects (`projectIds`; empty = all). Numbers only;
+ * null when the tenant does not answer (no Analytics licence, an older release).
+ */
+export async function analytics(client, { projectIds = [], range = '30d' } = {}) {
+  const filters = { tags: [], states: [], groups: [], projects: projectIds, applications: [], scanners: [], branchNames: [], environments: [], severities: ['critical', 'high', 'medium'] };
+  const ask = (area, kpi, format = 'category') => client.request(`/api/data_analytics/kpi/query/${area}`, { method: 'POST', body: { kpi, format, filters, range: { definedRange: range }, step: '1d' }, retries: 1 }).catch(() => null);
+  const [mttr, aging, states, scans, scanned, loc] = await Promise.all([ask('vulnerability', 'meanTimeToResolution'), ask('vulnerability', 'vulnerabilitiesByAging'), ask('vulnerability', 'stateAndSeverity'), ask('scan', 'scans', 'point'), ask('scan', 'scanned_projects', 'point'), ask('scan', 'loc', 'point')]);
+  if (![mttr, aging, states, scans].some(Boolean)) return null;
+  const sevKey = (l) => String(l ?? '').toLowerCase();
+  const point = (r) => n0(r?.data?.value);
+  const byState = Object.fromEntries((states?.statesAndSeverities ?? []).map((x) => [sevKey(x.label).replace(/\s+/g, '_'), n0(x.results) ?? 0]));
+  const open = byState.totals ?? Object.entries(byState).reduce((t, [, v]) => t + v, 0);
+  return {
+    range,
+    mttrDays: mttr?.meanTimeData ? Object.fromEntries(mttr.meanTimeData.map((x) => [sevKey(x.label), n0(x.meanTime)])) : null,
+    resolved: mttr?.meanTimeData ? mttr.meanTimeData.reduce((t, x) => t + (n0(x.results) ?? 0), 0) : null,
+    aging: aging?.agingAndSeverities ? aging.agingAndSeverities.filter((x) => !/total/i.test(x.label)).map((x) => ({ label: text(x.label, 20), ...Object.fromEntries((x.severities ?? []).map((v) => [sevKey(v.label), n0(v.results) ?? 0])) })) : null,
+    states: states?.statesAndSeverities ? { total: open, toVerify: byState.to_verify ?? 0, confirmed: byState.confirmed ?? 0, urgent: byState.urgent ?? 0, notExploitable: byState.not_exploitable ?? 0, proposed: byState.proposed_not_exploitable ?? 0 } : null,
+    scans: point(scans),
+    projects: point(scanned),
+    loc: point(loc),
+  };
+}
+
 /** The tenant's AI settings (GET /api/configuration/tenant): Fusion on, LLM-based scanning on, the model. */
 async function tenantAi(client) {
   const body = await quietly(() => client.request('/api/configuration/tenant', { retries: 1 }));
@@ -543,7 +570,7 @@ export async function scanLog(connection, scanId, engine, { client = new CxClien
  * One full read of a POV's tenant. Each part fails on its own: a tenant without, say, the scan-summary service still
  * shows its scans. `errors` lists what could not be read.
  */
-export async function collect(connection, { client = new CxClient(connection), now = Date.now(), previous = null, slow = true, historyFrom = null } = {}) {
+export async function collect(connection, { client = new CxClient(connection), now = Date.now(), previous = null, slow = true, historyFrom = null, scope = null } = {}) {
   const started = Date.now();
   const since = new Date(now - SCAN_WINDOW_DAYS * DAY).toISOString();
   const errors = [];
@@ -566,9 +593,12 @@ export async function collect(connection, { client = new CxClient(connection), n
   const names = new Map(projects.list.map((p) => [p.id, p.name]));
   // The slow parts (credits, AI settings, IAM people, ASPM) every hour; in between, the last read's are kept.
   const keep = !slow && previous;
-  const [creditInfo, ai, people, aspmInfo] = keep
-    ? [previous.credits ?? null, previous.ai ?? null, previous.people ?? null, previous.aspm ?? null]
-    : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null), part('aspm', () => aspm(client, connection), null)]);
+  // The Analytics dashboard for the POV's projects: every project but those muted on the POV (demos, tests).
+  const muted = new Set(scope?.exclude ?? []);
+  const analyticsScope = { projectIds: muted.size ? projects.list.map((p) => p.id).filter((pid) => !muted.has(pid)) : [], range: scope?.range ?? '30d' };
+  const [creditInfo, ai, people, aspmInfo, analyticsInfo] = keep
+    ? [previous.credits ?? null, previous.ai ?? null, previous.people ?? null, previous.aspm ?? null, previous.analytics ?? null]
+    : await Promise.all([part('credits', () => credits(client, names), null), part('ai', () => tenantAi(client), null), part('people', () => iamPeople(client, connection, now), null), part('aspm', () => aspm(client, connection), null), part('analytics', () => analytics(client, analyticsScope), null)]);
   const findings = projects.list.length ? await part('findings', () => latestFindings(client, projects.list.map((p) => p.id)), null) : { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0, byProject: {} };
   // Malicious packages: asked of the latest scans with the slow parts, kept in between.
   if (aspmInfo && findings?.byProject) {
@@ -584,7 +614,7 @@ export async function collect(connection, { client = new CxClient(connection), n
   }
   const recent = scans.filter((s) => timeOf(s.createdAt) >= timeOf(since)).slice(0, MAX_SCANS);
   const older = scans.length > recent.length ? scans.filter((s) => timeOf(s.createdAt) < timeOf(since)) : [];
-  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans: recent, older, active, findings, credits: creditInfo, ai, people, aspm: aspmInfo, errors };
+  return { at: new Date(now).toISOString(), ms: Date.now() - started, identity, projects, scans: recent, older, active, findings, credits: creditInfo, ai, people, aspm: aspmInfo, analytics: analyticsInfo, errors };
 }
 
 /**

@@ -4,6 +4,7 @@
  * successful (attached to the completion email, or downloaded for SharePoint). The layout is a starting point until
  * the team's own presentation formats are supplied.
  */
+import { impactTiles } from './impact.js';
 import PptxGenJS from 'pptxgenjs';
 import { CRITERION_STATUS, SESSION_TYPES, progressOf } from './opportunities.js';
 import { platformView } from './platform.js';
@@ -62,9 +63,23 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   });
   if (opp.summary) answer.addText(opp.summary, { x: 0.6, y: 3.9, w: 12.1, h: 2.8, fontFace: BODY, fontSize: 15, color: INK, valign: 'top', paraSpaceAfter: 6 });
 
+  // What the POV changed: the Analytics dashboard's numbers, with the start of the POV where they moved
+  const tiles = impactTiles(story?.analytics);
+  if (tiles.length) {
+    const im = page('What the POV changed', `From the Checkmarx One Analytics dashboard · ${story.analytics.now.range === '90d' ? 'last 90 days' : 'last 30 days'}`);
+    tiles.forEach((t, i) => {
+      const x = 0.6 + (i % 3) * 4.1;
+      const y = 1.75 + Math.floor(i / 3) * 2.55;
+      im.addShape(pptx.ShapeType.rect, { x, y, w: 3.9, h: 2.3, fill: { color: PANEL }, line: { color: i === 3 || i === 4 ? BRASS : LINE, width: 0.75 } });
+      im.addText(t.value, { x, y: y + 0.25, w: 3.9, h: 0.95, fontFace: HEAD, fontSize: 40, color: INK, align: 'center', fit: 'shrink' });
+      im.addText(t.label.toUpperCase(), { x, y: y + 1.25, w: 3.9, h: 0.35, fontFace: BODY, fontSize: 10, color: MUTED, align: 'center', charSpacing: 1 });
+      im.addText(t.sub, { x, y: y + 1.65, w: 3.9, h: 0.4, fontFace: BODY, fontSize: 10.5, color: MUTED, align: 'center' });
+    });
+  }
+
   // Business goals: an overview with progress, then each goal with its criteria, tests, benefits and status
   const goals = story?.goals ?? [];
-  const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5C518'], planned: ['Planned', '9E94B8'], missed: ['Not met', '8A8197'] };
+  const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5A524'], planned: ['Planned', 'F5C518'], missed: ['Not met', '8A8197'] };
   if (goals.length) {
     const ov = page('What we set out to prove', 'Business goals');
     goals.slice(0, 8).forEach((g, i) => {
@@ -176,8 +191,8 @@ const MARK = {
   demo: { glyph: '▶', color: '3CCF8E' },
   seen: { glyph: '●', color: '5CE1FF' },
   uses: { glyph: '', color: 'B9B0CC' },
-  progress: { glyph: '◷', color: 'F5C518' },
-  planned: { glyph: '◷', color: '9E94B8' },
+  progress: { glyph: '◷', color: 'F5A524' },
+  planned: { glyph: '◷', color: 'F5C518' },
   missed: { glyph: '✕', color: '8A8197' },
 };
 const hex = (c) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));

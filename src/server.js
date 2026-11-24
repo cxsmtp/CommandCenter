@@ -218,6 +218,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       ids: () => opps.raw().filter((o) => o.tenant).map((o) => o.id),
       polled: (id) => POLLED_STAGES.has(opps.get(id)?.stage),
       connection: (id) => opps.connection(id),
+      // The POV's own projects for the Analytics numbers (muted ones left out), and 90 days for a long POV.
+      scope: (id) => {
+        const o = opps.get(id);
+        const days = o?.startDate ? (Date.now() - Date.parse(o.startDate)) / 86_400_000 : 0;
+        return { exclude: o?.mute?.projects ?? [], range: days > 30 ? '90d' : '30d' };
+      },
     },
     dataDir,
     intervalMinutes: Number(process.env.REFRESH_MINUTES) || settings().refreshMinutes,
@@ -1695,6 +1701,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       criteria,
       ...storyOf(opp, criteria, snap),
       tenant: opp.tenant ? monitor.live(opp.id).summary : null,
+      analytics: opp.tenant ? monitor.analytics(opp.id) : null,
       sessions: [...(opp.sessions ?? [])].sort((a, b) => a.date.localeCompare(b.date)).map((x) => ({ date: x.date, title: x.title, type: SESSION_TYPES[x.type] ?? '' })),
       next: (opp.tasks ?? []).filter((t) => !t.done).map((t) => t.title).slice(0, 8),
     };

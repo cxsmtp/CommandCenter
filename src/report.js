@@ -8,7 +8,7 @@ import { CRITERION_STATUS, SESSION_TYPES, STAGES, progressOf } from './opportuni
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
-const COLOR = { met: '#2f8a4c', not_met: '#c2362f', in_progress: '#b7791f', not_started: '#8a8f96', na: '#8a8f96' };
+const COLOR = { met: '#2f8a4c', not_met: '#8a8f96', in_progress: '#b7791f', not_started: '#b38f00', na: '#8a8f96' };
 
 export function successReport(opp, { owner, live, evidence = {}, org = 'Meridian', categories = CATEGORIES }) {
   const catLabel = Object.fromEntries([...categories, ['custom', 'Other']]);

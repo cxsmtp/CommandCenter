@@ -15,7 +15,8 @@
  *              triaged (findings triaged by hand), custom-states, custom-presets (triage states and
  *              SAST presets of their own), malicious (supply chain risk checked on SCA scans),
  *              mcp (risks found through the Checkmarx MCP), schedules (scan schedules active),
- *              ai-inventory (AI assets found by AI Supply Chain)
+ *              ai-inventory (AI assets found by AI Supply Chain),
+ *              analytics (the Analytics dashboard has the POV's numbers)
  *   keywords   words looked for in the opportunity's own notes, discovery and sessions (a hint, never proof)
  *
  * Evidence only ever suggests: the SE confirms a criterion is met. An Admin (or anyone with catalog.manage) edits
@@ -23,6 +24,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { fail, text } from './db.js';
+import { impactLine } from './impact.js';
 
 export const CATEGORIES = [
   ['code', 'Code Security'],
@@ -80,7 +82,7 @@ export const DEFAULT_CATALOG = [
   c('arm', 'aspm', 'Application Risk Management', 'ASPM — Application Risk Management (applications, criticality, risk score)', { aspm: ['applications', 'risk-scores'], keywords: ['application risk', 'risk score', 'business impact', 'criticality', 'applications'] }, { proof: 'Group the in-scope projects into applications with their business criticality; show each application’s risk score and its top risks.', tech: 'Applications in GET /api/applications, and risk scores for them in GET /api/risk-management/summary.' }),
   c('cloud-insights', 'aspm', 'Cloud Insights', 'ASPM — Cloud Insights (cloud accounts, exposed resources, code to cloud)', { aspm: ['cloud'], keywords: ['cloud insights', 'cloud account', 'kubernetes', 'eks', 'aks', 'runtime context', 'code to cloud'] }, { proof: 'Connect a cloud account; show the running images and resources, which are exposed to the internet, and the risks that are therefore urgent.', tech: 'Cloud accounts in GET /api/cnas/accounts (total above 0), with the date each was last scanned.' }),
   c('policy', 'aspm', 'Policy Management', 'Policy Management (rules, break build)', { aspm: ['policy', 'violations'], keywords: ['policy', 'break build', 'break the build', 'threshold', 'gate', 'violation'] }, { proof: 'Create a policy, show a violation on a project and the pipeline breaking on it.', tech: 'A policy of their own (not the default) applied to projects or tags in GET /api/policy_management_service_uri/policies/v3; violations from .../incidents/total. The pipeline breaking is shown by the SE.' }),
-  c('analytics', 'aspm', 'Analytics & Reporting', 'Analytics and Reports (PDF, SARIF, JSON)', { keywords: ['analytics', 'dashboard', 'kpi', 'report', 'sarif', 'pdf report', 'mttr'] }, { proof: 'Walk through the analytics dashboard (trends, MTTR, ageing); export the agreed report formats.', tech: MANUAL }),
+  c('analytics', 'aspm', 'Analytics & Reporting', 'Analytics and Reports (PDF, SARIF, JSON)', { aspm: ['analytics'], keywords: ['analytics', 'dashboard', 'kpi', 'report', 'sarif', 'pdf report', 'mttr'] }, { proof: 'Walk through the analytics dashboard (trends, MTTR, ageing); export the agreed report formats.', tech: 'The Analytics dashboard answers for the POV’s projects (POST /api/data_analytics/kpi/query/…): fix time, triage and scan numbers. Walking the customer through it and exporting their report formats is shown by the SE.' }),
   // ——— SCM ———
   c('github', 'scm', 'GitHub integration (repo import, PR decoration)', 'Code Repository integration — GitHub', { repoHosts: ['github.com', 'github.'], keywords: ['github'] }, { proof: 'Import repositories from GitHub; show a pull request decorated with new findings.', tech: 'A project whose repository address (repoUrl in GET /api/projects) is on GitHub.' }),
   c('gitlab', 'scm', 'GitLab integration', 'Code Repository integration — GitLab', { repoHosts: ['gitlab'], keywords: ['gitlab'] }, { proof: 'Import repositories from GitLab; show a merge request decorated with findings.', tech: 'A project whose repoUrl is on GitLab.' }),
@@ -223,15 +225,17 @@ export function tenantFacts(snapshot, proof = null) {
     origins: [...new Set([...(snapshot?.scans ?? []).flatMap((s) => [s.origin, s.originRaw, s.userAgent].filter(Boolean)), ...Object.keys(proof?.origins ?? {})].map((o) => o.toLowerCase()))],
     repoHosts: [...new Set((snapshot?.projects?.list ?? []).map((p) => p.repoUrl).filter(Boolean).map((u) => u.toLowerCase()))],
     actions: new Set(Object.entries(snapshot?.credits?.actions ?? {}).filter(([, n]) => n > 0).map(([k]) => k)),
-    aspm: aspmFacts(snapshot?.aspm, snapshot?.findings),
+    aspm: aspmFacts(snapshot?.aspm, snapshot?.findings, snapshot?.analytics),
     tools: Object.entries(snapshot?.aspm?.contributors?.tools ?? {}).map(([name, count]) => ({ name, key: name.toLowerCase(), count })),
     first,
   };
 }
 
 /** ASPM signal → the sentence that proves it, from the counts the collector kept. */
-function aspmFacts(a, findings = null) {
+function aspmFacts(a, findings = null, analytics = null) {
   const out = new Map();
+  // The Analytics dashboard has the POV's data: its numbers are the evidence.
+  if (analytics && (analytics.scans > 0 || analytics.states?.total > 0)) out.set('analytics', impactLine(analytics));
   const n = (v, one, many = `${one}s`) => `${v} ${v === 1 ? one : many}`;
   // Manual triage: findings a person moved to Confirmed, Urgent or Not exploitable (AI triage only proposes), from
   // the state counters of every project's latest scan (GET /api/scan-summary).

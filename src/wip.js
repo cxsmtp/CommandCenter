@@ -7,6 +7,7 @@
  * its masters, layouts, backgrounds and closing slide are kept, its own slides are dropped.
  */
 import { toolIcon } from './tool-icons.js';
+import { impactTiles } from './impact.js';
 import PptxGenJS from 'pptxgenjs';
 import JSZip from 'jszip';
 import { SESSION_TYPES } from './opportunities.js';
@@ -23,7 +24,8 @@ const VIOLET = '7A45FF';
 const WHITE = 'FFFFFF';
 const MUTED = 'B9B0CC';
 const FONT = 'Arial';
-const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5C518'], planned: ['Planned', 'B9B0CC'], missed: ['Not met', '8A8197'] };
+// Status colours: completed green, in progress amber, planned yellow, not met grey (never red).
+const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5A524'], planned: ['Planned', 'F5C518'], missed: ['Not met', '8A8197'] };
 const PLATFORM_CATS = new Set(['code', 'supply', 'aisc', 'runtime', 'agents', 'aspm']);
 
 const mixHex = (a, b, t) => [0, 2, 4].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) + (parseInt(b.slice(i, i + 2), 16) - parseInt(a.slice(i, i + 2), 16)) * t).toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -334,7 +336,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       ],
       {
         x: L + 0.1, y: 1.6, w: 6.0, h: 5.1,
-        radarStyle: 'marker', chartColors: ['F0597A', '3CCF8E'], lineSize: 2.5, lineDataSymbol: 'circle', lineDataSymbolSize: 7,
+        radarStyle: 'marker', chartColors: ['A98BFF', '3CCF8E'], lineSize: 2.5, lineDataSymbol: 'circle', lineDataSymbolSize: 7,
         showLegend: true, legendPos: 'b', legendFontSize: 10, legendColor: 'E6E0F2', legendFontFace: FONT,
         catAxisLabelFontSize: 9.5, catAxisLabelColor: 'E6E0F2', catAxisLabelFontFace: FONT, catAxisLineColor: '4A3670',
         valAxisMinVal: 0, valAxisMaxVal: 4, valAxisMajorUnit: 1, valAxisLabelFontSize: 8, valAxisLabelColor: '8C82A3', valGridLine: { color: '4A3670', size: 0.75 },
@@ -344,7 +346,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     const rx = 7.05;
     const rw = L + W - rx;
     label(s, 'Maturity by dimension', rx, 1.5, rw);
-    s.addText([{ text: '●', options: { color: 'F0597A' } }, { text: ' Today   ', options: { color: MUTED } }, { text: '●', options: { color: '3CCF8E' } }, { text: ' Desired', options: { color: MUTED } }], { x: rx + rw - 1.8, y: 1.5, w: 1.8, h: 0.3, fontFace: FONT, fontSize: 9, align: 'right', margin: 0 });
+    s.addText([{ text: '●', options: { color: 'A98BFF' } }, { text: ' Today   ', options: { color: MUTED } }, { text: '●', options: { color: '3CCF8E' } }, { text: ' Desired', options: { color: MUTED } }], { x: rx + rw - 1.8, y: 1.5, w: 1.8, h: 0.3, fontFace: FONT, fontSize: 9, align: 'right', margin: 0 });
     dims.forEach((d, i) => {
       const y = 1.95 + i * 0.5;
       const track = rw - 1.1;
@@ -352,7 +354,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       s.addText(`${d.current} → ${d.desired ?? '—'}`, { x: rx + rw - 1.05, y: y + 0.08, w: 1.05, h: 0.3, fontFace: FONT, fontSize: 11, bold: true, color: WHITE, align: 'right', margin: 0 });
       s.addShape(pptx.ShapeType.roundRect, { x: rx, y: y + 0.26, w: track, h: 0.16, rectRadius: 0.08, fill: { color: '2E1D4A' }, line: { color: '2E1D4A', width: 0 } });
       if (d.desired) s.addShape(pptx.ShapeType.roundRect, { x: rx, y: y + 0.26, w: (track * Math.min(4, d.desired)) / 4, h: 0.16, rectRadius: 0.08, fill: { color: '3CCF8E', transparency: 55 }, line: { color: '3CCF8E', width: 0.75 } });
-      s.addShape(pptx.ShapeType.roundRect, { x: rx, y: y + 0.26, w: Math.max(0.16, (track * Math.min(4, d.current)) / 4), h: 0.16, rectRadius: 0.08, fill: { color: 'F0597A' }, line: { color: 'F0597A', width: 0 } });
+      s.addShape(pptx.ShapeType.roundRect, { x: rx, y: y + 0.26, w: Math.max(0.16, (track * Math.min(4, d.current)) / 4), h: 0.16, rectRadius: 0.08, fill: { color: 'A98BFF' }, line: { color: 'A98BFF', width: 0 } });
     });
     let y = 1.95 + dims.length * 0.5 + 0.15;
     if (apma.overall) {
@@ -520,7 +522,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
             { text: [{ text: `SC${n}  `, options: { bold: true, color: ORANGE } }, { text: x.title, options: { bold: true, color: WHITE } }], options: { fontSize: 10.5, ...f } },
             { text: x.test || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
             { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, ...f } },
-            { text: `●  ${lab}`, options: { color, bold: true, fontSize: 10, align: 'left', ...f } },
+            { text: lab, options: { color, bold: true, fontSize: 10, align: 'left', ...f } },
           ];
         });
         s.addTable([[H('Criteria'), H('Test item'), H('Benefit'), H('Result')], ...rows], { x: L, y: 2.45, w: W, colW: [2.75, 4.0, 4.08, 1.5], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.36, ...page.map((id) => rowH(crit[id]))], valign: 'middle', autoPage: false, margin: [4, 8, 4, 8] });
@@ -596,12 +598,57 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
             { text: [{ text: `${num}\n`, options: { bold: true, color: 'A98BFF', fontSize: 9.5 } }, { text: x.title, options: { bold: true, color: WHITE } }, ...(refs.length ? [{ text: `\nTracker: ${refs.map((r) => `#${r.replace(/^#/, '')}`).join(', ')}`, options: { color: MUTED, fontSize: 8.5 } }] : [])], options: { fontSize: 10.5, valign: 'top', ...f } },
             { text: x.test || '', options: { color: 'E6E0F2', fontSize: 9.5, valign: 'top', ...f } },
             { text: x.benefit || x.statement || '', options: { color: 'E6E0F2', fontSize: 9.5, valign: 'top', ...f } },
-            { text: [...(x.milestone ? [{ text: `${x.milestone.replace(/M(\d)/g, 'Milestone $1')}\n`, options: { color: '6FB3FF', bold: true, fontSize: 9 } }] : []), { text: `●  ${lab}`, options: { color, bold: true, fontSize: 9.5 } }], options: { valign: 'top', ...f } },
+            { text: [...(x.milestone ? [{ text: `${x.milestone.replace(/M(\d)/g, 'Milestone $1')}\n`, options: { color: '6FB3FF', bold: true, fontSize: 9 } }] : []), { text: lab, options: { color, bold: true, fontSize: 9.5 } }], options: { valign: 'top', ...f } },
           ];
         });
         s.addTable([[H('Criterion'), H('Test item'), H('Benefit'), H(results ? 'Milestone · result' : 'Milestone · status')], ...rows], { x: L, y: 2.5, w: W, colW: [2.9, 4.05, 3.68, 1.7], fontFace: FONT, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: [0.34, ...page.map(([x]) => rowH(x))], autoPage: false, margin: [5, 8, 5, 8] });
       });
     });
+  };
+
+  // ——— What the POV changed (Analytics): six tiles in the main deck, the charts behind them in the appendix ———
+  const sImpact = () => {
+    const tiles = impactTiles(story?.analytics);
+    if (!tiles.length) return;
+    const s = add('content');
+    head(s, 'What the POV Changed', 'From the Checkmarx One Analytics dashboard,', story.analytics.now.range === '90d' ? 'last 90 days' : 'last 30 days');
+    const gap = 0.25;
+    const tw = (W - gap * 2) / 3;
+    const th = 2.35;
+    tiles.forEach((t, i) => {
+      const x = L + (i % 3) * (tw + gap);
+      const y = 1.6 + Math.floor(i / 3) * (th + gap);
+      card(s, x, y, tw, th, { line: i === 3 || i === 4 ? ORANGE : LINE });
+      s.addText(t.value, { x: x + 0.2, y: y + 0.3, w: tw - 0.4, h: 0.95, fontFace: FONT, fontSize: 40, bold: true, color: i === 3 || i === 4 ? ORANGE : WHITE, align: 'center', valign: 'middle', margin: 0, fit: 'shrink' });
+      s.addText(t.label.toUpperCase(), { x: x + 0.2, y: y + 1.35, w: tw - 0.4, h: 0.3, fontFace: FONT, fontSize: 11, bold: true, color: 'C9B8FF', charSpacing: 1, align: 'center', margin: 0 });
+      s.addText(t.sub, { x: x + 0.2, y: y + 1.7, w: tw - 0.4, h: 0.4, fontFace: FONT, fontSize: 10.5, color: MUTED, align: 'center', valign: 'top', margin: 0 });
+    });
+  };
+  const sAnalyticsDetail = () => {
+    const now = story?.analytics?.now;
+    if (!now || (!now.mttrDays && !now.aging)) return;
+    const start = story.analytics.start;
+    const s = add('content');
+    head(s, 'Fix Time and Ageing', 'Behind the numbers:', 'how fast findings are fixed, and how old the open ones are');
+    const SEV = ['critical', 'high', 'medium'];
+    const LAB = ['Critical', 'High', 'Medium'];
+    const axis = { catAxisLabelFontSize: 10, catAxisLabelColor: 'E6E0F2', catAxisLabelFontFace: FONT, catAxisLineColor: '4A3670', valAxisLabelFontSize: 9, valAxisLabelColor: '8C82A3', valGridLine: { color: '3A2A57', size: 0.5 }, plotArea: { fill: { color: PANEL } }, chartArea: { fill: { color: PANEL } }, showLegend: true, legendPos: 'b', legendFontSize: 10, legendColor: 'E6E0F2', legendFontFace: FONT };
+    const half = (W - 0.3) / 2;
+    if (now.mttrDays) {
+      card(s, L, 1.55, half, 5.25);
+      label(s, 'Mean time to resolve, days', L + 0.2, 1.7, half - 0.4);
+      const series = [{ name: 'Now', labels: LAB, values: SEV.map((k) => now.mttrDays[k] ?? 0) }];
+      if (start?.mttrDays && SEV.some((k) => start.mttrDays[k] !== now.mttrDays[k])) series.unshift({ name: 'At the start', labels: LAB, values: SEV.map((k) => start.mttrDays[k] ?? 0) });
+      s.addChart(pptx.charts.BAR, series, { x: L + 0.15, y: 2.1, w: half - 0.3, h: 4.55, barDir: 'col', chartColors: series.length > 1 ? ['6B5A8E', 'F25928'] : ['F25928'], showValue: true, dataLabelColor: 'FFFFFF', dataLabelFontSize: 10, dataLabelPosition: 'outEnd', valAxisMinVal: 0, ...axis });
+    }
+    if (now.aging?.length) {
+      const x = now.mttrDays ? L + half + 0.3 : L;
+      const w = now.mttrDays ? half : W;
+      card(s, x, 1.55, w, 5.25);
+      label(s, 'Open findings by age', x + 0.2, 1.7, w - 0.4);
+      const bands = now.aging.map((b) => b.label);
+      s.addChart(pptx.charts.BAR, SEV.map((k, i) => ({ name: LAB[i], labels: bands, values: now.aging.map((b) => b[k] ?? 0) })), { x: x + 0.15, y: 2.1, w: w - 0.3, h: 4.55, barDir: 'col', barGrouping: 'stacked', chartColors: ['A98BFF', 'F25928', 'F5C518'], ...axis });
+    }
   };
 
   const sTenant = () => {
@@ -831,6 +878,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     notes: () => heldNotes && sNotes(),
     goals: sGoals,
     goalsPlan: sGoalsPlan,
+    impact: sImpact,
+    analyticsDetail: sAnalyticsDetail,
   };
   const keep = (k) => MAKE[k] && !(same[k] && same[k][1] && usedKeys.has(same[k][0]));
   const appendix = plan.appendix.filter(keep);

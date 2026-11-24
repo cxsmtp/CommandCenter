@@ -9,6 +9,8 @@
  *   PDF      printing the page gives every slide, one per page, then one page per engine with its record
  */
 
+import { impactTiles } from './impact.js';
+
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const u = (px) => `${((px * 100) / 1332).toFixed(3)}cqw`; // the slide's own pixel grid, scaled with the page
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
@@ -22,7 +24,7 @@ const TICK = (c = '#3CCF8E') => `<svg viewBox="0 0 20 20" class="mk" aria-hidden
 const CLOCK = (c) => `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><circle cx="10" cy="10" r="7.6" fill="${c}22" stroke="${c}" stroke-width="2"/><path d="M10 5.6V10l3.2 2" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
 const CROSS = `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="#8A8197" stroke-width="2.4" stroke-linecap="round"/></svg>`;
 const PLAY = `<svg viewBox="0 0 20 20" class="mk" aria-hidden="true"><circle cx="10" cy="10" r="7.6" fill="#3CCF8E22" stroke="#3CCF8E" stroke-width="2"/><path d="M8.3 6.6v6.8l5.4-3.4z" fill="#3CCF8E"/></svg>`;
-export const MARKS = { done: TICK(), demo: PLAY, progress: CLOCK('#F5C518'), planned: CLOCK('#9E94B8'), missed: CROSS };
+export const MARKS = { done: TICK(), demo: PLAY, progress: CLOCK('#F5A524'), planned: CLOCK('#F5C518'), missed: CROSS };
 const STAR = '<span class="star" title="AI-powered" aria-label="AI-powered">✦</span>';
 
 const ICONS = {
@@ -108,6 +110,11 @@ export function resultsPage(data, { nonce = '' } = {}) {
     ${d.completedAt ? `<p class="done-line">${MARKS.done} POV ${d.povResult === 'successful' ? 'completed successfully' : 'completed'} on <b>${stamp(d.completedAt)}</b></p>` : `<p class="done-line">${MARKS.progress} POV in progress · ${d.endDate ? `ends ${day(d.endDate)}` : 'no end date set'}</p>`}
     ${d.summary ? `<p class="summary">${esc(d.summary)}</p>` : ''}`,
   );
+  // ——— What the POV changed: the Analytics dashboard's numbers, with the start of the POV where they moved ———
+  const tiles = impactTiles(d.analytics);
+  const impactSlide = tiles.length
+    ? slide('In the tenant', 'What the POV changed', `<div class="figs impact">${tiles.map((t) => `<div><b>${gradient(t.value)}</b><span>${esc(t.label)}</span><em>${esc(t.sub)}</em></div>`).join('')}</div><p class="m small">From the Checkmarx One Analytics dashboard${d.analytics.start?.at ? `; the start is its first reading, ${stamp(d.analytics.start.at)}` : ''}.</p>`)
+    : '';
   const crit = d.criteria;
   // ——— Business goals: what the customer set out to achieve, and how far the POV took each ———
   const byId = Object.fromEntries(crit.map((c) => [c.id, c]));
@@ -185,7 +192,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
 <title>${esc(d.customer)} — Checkmarx One POV results</title>
 <style>${CSS}</style></head><body>
 <header class="bar"><div><b>${esc(d.customer)}</b> · Checkmarx One proof of value <span class="m">· prepared by ${esc(d.owner?.name ?? '')} · ${stamp(d.generatedAt)}</span></div><button class="btn" id="pdf">Download PDF</button></header>
-<main>${slide1}${flowSlide}${slide2}${goalSlides.join('')}${critSlides.join('')}${slide4}${expansionSlide}${slide5}${slide6}${appendix}</main>
+<main>${slide1}${flowSlide}${slide2}${impactSlide}${goalSlides.join('')}${critSlides.join('')}${slide4}${expansionSlide}${slide5}${slide6}${appendix}</main>
 <aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-label="Engine record"><button class="x" id="close" aria-label="Close">×</button><div id="rec"></div></aside>
 <div class="scrim" id="scrim"></div>
 <script${nonce ? ` nonce="${nonce}"` : ''}>
@@ -284,7 +291,7 @@ const CSS = `
 .goal p{margin:${u(4)} 0 ${u(8)};font-size:${u(14)};color:#B9B0CC;line-height:1.35}
 .bar{display:block;height:${u(6)};border-radius:${u(3)};background:#3A2352;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,#bf4bd6,#f2592d)}
 .exp{display:grid;grid-template-columns:1fr 1fr;gap:${u(40)}}.small-steps li{font-size:${u(16)}}
-.figs.mini{margin-top:${u(14)};grid-template-columns:repeat(3,1fr)}.figs.mini b{font-size:${u(34)}}
+.figs.mini{margin-top:${u(14)};grid-template-columns:repeat(3,1fr)}.figs.impact{grid-template-columns:repeat(3,1fr)}.figs.impact b{font-size:${u(44)}}.figs.impact em{display:block;font-style:normal;font-size:${u(12)};color:var(--dim);margin-top:${u(4)}}.figs.mini b{font-size:${u(34)}}
 .next-list{list-style:none;margin:${u(8)} 0 0;padding:0;display:grid;gap:${u(10)}}.next-list li{display:flex;flex-direction:column;gap:${u(2)};border-left:${u(3)} solid #6B34FD;padding-left:${u(10)}}
 .next-list .new{font-size:${u(11)};color:#F25928;text-transform:uppercase;letter-spacing:.06em}
 :root { --bg:#140920; --panel:#1d1030; --line:#3a2352; --ink:#fff; --dim:#b9b0cc; --violet:#6b34fd; --orange:#f25928; --magenta:#b22bcb; }
@@ -338,7 +345,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 80px; display: flex
 .tbl th { text-align: left; color: var(--dim); font-weight: 700; font-size: ${u(11)}; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid #6b34fd; padding: ${u(8)} ${u(10)}; }
 .tbl td { border-bottom: 1px solid var(--line); padding: ${u(8)} ${u(10)}; vertical-align: top; }
 .tbl.kv td:first-child { color: var(--dim); width: 32%; text-transform: uppercase; font-size: ${u(12)}; letter-spacing: 0.08em; }
-.st { white-space: nowrap; font-weight: 700; } .st.s-done, .st.s-demo { color: #3ccf8e; } .st.s-progress { color: #f5c518; } .st.s-planned { color: #b9b0cc; } .st.s-missed { color: #8a8197; }
+.st { white-space: nowrap; font-weight: 700; } .st.s-done, .st.s-demo { color: #3ccf8e; } .st.s-progress { color: #f5a524; } .st.s-planned { color: #f5c518; } .st.s-missed { color: #8a8197; }
 .lnk { font: inherit; color: #fff; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: #6b34fd; text-underline-offset: 3px; }
 .steps { margin: 0; padding-left: 1.2em; font-size: ${u(22)}; } .steps li { margin-bottom: ${u(14)}; } .steps li::marker { color: var(--orange); }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: #170c26; border-left: 1px solid #6b34fd; transform: translateX(100%); transition: transform 0.25s ease; z-index: 20; overflow-y: auto; padding: 28px 28px 40px; box-shadow: -20px 0 60px #000a; }

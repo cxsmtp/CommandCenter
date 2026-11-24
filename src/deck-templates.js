@@ -36,6 +36,8 @@ export const SLIDES = {
   planFull: 'Plan & timeline: every meeting (Meridian)',
   testsFull: 'Test plan, rows sized to their text (Meridian)',
   evidence: 'Evidence for every criterion',
+  impact: 'What the POV changed (Analytics: fix time, triage, scans)',
+  analyticsDetail: 'Fix time and ageing charts (Analytics)',
   goals: 'Business goals at a glance (Version Kendra)',
   goalsPlan: 'Business goals and success criteria: numbered, with milestones and tracker references (Version Kendra)',
   notes: 'Meeting notes',
@@ -44,13 +46,13 @@ export const SLIDES = {
 const MAIN = ['cover', 'age', 'devsecops', 'components', 'plan', 'env', 'tests', 'closing'];
 export const DEFAULT_LAYOUT = {
   wip: { main: MAIN, appendix: ['overview', 'apma', 'devsecopsFull', 'planFull', 'envFull', 'notes'] },
-  results: { main: MAIN, appendix: ['challenges', 'glance', 'expansion', 'next', 'apma', 'tenant', 'devsecopsFull', 'planFull', 'envFull', 'testsFull', 'evidence', 'notes'] },
+  results: { main: [...MAIN.slice(0, -1), 'impact', 'closing'], appendix: ['challenges', 'glance', 'expansion', 'next', 'apma', 'tenant', 'analyticsDetail', 'devsecopsFull', 'planFull', 'envFull', 'testsFull', 'evidence', 'notes'] },
 };
 
 /** Version Kendra: Meridian's own slides, every engine and touch point, and the guide's business goals and criteria. */
 export const KENDRA_LAYOUT = {
   wip: { main: ['cover', 'age', 'goals', 'devsecopsFull', 'components', 'planFull', 'envFull', 'goalsPlan', 'closing'], appendix: ['overview', 'apma', 'notes'] },
-  results: { main: ['cover', 'age', 'glance', 'goals', 'goalsPlan', 'components', 'expansion', 'next', 'closing'], appendix: ['challenges', 'devsecopsFull', 'planFull', 'envFull', 'apma', 'tenant', 'evidence', 'notes'] },
+  results: { main: ['cover', 'age', 'glance', 'impact', 'goals', 'goalsPlan', 'components', 'expansion', 'next', 'closing'], appendix: ['challenges', 'analyticsDetail', 'devsecopsFull', 'planFull', 'envFull', 'apma', 'tenant', 'evidence', 'notes'] },
 };
 
 /** Meridian's own design, the Classic results deck, and Version Kendra: always there. */

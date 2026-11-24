@@ -103,7 +103,7 @@ export class Monitor extends EventEmitter {
   #persist(id, entry) {
     if (!SAFE_ID.test(id)) return;
     // A snapshot is a cache of what Checkmarx One says: no previous copy is needed, the next read rebuilds it.
-    this.#vault.writeFile(path.join(this.#dir, `${id}.json`), JSON.stringify({ snapshot: entry.snapshot, previous: entry.previous, error: entry.error, history: entry.history, failures: entry.failures, proof: entry.proof }), { keepPrevious: false });
+    this.#vault.writeFile(path.join(this.#dir, `${id}.json`), JSON.stringify({ snapshot: entry.snapshot, previous: entry.previous, error: entry.error, history: entry.history, failures: entry.failures, proof: entry.proof, baseline: entry.baseline ?? null }), { keepPrevious: false });
   }
 
   /** The first reads, spread over the interval (at most 10 minutes), the stalest first. */
@@ -182,10 +182,12 @@ export class Monitor extends EventEmitter {
         const slow = force || !entry.snapshot || Date.now() - entry.slowAt >= SLOW_EVERY_MS;
         // The proof record: the whole scan history the first time (or for another tenant), then what is new.
         const sameTenant = entry.proof?.tenant === connection.tenant;
-        const snapshot = await this.#lanes.run(() => this.#collect(connection, { client: this.#clientFor(id, connection), previous: entry.snapshot, slow, historyFrom: historyFrom(sameTenant ? entry.proof : null) }), { high: force });
+        const snapshot = await this.#lanes.run(() => this.#collect(connection, { client: this.#clientFor(id, connection), previous: entry.snapshot, slow, historyFrom: historyFrom(sameTenant ? entry.proof : null), scope: this.#source.scope?.(id) ?? null }), { high: force });
         const scansOk = !(snapshot.errors ?? []).some((e) => e.part === 'scans');
         entry.proof = mergeProof(sameTenant ? entry.proof : null, [...(snapshot.scans ?? []), ...(snapshot.older ?? [])], { tenant: connection.tenant, at: snapshot.at, complete: scansOk });
         delete snapshot.older;
+        // The Analytics numbers at the start of the POV (its first answer), to show what changed by the end.
+        if (snapshot.analytics && (!entry.baseline || !sameTenant)) entry.baseline = { at: snapshot.at, ...snapshot.analytics };
         if (slow) entry.slowAt = Date.now();
         entry.failures = 0;
         entry.previous = entry.snapshot;
@@ -226,6 +228,12 @@ export class Monitor extends EventEmitter {
   /** Everything the tenant has proven during the POV (engines, scan types, origins, with when and an example). */
   proof(id) {
     return this.#entry(id).proof;
+  }
+
+  /** The Analytics numbers now, and at the start of the POV. */
+  analytics(id) {
+    const e = this.#entry(id);
+    return e.snapshot?.analytics ? { now: e.snapshot.analytics, start: e.baseline ?? null } : null;
   }
 
   /** The proving scans of the whole POV: the record's examples and the latest read's scans. */

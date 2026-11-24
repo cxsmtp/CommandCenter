@@ -1037,3 +1037,53 @@ test('ASPM and DAST read the way the portal reads them: counts kept, names and l
   assert.deepEqual(evaluate(cap('policy'), facts).evidence, ['1 policy applied to projects, 1 breaking the build', 'Policies raised 12 violations']);
   assert.equal(evaluate(cap('policy'), tenantFacts({ scans: [], projects: { list: [] }, aspm: { ...a, policies: { made: 1, applied: 0, breakBuild: 0, violations: 0 } } })).level, 'none', 'a policy on nothing proves nothing');
 });
+
+test('What the POV changed: the Analytics dashboard read for the POV’s projects, the start kept, shown the same everywhere', async () => {
+  const { analytics } = await import('../src/collector.js');
+  const { impactTiles } = await import('../src/impact.js');
+  const asked = [];
+  // Answers in the shape the portal's Analytics dashboard gets them.
+  const A = {
+    meanTimeToResolution: { meanTimeData: [{ label: 'Critical', meanTime: 6, results: 90 }, { label: 'High', meanTime: 4, results: 300 }, { label: 'Medium', meanTime: 4, results: 310 }], totalResults: 700 },
+    vulnerabilitiesByAging: { agingAndSeverities: [{ label: '0-30 Days', results: 900, severities: [{ label: 'Critical', results: 90 }, { label: 'High', results: 400 }, { label: 'Medium', results: 410 }] }, { label: '31-60 Days', results: 80, severities: [{ label: 'Critical', results: 9 }, { label: 'High', results: 40 }, { label: 'Medium', results: 31 }] }, { label: 'Totals', results: 980, severities: [] }] },
+    stateAndSeverity: { statesAndSeverities: [{ label: 'To Verify', results: 600 }, { label: 'Not Exploitable', results: 150 }, { label: 'Confirmed', results: 200 }, { label: 'Urgent', results: 50 }, { label: 'Totals', results: 1000 }] },
+    scans: { data: { value: 368 } }, scanned_projects: { data: { value: 107 } }, loc: { data: { value: 7480011 } },
+  };
+  const client = { request: async (p, o) => (asked.push([p, o.body.kpi, o.body.filters.projects, o.body.range.definedRange]), A[o.body.kpi] ?? Promise.reject(new Error('404'))) };
+  const now = await analytics(client, { projectIds: ['p1', 'p2'], range: '90d' });
+  assert.deepEqual(now.mttrDays, { critical: 6, high: 4, medium: 4 });
+  assert.equal(now.resolved, 700);
+  assert.deepEqual(now.aging.map((b) => b.label), ['0-30 Days', '31-60 Days'], 'the totals row is not a band');
+  assert.deepEqual(now.states, { total: 1000, toVerify: 600, confirmed: 200, urgent: 50, notExploitable: 150, proposed: 0 });
+  assert.deepEqual([now.scans, now.projects, now.loc], [368, 107, 7480011]);
+  assert.ok(asked.every(([, , projects, range]) => projects.join() === 'p1,p2' && range === '90d'), 'the POV’s projects, the POV’s window');
+  assert.equal(await analytics({ request: async () => Promise.reject(new Error('403')) }), null, 'no Analytics: nothing claimed');
+
+  const start = { ...now, mttrDays: { critical: 21, high: 9, medium: 7 }, states: { ...now.states, toVerify: 980 } };
+  const tiles = impactTiles({ now, start });
+  assert.deepEqual(tiles.map((t) => [t.label, t.value]), [['Scans run', '368'], ['Projects scanned', '107'], ['Lines of code scanned', '7.5M'], ['Critical fix time', '6 days'], ['Findings triaged', '40%'], ['Findings fixed', '700']]);
+  assert.equal(tiles[3].sub, 'from 21 days at the start');
+  assert.equal(tiles[4].sub, 'from 2% at the start');
+  assert.deepEqual(impactTiles(null), []);
+  // The Analytics criterion shows the numbers as its evidence.
+  const facts = tenantFacts({ scans: [], projects: { list: [] }, analytics: now });
+  assert.deepEqual(evaluate(DEFAULT_CATALOG.find((c) => c.id === 'analytics'), facts).evidence, ['Analytics shows critical fix time 6 days, 40% of findings triaged, 368 scans (last 90 days)']);
+  // The decks: Meridian's (and Version Kendra's) six tiles and the charts, and Classic's tiles.
+  const { wipDeck } = await import('../src/wip.js');
+  const { finalDeck } = await import('../src/deck.js');
+  const opp = { customer: 'Acme', startDate: '2026-09-01', endDate: '2026-11-30', criteria: [], sessions: [], stakeholders: [] };
+  const story = { analytics: { now, start }, criteria: [], goals: [], progress: { met: 0, total: 0, percent: 0, must: 0, mustMet: 0 } };
+  const JSZip = (await import('jszip')).default;
+  const textOf = async (buf) => {
+    const z = await JSZip.loadAsync(buf);
+    return { z, text: (await Promise.all(Object.keys(z.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).map((n) => z.file(n).async('string')))).join(' ') };
+  };
+  const m = await textOf(await wipDeck(opp, { story, mode: 'results', layout: { results: { main: ['impact'], appendix: ['analyticsDetail'] } } }));
+  assert.match(m.text, /What the POV Changed/);
+  assert.match(m.text, /from 21 days at the start/);
+  assert.match(m.text, /Fix Time and Ageing/);
+  assert.ok(Object.keys(m.z.files).some((n) => /^ppt\/charts\/chart\d+\.xml$/.test(n)), 'the charts are in the file');
+  const c = await textOf(await finalDeck(opp, { story, categories: [] }));
+  assert.match(c.text, /What the POV changed/);
+  assert.match(c.text, /7\.5M/);
+});
