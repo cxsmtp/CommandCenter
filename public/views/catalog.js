@@ -1,5 +1,5 @@
 // The capability catalogue: every Checkmarx One touch point, its name in Checkmarx One and how it is recognised.
-import { $, esc, api, can, state, attempt, openDialog, closeDialog, formData, toast, ask } from '../core.js';
+import { $, esc, api, can, state, attempt, openDialog, closeDialog, formData, toast, ask, local } from '../core.js';
 import { getCatalog } from './new-opportunity.js';
 import { getTemplates, criteriaWizard } from './criteria-wizard.js';
 import { deckPanel, wireDeckPanel } from './deck-templates.js';
@@ -21,9 +21,12 @@ export async function renderCatalog(main, { crumbs }) {
   const tp = await getTemplates(true);
   const [lib, bankInfo, decks] = await Promise.all([api('/library'), api('/bank'), deckPanel()]);
   const all = can('templates.manage') && state.session.user.role === 'admin' ? await api('/templates?all=1') : tp;
-  main.innerHTML = `${libraryPanel(lib, bankInfo)}${decks}${templatesPanel(all)}<div class="page-head" style="margin-top:22px"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Kendra recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
+  const ctab = ['caps', 'goals', 'decks', 'templates'].includes(local.get('cc.catTab', 'caps')) ? local.get('cc.catTab', 'caps') : 'caps';
+  const ctabBar = `<div class="ctabs" role="tablist">${[['caps', `Capabilities <span>${catalog.length}</span>`], ['goals', `Business goals &amp; SEAL <span>${bankInfo.goals.length}</span>`], ['decks', 'Customer presentations'], ['templates', `Criteria templates <span>${(all.templates ?? []).length}</span>`]].map(([k, l]) => `<button role="tab" data-ctab="${k}" aria-selected="${ctab === k}">${l}</button>`).join('')}</div>`;
+  const pane = (k, html) => `<div class="ctab-pane" data-pane="${k}" ${ctab === k ? '' : 'hidden'}>${html}</div>`;
+  main.innerHTML = `${ctabBar}${pane('goals', libraryPanel(lib, bankInfo))}${pane('decks', decks)}${pane('templates', templatesPanel(all))}<div class="ctab-pane" data-pane="caps" ${ctab === 'caps' ? '' : 'hidden'}><div class="page-head" style="margin-top:0"><div class="grow"><h1>Capabilities</h1><div class="sub">What an SE can pick as a success criterion, and how Kendra recognises it in the tenant.</div></div><div class="actions">${editable ? '<button class="btn" data-act="reset">Restore defaults</button><button class="btn primary" data-act="add">New capability</button>' : ''}</div></div>
   <div class="findbar"><input type="search" id="capQ" placeholder="Find a capability" aria-label="Find a capability"></div>
-  ${categories
+  <div class="cap-scroll">${categories
     .map(([key, label]) => {
       const list = catalog.filter((c) => c.category === key);
       if (!list.length) return '';
@@ -37,7 +40,13 @@ export async function renderCatalog(main, { crumbs }) {
           </div></details>`)
         .join('')}</div>`;
     })
-    .join('')}`;
+    .join('')}</div></div>`;
+  for (const b of main.querySelectorAll('[data-ctab]'))
+    b.addEventListener('click', () => {
+      local.set('cc.catTab', b.dataset.ctab);
+      for (const x of main.querySelectorAll('[data-ctab]')) x.setAttribute('aria-selected', String(x === b));
+      for (const p of main.querySelectorAll('[data-pane]')) p.hidden = p.dataset.pane !== b.dataset.ctab;
+    });
   main.querySelector('[data-act="add"]')?.addEventListener('click', () => edit(null, categories));
   main.querySelector('#capQ')?.addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();

@@ -67,11 +67,17 @@ export function applyLook(prefs = {}) {
 media.addEventListener('change', () => applyLook(state.session?.user?.prefs));
 
 // ——— Routing ———
+/** Where Kendra opens: leaders on Insights, SEs on their accounts (the Portfolio), or the person's own choice. */
+export function homeView() {
+  const u = state.session?.user;
+  if (u?.prefs?.home === 'insights' || u?.prefs?.home === 'dashboard') return u.prefs.home;
+  return u && u.role !== 'associate' ? 'insights' : 'dashboard';
+}
 export function route() {
   const [path, query = ''] = location.hash.split('?');
   const [, view = '', id = '', tab = ''] = path.split('/');
   const q = new URLSearchParams(query);
-  return { view: view || 'dashboard', id, tab, open: q.get('open') ?? '', openTab: q.get('tab') ?? '' };
+  return { view: view || homeView(), id, tab, open: q.get('open') ?? '', openTab: q.get('tab') ?? '' };
 }
 const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICON = {

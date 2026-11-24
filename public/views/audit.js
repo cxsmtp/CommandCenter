@@ -57,7 +57,7 @@ const cols = () =>
 
 function rowsTable(records) {
   if (!records.length) return '<p class="empty-line" style="padding:16px">Nothing matches.</p>';
-  return table(`audit-${ui.kind}`, cols(), records, { rowAttrs: (r) => `class="click" data-seq="${r.seq}" tabindex="0"` });
+  return `<div class="audit-scroll">${table(`audit-${ui.kind}`, cols(), records, { rowAttrs: (r) => `class="click" data-seq="${r.seq}" tabindex="0"` })}</div>`;
 }
 
 function wire(main, d) {

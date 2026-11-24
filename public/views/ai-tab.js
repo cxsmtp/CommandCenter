@@ -46,14 +46,15 @@ export async function wireAiTab(main, oppId, { canEdit, rerender }) {
           <p class="small" style="margin:0">${b.covered == null ? '' : b.covered ? '<span class="ok-t">The tenant’s credits cover it.</span>' : `<span class="warn-t">Short by ${fmt(b.shortBy)} credits.</span>`} By hand it would take about <b>${num(b.hoursIfManual)} hours</b> (${money(b.valueIfAi, cur)}).</p>` : '<p class="muted" style="margin:0">Shown once the tenant has been read.</p>'}
       </div></section>
     </div>
-    ${d.canRun && d.hasTenant ? `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Run AI on the findings</h3><span class="small muted">planned first: nothing is spent until you confirm</span></div><div class="body stack">
+    <div class="grid2 ai-pair">${d.canRun && d.hasTenant ? `<section class="panel"><div class="head"><h3>Run AI on the findings</h3><span class="small muted">planned first: nothing is spent until you confirm</span></div><div class="body stack">
       <div class="seg" role="group" aria-label="Action" style="align-self:flex-start;width:auto"><button type="button" data-action="triage" aria-pressed="true">AI Triage</button><button type="button" data-action="remediation" aria-pressed="false">AI Remediation</button></div>
       <div class="wz-chips">${SEVERITIES.map((s) => `<button type="button" class="wz-chip ${['Critical', 'High'].includes(s) ? 'must' : ''}" data-sev="${s}" aria-pressed="${['Critical', 'High'].includes(s)}">${s}</button>`).join('')}</div>
       <div class="row"><button class="btn" data-act="plan">See what it would cost</button><span class="small muted" id="aiPlan"></span></div>
     </div></section>` : ''}
-    <section class="panel" style="margin-bottom:16px"><div class="head"><h3>Runs from Kendra</h3></div>
+    <section class="panel"><div class="head"><h3>Runs from Kendra</h3></div>
       ${(d.ledger ?? []).length ? `<div class="list" style="padding:8px 16px">${d.ledger.slice(0, 30).map((e) => `<div class="item"><div class="top"><b>${e.action === 'triage' ? 'AI Triage' : 'AI Remediation'} · ${fmt(e.findings)} finding${e.findings === 1 ? '' : 's'}</b><span class="small muted">${esc(when(e.at))}</span></div><div class="small muted">${esc(e.by ?? '')} · ${fmt(e.credits ?? 0)} credits · ${esc(e.outcome)}</div></div>`).join('')}</div>` : '<p class="empty-line" style="padding:16px">No runs from Kendra yet.</p>'}</section>
-    <section class="panel"><div class="head"><h3>Value rates</h3>${d.canEditRates ? '<button class="btn sm" data-act="rates">Change for this POV</button>' : ''}</div><div class="body small">
+    </div>
+    <section class="panel" style="margin-top:16px"><div class="head"><h3>Value rates</h3>${d.canEditRates ? '<button class="btn sm" data-act="rates">Change for this POV</button>' : ''}</div><div class="body small">
       ${num(v.rates?.triageMinutes)} minutes saved per finding triaged · ${num(v.rates?.fixMinutes)} minutes per fix · ${money(v.rates?.hourlyRate, cur)} an hour · ${v.rates?.creditPrice ? `${money(v.rates.creditPrice, cur)} a credit` : 'credit price not set'}${Object.keys(d.ownRates ?? {}).length ? ' · <b>set for this POV</b>' : ' · organisation rates'}
     </div></section>`;
 

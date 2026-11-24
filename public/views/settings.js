@@ -45,12 +45,14 @@ function profile(body, data, applyLook) {
   const theme = p.theme || data.settings.defaultTheme;
   const mode = p.mode || data.settings.defaultMode;
   body.innerHTML = `<div class="grid2">
-    <section class="panel"><div class="head"><h3>Your look</h3></div><div class="body stack">
+    <div class="stack"><section class="panel"><div class="head"><h3>Your look</h3></div><div class="body stack">
       <div class="looks">${Object.entries(LOOKS).slice(0, 4).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div>
       <details ${Object.keys(LOOKS).indexOf(theme) >= 4 ? 'open' : ''}><summary class="small muted">More looks</summary><div class="looks" style="margin-top:10px">${Object.entries(LOOKS).slice(4).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div></details>
-      <div class="row center"><span class="small muted">Mode</span><div class="seg">${['auto', 'light', 'dark'].map((m) => `<button data-mode="${m}" aria-pressed="${mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
-      <span class="small muted">Portfolio opens as</span><div class="seg">${[['', 'By role'], ['cards', 'Cards'], ['table', 'Line items']].map(([v, l]) => `<button data-pview="${v}" aria-pressed="${(p.view ?? '') === v}">${l}</button>`).join('')}</div></div>
+      <div class="row center"><span class="small muted">Mode</span><div class="seg">${['auto', 'light', 'dark'].map((m) => `<button data-mode="${m}" aria-pressed="${mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div></div>
+      <div class="pref-rows"><span class="small muted">Kendra opens on</span><div class="seg">${[['', 'By role'], ['insights', 'Insights'], ['dashboard', 'Portfolio']].map(([v, l]) => `<button data-phome="${v}" aria-pressed="${(p.home ?? '') === v}">${l}</button>`).join('')}</div>
+        <span class="small muted">Portfolio opens as</span><div class="seg">${[['', 'By role'], ['cards', 'Cards'], ['table', 'Line items']].map(([v, l]) => `<button data-pview="${v}" aria-pressed="${(p.view ?? '') === v}">${l}</button>`).join('')}</div></div>
     </div></section>
+    <section class="panel" id="sfMe"></section></div>
     <section class="panel"><div class="head"><h3>Profile</h3></div><form id="profForm" class="body stack" style="gap:10px">
       <label class="field">Name<input name="name" value="${esc(u.name)}"></label>
       <label class="field">Title (signs your emails)<input name="title" value="${esc(u.title ?? '')}"></label>
@@ -62,8 +64,7 @@ function profile(body, data, applyLook) {
       <h3>Password</h3>
       <div class="row"><label class="field">Current<input type="password" name="current" autocomplete="current-password" required></label><label class="field">New (10+ characters)<input type="password" name="next" minlength="10" autocomplete="new-password" required></label></div>
       <div><button class="btn">Change password</button></div>
-    </form></section></div>
-    <section class="panel" id="sfMe" style="margin-top:16px"></section>`;
+    </form></section></div>`;
   sfMe($('#sfMe'));
   const savePrefs = async (prefs) => {
     const r = await attempt(() => api('/me', { method: 'PATCH', body: { prefs } }));
@@ -76,6 +77,7 @@ function profile(body, data, applyLook) {
   for (const b of $$('[data-look]', body)) b.addEventListener('click', () => savePrefs({ theme: b.dataset.look }));
   for (const b of $$('[data-mode]', body)) b.addEventListener('click', () => savePrefs({ mode: b.dataset.mode }));
   for (const b of $$('[data-pview]', body)) b.addEventListener('click', () => savePrefs({ view: b.dataset.pview || 'auto' }));
+  for (const b of $$('[data-phome]', body)) b.addEventListener('click', () => savePrefs({ home: b.dataset.phome || 'auto' }));
   $('#profForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const r = await attempt(() => api('/me', { method: 'PATCH', body: formData(e.target) }), 'Saved');
@@ -89,7 +91,7 @@ function profile(body, data, applyLook) {
 
 function organisation(body, data) {
   const s = data.settings;
-  body.innerHTML = `<form id="orgForm" class="panel body stack" style="max-width:720px">
+  body.innerHTML = `<div class="grid2 org-cols"><div class="stack" id="orgLeft"><form id="orgForm" class="panel body stack">
     <label class="field">Name shown in the menu and on reports<input name="orgName" value="${esc(s.orgName)}"></label>
     <label class="field">Read each running POV tenant every (minutes)<input type="number" name="refreshMinutes" min="1" max="1440" value="${esc(s.refreshMinutes)}"></label>
     <div class="row"><label class="field">Default look<select name="defaultTheme">${Object.entries(LOOKS).map(([k, [l]]) => `<option value="${k}" ${s.defaultTheme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -97,9 +99,9 @@ function organisation(body, data) {
     <label class="field">Results presentation<select name="reportStyle"><option value="classic" ${s.reportStyle !== 'team' ? 'selected' : ''}>Classic (Kendra’s own design)</option><option value="team" ${s.reportStyle === 'team' ? 'selected' : ''}>Team template (the WIP design, in the uploaded template)</option></select></label>
     <label class="check"><input type="checkbox" name="weeklyDrafts" ${s.weeklyDrafts ? 'checked' : ''}> Every Monday, write a weekly status draft for each running POV (waiting in its Email tab, never sent by itself)</label>
     <div><button class="btn primary">Save</button></div>
-  </form>`;
-  wipTemplate(body);
-  sharePointPanel(body);
+  </form></div><div class="stack" id="orgRight"></div></div>`;
+  wipTemplate($('#orgLeft', body));
+  sharePointPanel($('#orgRight', body));
   $('#orgForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const r = await attempt(() => api('/settings', { method: 'PUT', body: formData(e.target) }), 'Saved');
@@ -138,7 +140,7 @@ function roles(body, data) {
   body.innerHTML = `<form id="roleForm" class="panel">
     <div class="head"><span class="muted small">What each role may do. Admins may do everything. What people can see always follows the reporting tree: themselves and everyone below them.</span></div>
     <div class="table-wrap"><table class="matrix"><thead><tr><th>Permission</th>${roleKeys.map((r) => `<th>${esc(labels[r])}</th>`).join('')}</tr></thead><tbody>
-    ${Object.entries(permissions).map(([p, label]) => `<tr><td>${esc(label)}<div class="small muted mono">${esc(p)}</div></td>${roleKeys.map((r) => `<td><input type="checkbox" data-role="${r}" value="${p}" ${matrix[r]?.includes(p) ? 'checked' : ''} aria-label="${esc(labels[r])}: ${esc(label)}"></td>`).join('')}</tr>`).join('')}
+    ${Object.entries(permissions).map(([p, label]) => `<tr><td>${esc(label)} <span class="small muted mono">${esc(p)}</span></td>${roleKeys.map((r) => `<td><input type="checkbox" data-role="${r}" value="${p}" ${matrix[r]?.includes(p) ? 'checked' : ''} aria-label="${esc(labels[r])}: ${esc(label)}"></td>`).join('')}</tr>`).join('')}
     </tbody></table></div><div class="body"><button class="btn primary">Save roles</button></div></form>`;
   $('#roleForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -162,11 +164,13 @@ async function system(body) {
       <span class="spacer"></span><a class="btn" href="/api/system/report" download>Troubleshooting report</a><button class="btn" data-act="recheck">Check again</button></div></section>
 
     <section class="panel"><div class="head"><h3>Health</h3></div><div class="checks">
-      ${h.checks.map((c) => `<div class="check-row ${c.level}"><span class="badge ${LEVEL[c.level][0]}">${LEVEL[c.level][1]}</span><div><b>${esc(c.label)}</b><div>${esc(c.text)}</div>${c.fix ? `<div class="small muted">${esc(c.fix)}</div>` : ''}</div></div>`).join('')}
+      ${h.checks.filter((c) => c.level !== 'ok').map((c) => `<div class="check-row ${c.level}"><span class="badge ${LEVEL[c.level][0]}">${LEVEL[c.level][1]}</span><div><b>${esc(c.label)}</b><div>${esc(c.text)}</div>${c.fix ? `<div class="small muted">${esc(c.fix)}</div>` : ''}</div></div>`).join('')}
+    </div><div class="checks-ok">
+      ${h.checks.filter((c) => c.level === 'ok').map((c) => `<div class="ok-row" title="${esc(c.text)}"><span class="badge ok">Good</span><b>${esc(c.label)}</b><span class="small muted">${esc(c.text)}</span></div>`).join('')}
     </div></section>
 
-    <section class="panel"><div class="head"><h3>Backups</h3><div class="row center"><a class="btn" href="/api/system/backup/download">Download the data (encrypted)</a><button class="btn" data-act="drill" title="Restore the newest backup into a scratch folder and read it back">Run a restore drill</button><button class="btn primary" data-act="backup">Back up now</button></div></div>
-      <div class="body small muted" style="padding-bottom:0">Taken by itself every few hours, before every update and every restore. Each one is opened and checked when it is taken. Records stay encrypted and the key is never in a backup — keep the key safe somewhere else.${h.offsite ? ` Each is also copied to <span class="mono">${esc(h.offsite)}</span>.` : ''}</div>
+    <div class="grid2 sys-pair">
+    <section class="panel"><div class="head"><h3 title="Taken by itself every few hours, before every update and every restore. Each one is opened and checked when it is taken. Records stay encrypted and the key is never in a backup: keep the key safe somewhere else.">Backups <span class="small muted" style="text-transform:none;letter-spacing:0">ⓘ</span></h3><div class="row center"><a class="btn" href="/api/system/backup/download">Download the data (encrypted)</a><button class="btn" data-act="drill" title="Restore the newest backup into a scratch folder and read it back">Run a restore drill</button><button class="btn primary" data-act="backup">Back up now</button></div></div>
       <div class="table-wrap"><table><thead><tr><th>Taken</th><th>Why</th><th>Version</th><th class="n">Files</th><th class="n">Size</th><th>Check</th>${h.offsite ? '<th>Off the server</th>' : ''}<th></th></tr></thead><tbody>
       ${h.backups.map((b) => `<tr><td>${esc(b.at ? when(b.at) : b.name)}<div class="small muted">${b.at ? esc(ago(b.at)) : ''}</div></td><td>${esc(b.label === 'auto' ? 'Automatic' : b.label === 'manual' ? 'By hand' : b.label === 'before-restore' ? 'Before a restore' : b.label.startsWith('before-') ? `Before update ${b.label.slice(7)}` : b.label)}</td><td class="mono">${esc(b.version)}</td><td class="n">${b.files}</td><td class="n">${size(b.bytes)}</td>
         <td>${b.verified === true ? (b.sameKey ? '<span class="badge ok">Readable</span>' : '<span class="badge warn">Another key</span>') : b.verified === false ? `<span class="badge bad" title="${esc(b.problems.join('\n'))}">Failed</span>` : '<span class="badge">Not checked</span>'}</td>
@@ -177,6 +181,7 @@ async function system(body) {
     <section class="panel"><div class="head"><h3>Corrected by itself</h3></div><div class="body stack" style="gap:8px">
         ${[...h.corrections.map((c) => ({ at: c.at, text: `${c.what} — ${c.action}` })), ...h.repairs.map((r) => ({ at: r.at, text: r.from ? `${r.name} was damaged — repaired from ${r.from}` : `${r.name} was damaged — no good copy, set aside` }))].sort((a, b) => b.at.localeCompare(a.at)).map((c) => `<div><div class="small muted">${esc(when(c.at))}</div>${esc(c.text)}</div>`).join('') || '<span class="muted">Nothing needed correcting since the server started.</span>'}
       </div></section>
+    </div>
     </div>`;
   const again = () => system(body);
   $('[data-act="recheck"]', body).addEventListener('click', again);
@@ -229,6 +234,7 @@ async function network(body) {
   const sheet = n.allowlist.map((a) => `${a.direction === 'in' ? 'IN ' : 'OUT'}  ${a.host}:${a.port}  ${a.why}`).join('\n');
   body.innerHTML = `<div class="stack">
     ${n.restartNeeded ? `<section class="panel notice warn"><div class="body row center"><div style="flex:1"><b>Restart to apply</b><div class="small muted">The proxy or the trusted certificates changed: they take effect when the server restarts (a few seconds).</div></div>${n.launched ? '<button class="btn primary" data-act="restart">Restart now</button>' : '<span class="small muted">Restart the container to apply.</span>'}</div></section>` : ''}
+    <div class="grid2">
     <section class="panel"><div class="head"><h3>Company proxy</h3>${net.proxy ? (net.active ? '<span class="badge ok">In use</span>' : '<span class="badge warn">Saved, applies at the next restart</span>') : net.active ? '<span class="badge">From the server’s environment</span>' : '<span class="badge">None</span>'}</div>
       <form id="netForm" class="body stack" style="gap:12px;max-width:760px">
         <label class="field">Proxy address <span class="small muted">for every call out (Checkmarx One, GitHub releases, Microsoft Graph); empty for none</span><input name="proxy" value="${esc(net.proxy)}" placeholder="http://proxy.company.com:8080"></label>
@@ -236,13 +242,15 @@ async function network(body) {
         <label class="field">Go direct to <span class="small muted">NO_PROXY: hosts or domains, comma separated</span><input name="noProxy" value="${esc(net.noProxy)}" placeholder="localhost, .company.local"></label>
         <div class="row"><button class="btn primary" name="go" value="restart">Save and restart</button><button class="btn" name="go" value="save">Save</button></div>
       </form></section>
-    <section class="panel"><div class="head"><h3>What the network must allow</h3><div class="row"><button class="btn sm" data-act="copy-sheet">Copy</button><a class="btn sm" download="kendra-network.txt" href="data:text/plain;charset=utf-8,${encodeURIComponent(sheet)}">Download</a></div></div>
-      <div class="body small muted" style="padding-bottom:0">For the network team: every connection this server makes, from its own settings and the tenants it reads.</div>
-      <div class="table-wrap"><table><thead><tr><th>Direction</th><th>Host</th><th class="n">Port</th><th>Why</th></tr></thead><tbody>${n.allowlist.map((a) => `<tr><td>${a.direction === 'in' ? 'In' : 'Out'}</td><td class="mono">${esc(a.host)}</td><td class="n">${esc(a.port)}</td><td>${esc(a.why)}</td></tr>`).join('')}</tbody></table></div></section>
     <section class="panel"><div class="head"><h3>Trusted certificates</h3><button class="btn sm" data-act="cert-add">Add a certificate</button></div>
       <div class="body small muted" style="padding-bottom:0">A company proxy that inspects HTTPS (Zscaler, Netskope, Palo Alto…) shows its own certificate: add its root here, as a PEM file, so calls out are trusted.</div>
       <div class="table-wrap"><table><thead><tr><th>Certificate</th><th>Issued by</th><th>Valid until</th><th>Added</th><th></th></tr></thead><tbody>${n.certs.map((c) => `<tr><td>${esc(c.subject)}${c.ca ? ' <span class="badge">CA</span>' : ''}<div class="small muted mono">${esc(c.fingerprint.slice(0, 29))}…</div></td><td>${esc(c.issuer)}</td><td>${esc(day(c.validTo))}</td><td>${c.addedAt ? `${esc(ago(c.addedAt))}${c.addedBy ? `<div class="small muted">${esc(c.addedBy)}</div>` : ''}` : '—'}</td><td><button class="btn sm ghost danger" data-cert-del="${esc(c.fingerprint)}">Remove</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">None: the usual public certificates are trusted.</td></tr>'}</tbody></table></div>
-      <input type="file" id="certFile" accept=".pem,.crt,.cer,text/plain" hidden></section></div>`;
+      <input type="file" id="certFile" accept=".pem,.crt,.cer,text/plain" hidden></section>
+    </div>
+    <section class="panel"><div class="head"><h3>What the network must allow</h3><div class="row"><button class="btn sm" data-act="copy-sheet">Copy</button><a class="btn sm" download="kendra-network.txt" href="data:text/plain;charset=utf-8,${encodeURIComponent(sheet)}">Download</a></div></div>
+      <div class="body small muted" style="padding-bottom:0">For the network team: every connection this server makes, from its own settings and the tenants it reads.</div>
+      <div class="table-wrap sheet"><table><thead><tr><th>Direction</th><th>Host</th><th class="n">Port</th><th>Why</th></tr></thead><tbody>${n.allowlist.map((a) => `<tr><td>${a.direction === 'in' ? 'In' : 'Out'}</td><td class="mono">${esc(a.host)}</td><td class="n">${esc(a.port)}</td><td>${esc(a.why)}</td></tr>`).join('')}</tbody></table></div></section>
+</div>`;
   const again = () => network(body);
   const restart = async () => (await attempt(() => api('/system/restart', { method: 'POST', body: {} }), 'Restarting')) && setTimeout(() => location.reload(), 6000);
   $('[data-act="restart"]', body)?.addEventListener('click', restart);

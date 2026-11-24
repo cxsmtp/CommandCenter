@@ -56,8 +56,8 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
       <button class="btn ghost" data-act="tools" aria-label="More actions">•••</button>
     </div>
     ${filters.length ? `<div class="chips">${filters.map(([k, label]) => `<button class="chip-x" data-clear="${k}" aria-label="Remove filter ${esc(label)}">${esc(label)}</button>`).join('')}</div>` : ''}
-    ${table ? tableHtml(all) : `${open_.length ? groupedRows(open_) : `<div class="panel empty-line" style="padding:16px">${ui.focus || filters.length || q ? 'Nothing matches. <button class="btn sm" data-act="reset">Show everything</button>' : 'No open opportunity.'}</div>`}
-    ${closed.length ? `<details class="closed-fold" ${ui.showClosed ? 'open' : ''}><summary>Won and lost <span class="muted">(${closed.length})</span></summary>${rowsHtml(closed)}</details>` : ''}`}`;
+    ${table ? tableHtml(all) : `<div class="list-scroll">${open_.length ? groupedRows(open_) : `<div class="panel empty-line" style="padding:16px">${ui.focus || filters.length || q ? 'Nothing matches. <button class="btn sm" data-act="reset">Show everything</button>' : 'No open opportunity.'}</div>`}
+    ${closed.length ? `<details class="closed-fold" ${ui.showClosed ? 'open' : ''}><summary>Won and lost <span class="muted">(${closed.length})</span></summary>${rowsHtml(closed)}</details>` : ''}</div>`}`;
   wire(main, { owner, regions });
   if (table) wireTable(main, all);
 }
@@ -186,7 +186,7 @@ function tableHtml(rows) {
   return `<div class="panel ptable-wrap"><div class="ptable-meta small muted">${list.length} of ${rows.length} shown${any ? ' · <button class="btn sm ghost" data-act="clear-cols">Clear column filters</button>' : ''}<span class="spacer"></span>Filters take text, a choice, or a number like &gt;5, &lt;10, =0</div>
     <div class="ptable-scroll"><table class="ptable"><thead><tr>${cols.map((c) => `<th class="${c.num ? 'n' : ''}"><button type="button" data-sort="${c.key}" aria-label="Sort by ${esc(c.label)}">${esc(c.label)}${arrow(c)}</button></th>`).join('')}</tr>
       <tr class="frow">${cols.map((c) => `<th>${c.filter === 'select' ? `<select data-cf="${c.key}" aria-label="Filter ${esc(c.label)}"><option value="">All</option>${opts(c).map((o) => `<option ${f[c.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : `<input data-cf="${c.key}" value="${esc(f[c.key] ?? '')}" placeholder="${c.filter === 'num' ? '>0' : 'Filter'}" aria-label="Filter ${esc(c.label)}">`}</th>`).join('')}</tr></thead>
-      <tbody>${list.map((r) => `<tr data-row="${esc(r.id)}" class="${ui.open === r.id ? 'selected' : ''}" tabindex="0">${cols.map((c) => `<td class="${c.num ? 'n' : ''}">${c.html ? c.html(r) : esc(c.v(r) ?? '—') || '—'}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">Nothing matches these filters.</td></tr>`}</tbody></table></div></div>`;
+      <tbody>${list.map((r) => `<tr data-row="${esc(r.id)}" class="${ui.open === r.id ? 'selected' : ''}" tabindex="0">${cols.map((c) => `<td class="${c.num ? 'n' : ''}" title="${esc(String(c.v(r) ?? ''))}">${c.html ? c.html(r) : esc(c.v(r) ?? '—') || '—'}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">Nothing matches these filters.</td></tr>`}</tbody></table></div></div>`;
 }
 function wireTable(main, rows) {
   const rerender = () => document.dispatchEvent(new CustomEvent('cc:rerender'));

@@ -342,6 +342,8 @@ function cleanPrefs(p) {
   if (['cards', 'table'].includes(p.view)) out.view = p.view;
   if (p.view === 'auto') out.view = undefined;
   if (['side', 'top'].includes(p.nav)) out.nav = p.nav;
+  if (['insights', 'dashboard'].includes(p.home)) out.home = p.home;
+  if (p.home === 'auto') out.home = undefined;
   return out;
 }
 

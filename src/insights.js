@@ -208,3 +208,118 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
     atRisk: scored.filter((r) => r.prediction.score < 70).sort((a, b) => a.prediction.score - b.prediction.score).slice(0, 15).map((r) => ({ id: r.id, customer: r.customer, owner: r.owner.name, score: r.prediction.score, label: r.prediction.label, daysLeft: r.daysLeft, why: r.prediction.drivers.filter((d) => d.effect < 0).slice(0, 2).map((d) => d.text) })),
   };
 }
+
+// ——— The deeper read, after the best revenue and presales tools (Clari, Gong, Salesforce, Vivun) ———
+
+/** One day's reading of every POV, kept to show what moved: { id: { s: score, c: critical gaps, a: amount } }. */
+export function dayReading(rows) {
+  const out = {};
+  for (const r of rows) {
+    if (['won', 'lost'].includes(r.stage)) continue;
+    const s = r.prediction?.score;
+    if (s === null || s === undefined) continue;
+    out[r.id] = { s, c: (r.gaps ?? []).filter((g) => g.level === 'bad').length, a: r.sf?.amount?.value ?? 0 };
+  }
+  return out;
+}
+
+/**
+ * @param {object[]} rows      the viewer's rows (with prediction and gaps)
+ * @param {object} o
+ * @param {(id) => object} o.oppOf      the opportunity behind a row (criteria, result)
+ * @param {object} o.catalog
+ * @param {object} o.history   { 'YYYY-MM-DD': dayReading } kept by the server
+ */
+export function insightsMore(rows, { oppOf, catalog, history = {}, now = Date.now() } = {}) {
+  const live = rows.filter((r) => !['won', 'lost'].includes(r.stage));
+  const scored = live.filter((r) => r.prediction?.score !== null && r.prediction?.score !== undefined && ['pov', 'completed'].includes(r.stage));
+  const amount = (r) => r.sf?.amount?.value ?? 0;
+  // Forecast categories, as sales forecasts are called: commit (likely), best case (at risk), pipeline (unlikely).
+  const cat = (test) => {
+    const list = scored.filter((r) => test(r.prediction.score));
+    return { count: list.length, amount: Math.round(list.reduce((t, r) => t + amount(r), 0)) };
+  };
+  const categories = { commit: cat((s) => s >= 70), best: cat((s) => s >= 40 && s < 70), pipeline: cat((s) => s < 40) };
+
+  // Outcomes: the technical win rate (POVs successful), the win rate after one, and how long a POV takes.
+  const decided = rows.filter((r) => ['successful', 'unsuccessful'].includes(r.povResult));
+  const successful = decided.filter((r) => r.povResult === 'successful');
+  const closedAfter = successful.filter((r) => ['won', 'lost'].includes(r.stage));
+  const lengths = rows.filter((r) => ['completed', 'won', 'lost'].includes(r.stage) && r.startDate && r.endDate).map((r) => (Date.parse(r.endDate) - Date.parse(r.startDate)) / DAY).filter((d) => d > 0 && d < 365);
+  const outcomes = {
+    decided: decided.length,
+    techWinRate: decided.length ? Math.round((100 * successful.length) / decided.length) : null,
+    winAfterSuccess: closedAfter.length ? Math.round((100 * closedAfter.filter((r) => r.stage === 'won').length) / closedAfter.length) : null,
+    avgDays: lengths.length ? Math.round(lengths.reduce((t, d) => t + d, 0) / lengths.length) : null,
+    won: rows.filter((r) => r.stage === 'won').length,
+    lost: rows.filter((r) => r.stage === 'lost').length,
+  };
+
+  // SE workload: what each SE carries now, and who is stretched.
+  const se = new Map();
+  for (const r of live) {
+    const k = r.owner.id;
+    if (!se.has(k)) se.set(k, { id: k, name: r.owner.name, running: 0, endingSoon: 0, openMust: 0, scoreSum: 0, scored: 0, critical: 0, open: 0 });
+    const g = se.get(k);
+    g.open += 1;
+    if (r.stage === 'pov') g.running += 1;
+    if (r.stage === 'pov' && r.daysLeft !== null && r.daysLeft >= 0 && r.daysLeft <= 14) g.endingSoon += 1;
+    g.openMust += Math.max(0, (r.progress?.must ?? 0) - (r.progress?.mustMet ?? 0));
+    g.critical += (r.gaps ?? []).filter((x) => x.level === 'bad').length;
+    if (r.prediction?.score !== null && r.prediction?.score !== undefined && r.stage === 'pov') {
+      g.scoreSum += r.prediction.score;
+      g.scored += 1;
+    }
+  }
+  const workload = [...se.values()]
+    .map((g) => ({ ...g, avgScore: g.scored ? Math.round(g.scoreSum / g.scored) : null, load: g.running >= 4 || g.endingSoon >= 3 ? 'stretched' : g.running >= 2 ? 'busy' : 'room' }))
+    .sort((a, b) => b.running - a.running || b.endingSoon - a.endingSoon || a.name.localeCompare(b.name));
+
+  // Capabilities: how often each is proven where it is tested; the ones that stall POVs first.
+  const caps = new Map();
+  for (const r of rows.filter((x) => ['pov', 'completed', 'won', 'lost'].includes(x.stage))) {
+    for (const c of oppOf(r.id)?.criteria ?? []) {
+      const id = c.capabilityId || c.capRef;
+      if (!id || c.status === 'na') continue;
+      if (!caps.has(id)) caps.set(id, { id, name: (catalog?.get(id)?.name ?? id).replace(/\s*\(.*\)$/, ''), povs: new Set(), tested: 0, met: 0, missed: 0 });
+      const g = caps.get(id);
+      g.povs.add(r.id);
+      g.tested += 1;
+      if (c.status === 'met') g.met += 1;
+      if (c.status === 'not_met') g.missed += 1;
+    }
+  }
+  const capabilities = [...caps.values()]
+    .map((g) => ({ id: g.id, name: g.name, povs: g.povs.size, tested: g.tested, met: g.met, missed: g.missed, rate: g.tested ? Math.round((100 * g.met) / g.tested) : 0 }))
+    .sort((a, b) => b.povs - a.povs || a.rate - b.rate)
+    .slice(0, 14);
+
+  // Ending in the next 30 days, soonest first, with where each is heading.
+  const ending = live
+    .filter((r) => r.stage === 'pov' && r.daysLeft !== null && r.daysLeft >= 0 && r.daysLeft <= 30)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
+    .map((r) => ({ id: r.id, customer: r.customer, owner: r.owner.name, daysLeft: r.daysLeft, endDate: r.endDate, score: r.prediction?.score ?? null, amount: amount(r), met: r.progress?.met ?? 0, total: r.progress?.total ?? 0 }));
+
+  // What moved: the totals now against a week ago, the last 30 days, and the POVs that moved most.
+  const ids = new Set(live.map((r) => r.id));
+  const days = Object.keys(history).filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort();
+  const totalsOf = (reading) => {
+    const vals = Object.entries(reading ?? {}).filter(([id]) => ids.has(id)).map(([, v]) => v);
+    return { likely: vals.filter((v) => v.s >= 70).length, atRisk: vals.filter((v) => v.s >= 40 && v.s < 70).length, expected: Math.round(vals.reduce((t, v) => t + v.s / 100, 0) * 10) / 10, critical: vals.reduce((t, v) => t + v.c, 0), weighted: Math.round(vals.reduce((t, v) => t + (v.a * v.s) / 100, 0)) };
+  };
+  const today = new Date(now).toISOString().slice(0, 10);
+  const weekAgoDay = [...days].reverse().find((d) => d <= new Date(now - 7 * DAY).toISOString().slice(0, 10)) ?? (days[0] !== today ? days[0] : null);
+  const series = days.slice(-30).map((d) => ({ day: d, ...totalsOf(history[d]) }));
+  const before = weekAgoDay ? totalsOf(history[weekAgoDay]) : null;
+  const movers = [];
+  if (weekAgoDay) {
+    for (const r of scored) {
+      const was = history[weekAgoDay]?.[r.id]?.s;
+      if (was === undefined) continue;
+      const d = r.prediction.score - was;
+      if (Math.abs(d) >= 5) movers.push({ id: r.id, customer: r.customer, owner: r.owner.name, from: was, to: r.prediction.score, delta: d, why: (r.prediction.drivers ?? []).find((x) => Math.sign(x.effect) === Math.sign(d))?.text ?? '' });
+    }
+    movers.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  }
+  return { categories, outcomes, workload, capabilities, ending, trend: { since: weekAgoDay, before, series }, movers: movers.slice(0, 12) };
+}

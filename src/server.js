@@ -35,7 +35,7 @@ import { DeckTemplates, SLIDES, DEFAULT_LAYOUT } from './deck-templates.js';
 import { lockDataDir, preflight, AdminAlerts, ErrorLog, verifyManifest } from './stability.js';
 import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
-import { predict, gaps, rollups } from './insights.js';
+import { predict, gaps, rollups, dayReading, insightsMore } from './insights.js';
 import { flowView } from './flow.js';
 import { Updater, RESTART_CODE } from './updates.js';
 import { Audit } from './audit.js';
@@ -90,6 +90,17 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
   };
   const fullSettings = () => db.read('settings', {});
+  // Insights: one reading of every POV a day (score, critical gaps, amount), 120 days kept, to show what moved.
+  const recordReading = () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const h = db.read('insightsHistory', {});
+    if (h[day] && Date.now() - (h[`${day}:at`] ?? 0) < 3_600_000) return;
+    const now = Date.now();
+    h[day] = dayReading(opps.raw().map((o) => row(o, now)));
+    h[`${day}:at`] = now;
+    for (const k of Object.keys(h)) if (k.slice(0, 10) < new Date(now - 120 * 86_400_000).toISOString().slice(0, 10)) delete h[k];
+    db.write('insightsHistory', h);
+  };
   // Software integrity: the files running are the ones installed (checked at start, every 6 hours, and on demand).
   let integrity = null;
   const checkIntegrity = () => {
@@ -102,6 +113,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   };
   checkIntegrity();
   if (startBackground) setInterval(checkIntegrity, 6 * 3_600_000).unref();
+  if (startBackground) setInterval(() => { try { recordReading(); } catch {} }, 3_600_000).unref();
   const firstAdmin = users.ensureAdmin();
   // The audit trail: every change (kept for good) and every request (kept CC_ACCESS_DAYS days), chained and encrypted.
   const trail = new Trail({ dataDir, vault: db.vault });
@@ -1253,7 +1265,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const o = overview(user, url.searchParams);
       const region = url.searchParams.get('region');
       const rows = region ? o.rows.filter((r) => r.region === region || r.tenant?.regionLabel === region) : o.rows;
-      return send(res, 200, { at: o.at, ...rollups(rows, { teamOf, regionOf }), regions: [...new Set(o.rows.map((r) => r.region).filter(Boolean))].sort(), tenantRegions: [...new Set(o.rows.map((r) => r.tenant?.regionLabel).filter(Boolean))].sort() });
+      recordReading();
+      const more = insightsMore(rows, { oppOf: (id) => opps.get(id), catalog, history: db.read('insightsHistory', {}) });
+      return send(res, 200, { at: o.at, ...rollups(rows, { teamOf, regionOf }), more, regions: [...new Set(o.rows.map((r) => r.region).filter(Boolean))].sort(), tenantRegions: [...new Set(o.rows.map((r) => r.tenant?.regionLabel).filter(Boolean))].sort() });
     }
     if (route === 'GET /results/download') {
       const list = resultsList(user, url.searchParams);

@@ -1,9 +1,30 @@
-// Insights: where every POV the viewer can see is heading, and what stands in the way. For managers and executives
-// looking across dozens of POVs: the answer first, then the gaps, the POVs at risk, and roll-ups by region, team and SE.
-import { esc, fmt, api, state, local } from '../core.js';
+// Insights: where every POV the viewer can see is heading, what moved, who carries what, and what stands in the way.
+// One screen, after the best revenue and presales tools: the figures with their week's change at the top; then
+// what needs attention, the forecast and what ends soon, and the team (workload, roll-ups, capabilities). The lists
+// scroll inside their own panel, so the page itself does not.
+import { esc, fmt, api, local, day } from '../core.js';
 
 const ui = local.get('cc.insights', {});
 const save = () => local.set('cc.insights', ui);
+const rerender = () => document.dispatchEvent(new CustomEvent('cc:rerender'));
+
+/** A small line of the last 30 days. */
+function spark(values, tone = '') {
+  const v = values.filter((x) => Number.isFinite(x));
+  if (v.length < 2) return '';
+  const min = Math.min(...v);
+  const max = Math.max(...v);
+  const pts = v.map((x, i) => `${((i / (v.length - 1)) * 100).toFixed(1)},${(28 - ((x - min) / (max - min || 1)) * 24 - 2).toFixed(1)}`).join(' ');
+  return `<svg class="spark ${tone}" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>`;
+}
+/** The change since last week, coloured by whether up is good. */
+function delta(now, before, { upGood = true, money = null } = {}) {
+  if (before === null || before === undefined || now === null || now === undefined) return '<span class="kd muted">no week to compare yet</span>';
+  const d = Math.round((now - before) * 10) / 10;
+  if (!d) return '<span class="kd muted">same as last week</span>';
+  const good = d > 0 === upGood;
+  return `<span class="kd ${good ? 'ok-t' : 'bad-t'}">${d > 0 ? '▲' : '▼'} ${money ? money(Math.abs(d)) : fmt(Math.abs(d))} since last week</span>`;
+}
 
 export async function renderInsights(main, { crumbs }) {
   crumbs('<h2 style="font-size:16px">Insights</h2>');
@@ -11,50 +32,73 @@ export async function renderInsights(main, { crumbs }) {
   if (ui.region) q.set('region', ui.region);
   const d = await api(`/insights?${q}`);
   const t = d.totals;
-  const bar = (likely, atRisk, unlikely) => {
-    const n = Math.max(1, likely + atRisk + unlikely);
-    return `<div class="obar" role="img" aria-label="${likely} likely, ${atRisk} at risk, ${unlikely} unlikely"><span class="ok" style="flex:${likely / n}"></span><span class="warn" style="flex:${atRisk / n}"></span><span class="bad" style="flex:${unlikely / n}"></span></div>`;
-  };
-  const rollup = (title, rows, note = '') => `<section class="panel"><div class="head"><h3>${title}</h3><span class="small muted">${note}</span></div><div class="table-wrap"><table class="ins-table"><thead><tr><th></th><th class="n">POVs</th><th class="n">Running</th><th style="min-width:160px">Outlook</th><th class="n">Expected wins</th>${rv.linked ? '<th class="n">Pipeline</th>' : ''}<th class="n">Avg score</th><th class="n">Won / lost</th><th class="n">Critical gaps</th></tr></thead><tbody>${
-    rows.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td class="n">${g.povs}</td><td class="n">${g.running}</td><td>${bar(g.likely, g.atRisk, g.unlikely)}<div class="small muted">${g.likely} likely · ${g.atRisk} at risk · ${g.unlikely} unlikely</div></td><td class="n"><b>${fmt(g.expected)}</b></td>${rv.linked ? `<td class="n">${g.pipeline ? cur(g.pipeline) : '—'}</td>` : ''}<td class="n">${g.avgScore ?? '—'}</td><td class="n">${g.won} / ${g.lost}</td><td class="n ${g.critical ? 'bad-t' : ''}">${g.critical}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing yet.</td></tr>'
-  }</tbody></table></div></section>`;
-  const regions = [...new Set([...d.regions, ...d.tenantRegions])];
-  const BY = [['region', 'By region'], ['team', 'By team'], ['se', 'By SE'], ['tenant', 'By tenant region']];
-  const by = BY.some(([k]) => k === ui.by) ? ui.by : 'region';
+  const m = d.more;
   const rv = d.revenue;
-  const cur = (n) => `${rv.currency === 'USD' ? '$' : `${rv.currency} `}${n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : fmt(n)}`;
-  const revenueGroup = rv.linked
-    ? `<div class="ins-group g-value"><div class="ins-label">Revenue · Salesforce</div><div class="ins-figs"><div><b>${cur(rv.pipeline)}</b><span>open pipeline in POV (${rv.povs})</span></div><div><b class="ok-t">${cur(rv.weighted)}</b><span>weighted by outlook</span></div><div><b>${cur(rv.closing30)}</b><span>closing in 30 days</span></div></div>${rv.otherCurrencies ? `<div class="small muted">${rv.otherCurrencies} in other currencies not added</div>` : ''}</div>`
-    : `<div class="ins-group g-value"><div class="ins-label">Revenue · Salesforce</div><div class="small muted" style="margin-top:6px">Bring in a Salesforce opportunities report (Portfolio → Salesforce report) to see the pipeline each POV carries, weighted by its outlook.</div></div>`;
-  main.innerHTML = `
-    <div class="toolbar"><span class="muted">Predicted from each POV's pace against its end date, its must-haves, the tenant's activity, customer engagement and its gaps; every score says why.</span><span class="spacer"></span>
+  const before = m.trend.before;
+  const series = m.trend.series;
+  const cur = (n) => `${rv.currency === 'USD' ? '$' : `${rv.currency} `}${n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : fmt(Math.round(n))}`;
+  const regions = [...new Set([...d.regions, ...d.tenantRegions])];
+  const go = (id) => `#/insights?open=${encodeURIComponent(id)}`;
+  const pill = (s) => (s === null || s === undefined ? '<span class="muted">—</span>' : `<span class="sc ${s >= 70 ? 'ok' : s >= 40 ? 'warn' : 'bad'}">${s}</span>`);
+
+  // ——— The figures ———
+  const kpis = [
+    { label: 'Commit', hint: 'POVs likely to succeed (score 70+)', value: t.likely, tone: 'ok', d: delta(t.likely, before?.likely), sp: spark(series.map((x) => x.likely), 'ok') },
+    { label: 'Best case', hint: 'At risk: could go either way (40–69)', value: t.atRisk, tone: 'warn', d: delta(t.atRisk, before?.atRisk, { upGood: false }), sp: spark(series.map((x) => x.atRisk), 'warn') },
+    { label: 'Expected wins', hint: 'Sum of every running POV’s chance of success', value: fmt(t.expectedWins), tone: '', d: delta(t.expectedWins, before?.expected), sp: spark(series.map((x) => x.expected)) },
+    rv.linked
+      ? { label: 'Weighted pipeline', hint: 'Salesforce amount × each POV’s chance', value: cur(rv.weighted), tone: 'ok', d: delta(rv.weighted, before?.weighted, { money: cur }), sp: spark(series.map((x) => x.weighted), 'ok') }
+      : { label: 'Ending in 30 days', hint: 'Running POVs that end within a month', value: t.ending30, tone: '', d: `<span class="kd muted">${fmt(t.ending30Expected)} should succeed</span>`, sp: '' },
+    { label: 'Technical win rate', hint: 'POVs marked successful, of those decided', value: m.outcomes.techWinRate === null ? '—' : `${m.outcomes.techWinRate}%`, tone: m.outcomes.techWinRate >= 70 ? 'ok' : m.outcomes.techWinRate === null ? '' : 'warn', d: `<span class="kd muted">${m.outcomes.decided} decided${m.outcomes.winAfterSuccess !== null ? ` · ${m.outcomes.winAfterSuccess}% won after` : ''}${m.outcomes.avgDays ? ` · ${m.outcomes.avgDays} d a POV` : ''}</span>`, sp: '' },
+    { label: 'Critical gaps', hint: 'Problems that need someone now', value: t.critical, tone: t.critical ? 'bad' : 'ok', d: delta(t.critical, before?.critical, { upGood: false }), sp: spark(series.map((x) => x.critical), t.critical ? 'bad' : 'ok') },
+  ];
+
+  // ——— Needs attention ———
+  const leftTab = ['risk', 'movers', 'gaps'].includes(ui.left) ? ui.left : 'risk';
+  const atRiskHtml = d.atRisk.map((r) => `<a class="irow" href="${go(r.id)}">${pill(r.score)}<span class="grow"><b>${esc(r.customer)}</b><span class="small muted">${esc(r.owner)}${r.daysLeft !== null ? ` · ${r.daysLeft < 0 ? `${-r.daysLeft} d over` : `${r.daysLeft} d left`}` : ''}</span><span class="small why">${r.why.map(esc).join(' · ')}</span></span></a>`).join('') || '<p class="ok-t pad">Nothing at risk.</p>';
+  const moversHtml = m.movers.map((x) => `<a class="irow" href="${go(x.id)}"><span class="mv ${x.delta > 0 ? 'ok-t' : 'bad-t'}">${x.delta > 0 ? '▲' : '▼'}${Math.abs(x.delta)}</span><span class="grow"><b>${esc(x.customer)}</b><span class="small muted">${esc(x.owner)} · ${x.from} → ${x.to}</span>${x.why ? `<span class="small why">${esc(x.why)}</span>` : ''}</span></a>`).join('') || `<p class="muted pad">${m.trend.since ? 'No POV moved by 5 points or more since last week.' : 'Movers show once a week of readings is kept (one is taken every day).'}</p>`;
+  const gapsHtml = d.commonGaps.map((g) => `<div class="irow"><span class="dot ${g.level}"></span><span class="grow">${esc(g.text)}</span><b class="num">${g.count}</b></div>`).join('') || '<p class="ok-t pad">No gaps right now.</p>';
+
+  // ——— Forecast ———
+  const c = m.categories;
+  const n = Math.max(1, c.commit.count + c.best.count + c.pipeline.count);
+  const catRow = (k, label, tone, x) => `<div class="cat"><span class="cl"><i class="${tone}"></i>${label}</span><b>${x.count}</b><span class="muted small">${rv.linked && x.amount ? cur(x.amount) : ''}</span></div>`;
+  const endingHtml = m.ending.map((e) => `<a class="irow" href="${go(e.id)}"><span class="when"><b>${e.daysLeft}</b><span>d</span></span><span class="grow"><b>${esc(e.customer)}</b><span class="small muted">${esc(e.owner)} · ${esc(day(e.endDate))} · ${e.met}/${e.total} criteria${rv.linked && e.amount ? ` · ${cur(e.amount)}` : ''}</span></span>${pill(e.score)}</a>`).join('') || '<p class="muted pad">No POV ends in the next 30 days.</p>';
+
+  // ——— Team ———
+  const rightTab = ['load', 'rollup', 'caps'].includes(ui.right) ? ui.right : 'load';
+  const LOAD = { stretched: ['bad', 'Stretched'], busy: ['warn', 'Busy'], room: ['ok', 'Has room'] };
+  const loadHtml = `<table class="itable"><thead><tr><th>SE</th><th class="n" title="POVs running">Running</th><th class="n" title="Ending within 14 days">≤14 d</th><th class="n" title="Must-haves still open">Musts</th><th class="n" title="Average score of their running POVs">Score</th><th></th></tr></thead><tbody>${m.workload.map((w) => `<tr><td><b>${esc(w.name)}</b>${w.critical ? `<span class="crit" title="Critical gaps in their POVs">${w.critical}</span>` : ''}</td><td class="n">${w.running}</td><td class="n">${w.endingSoon}</td><td class="n">${w.openMust}</td><td class="n">${pill(w.avgScore)}</td><td><span class="badge ${LOAD[w.load][0]}">${LOAD[w.load][1]}</span></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Nobody carries a POV.</td></tr>'}</tbody></table>`;
+  const BY = [['region', 'Region'], ['team', 'Team'], ['se', 'SE'], ['tenant', 'Tenant region']];
+  const by = BY.some(([k]) => k === ui.by) ? ui.by : 'region';
+  const rows = { region: d.byRegion, team: d.byTeam, se: d.bySe, tenant: d.byTenantRegion }[by];
+  const obar = (g) => {
+    const s = Math.max(1, g.likely + g.atRisk + g.unlikely);
+    return `<div class="obar" title="${g.likely} likely · ${g.atRisk} at risk · ${g.unlikely} unlikely"><span class="ok" style="flex:${g.likely / s}"></span><span class="warn" style="flex:${g.atRisk / s}"></span><span class="bad" style="flex:${g.unlikely / s}"></span></div>`;
+  };
+  const rollHtml = `<div class="seg mini" role="group" aria-label="Group by">${BY.map(([k, l]) => `<button data-by="${k}" aria-pressed="${by === k}">${l}</button>`).join('')}</div>
+    <table class="itable"><thead><tr><th></th><th class="n">POVs</th><th style="min-width:110px">Outlook</th><th class="n">Exp. wins</th>${rv.linked ? '<th class="n">Pipeline</th>' : ''}<th class="n">Won/lost</th><th class="n">Critical</th></tr></thead><tbody>${rows.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td class="n">${g.povs}</td><td>${obar(g)}</td><td class="n">${fmt(g.expected)}</td>${rv.linked ? `<td class="n">${g.pipeline ? cur(g.pipeline) : '—'}</td>` : ''}<td class="n">${g.won}/${g.lost}</td><td class="n ${g.critical ? 'bad-t' : ''}">${g.critical}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Nothing yet.</td></tr>'}</tbody></table>`;
+  const capsHtml = m.capabilities.map((x) => `<div class="caprow" title="${x.met} met of ${x.tested} tested in ${x.povs} POV${x.povs === 1 ? '' : 's'}${x.missed ? `, ${x.missed} not met` : ''}"><span class="grow">${esc(x.name)}<span class="small muted"> · ${x.povs} POV${x.povs === 1 ? '' : 's'}</span></span><span class="capbar"><i class="${x.rate >= 70 ? 'ok' : x.rate >= 40 ? 'warn' : 'bad'}" style="width:${Math.max(3, x.rate)}%"></i></span><b class="num">${x.rate}%</b></div>`).join('') || '<p class="muted pad">No success criteria tested yet.</p>';
+
+  main.innerHTML = `<div class="ins2">
+    <div class="ins2-bar"><span class="muted small">Each POV is scored from its pace against its end date, its must-haves, the tenant’s activity, customer engagement and its gaps; every score says why.${m.trend.since ? ` Changes are since ${esc(day(m.trend.since))}.` : ''}</span><span class="spacer"></span>
       <select id="iRegion" aria-label="Region"><option value="">Every region</option>${regions.map((r) => `<option ${ui.region === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
-    <section class="ins-hero">
-      <div class="ins-group g-outlook"><div class="ins-label">Outlook</div>
-        <div class="ins-figs"><div><b class="ok-t">${t.likely}</b><span>likely success</span></div><div><b class="warn-t">${t.atRisk}</b><span>at risk</span></div><div><b class="bad-t">${t.unlikely}</b><span>unlikely</span></div></div>
-        ${bar(t.likely, t.atRisk, t.unlikely)}</div>
-      <div class="ins-group g-forecast"><div class="ins-label">Forecast</div>
-        <div class="ins-figs"><div><b>${fmt(t.expectedWins)}</b><span>expected wins of ${t.likely + t.atRisk + t.unlikely} POVs scored</span></div><div><b>${t.ending30}</b><span>end in 30 days</span></div><div><b>${fmt(t.ending30Expected)}</b><span>of those should win</span></div></div></div>
-      ${revenueGroup}
-      <div class="ins-group g-gaps"><div class="ins-label">Gaps</div>
-        <div class="ins-figs"><div><b class="${t.critical ? 'bad-t' : 'ok-t'}">${t.critical}</b><span>critical gaps now</span></div></div></div>
-    </section>
-    <div class="grid2">
-      <section class="panel"><div class="head"><h3>Most common gaps</h3><span class="small muted">across the open POVs</span></div><div class="body list">${
-        d.commonGaps.map((g) => `<div class="row center"><span class="dot ${g.level}"></span><span style="flex:1">${esc(g.text)}</span><b class="num">${g.count}</b></div>`).join('') || '<span class="ok-t">No gaps right now.</span>'
-      }</div></section>
-      <section class="panel"><div class="head"><h3>POVs at risk</h3><span class="small muted">lowest score first</span></div><div class="table-wrap"><table><tbody>${
-        d.atRisk.map((r) => `<tr class="click" data-go="#/insights?open=${esc(r.id)}" tabindex="0"><td><b>${esc(r.customer)}</b><div class="small muted">${esc(r.owner)}${r.daysLeft !== null ? ` · ${r.daysLeft < 0 ? `${-r.daysLeft} d over` : `${r.daysLeft} d left`}` : ''}</div></td><td><span class="outlook ${r.score >= 40 ? 'warn' : 'bad'}"><b>${r.score}</b><span>${esc(r.label)}</span></span></td><td class="small">${r.why.map(esc).join('<br>')}</td></tr>`).join('') || '<tr><td class="ok-t">None at risk.</td></tr>'
-      }</tbody></table></div></section>
-    </div>
-    <div class="stack" style="margin-top:16px">
-      <div class="seg roll-pick" role="group" aria-label="Group by">${BY.map(([k, l]) => `<button data-by="${k}" aria-pressed="${by === k}">${l}</button>`).join('')}</div>
-      ${rollup(BY.find(([k]) => k === by)[1], { region: d.byRegion, team: d.byTeam, se: d.bySe, tenant: d.byTenantRegion }[by])}
-    </div>`;
-  for (const b of main.querySelectorAll('[data-by]')) b.addEventListener('click', () => ((ui.by = b.dataset.by), save(), document.dispatchEvent(new CustomEvent('cc:rerender'))));
-  main.querySelector('#iRegion').addEventListener('change', (e) => {
-    ui.region = e.target.value;
-    save();
-    document.dispatchEvent(new CustomEvent('cc:rerender'));
-  });
+    <div class="kpis">${kpis.map((k) => `<div class="kpi ${k.tone}" title="${esc(k.hint)}"><span class="kl">${k.label}</span><b class="kv">${k.value}</b>${k.d}${k.sp}</div>`).join('')}</div>
+    <div class="ins2-grid">
+      <section class="panel ipanel"><div class="head"><h3>Needs attention</h3></div>
+        <div class="itabs" role="tablist">${[['risk', `At risk <span>${d.atRisk.length}</span>`], ['movers', `Movers <span>${m.movers.length}</span>`], ['gaps', `Gaps <span>${d.commonGaps.length}</span>`]].map(([k, l]) => `<button role="tab" data-left="${k}" aria-selected="${leftTab === k}">${l}</button>`).join('')}</div>
+        <div class="ibody">${{ risk: atRiskHtml, movers: moversHtml, gaps: gapsHtml }[leftTab]}</div></section>
+      <section class="panel ipanel"><div class="head"><h3>Forecast</h3><span class="small muted">${n === 1 && !c.commit.count && !c.best.count && !c.pipeline.count ? '' : `${c.commit.count + c.best.count + c.pipeline.count} POVs scored`}</span></div>
+        <div class="fbar" role="img" aria-label="${c.commit.count} commit, ${c.best.count} best case, ${c.pipeline.count} pipeline"><span class="ok" style="flex:${c.commit.count / n}"></span><span class="warn" style="flex:${c.best.count / n}"></span><span class="bad" style="flex:${c.pipeline.count / n}"></span></div>
+        <div class="cats">${catRow('commit', 'Commit', 'ok', c.commit)}${catRow('best', 'Best case', 'warn', c.best)}${catRow('pipeline', 'Pipeline', 'bad', c.pipeline)}</div>
+        <div class="sub-head">Ending in the next 30 days <span class="muted">${m.ending.length}</span></div>
+        <div class="ibody">${endingHtml}</div></section>
+      <section class="panel ipanel"><div class="head"><h3>Team</h3></div>
+        <div class="itabs" role="tablist">${[['load', 'SE workload'], ['rollup', 'Roll-up'], ['caps', 'Capabilities']].map(([k, l]) => `<button role="tab" data-right="${k}" aria-selected="${rightTab === k}">${l}</button>`).join('')}</div>
+        <div class="ibody">${{ load: loadHtml, rollup: rollHtml, caps: `<p class="small muted pad" style="padding-bottom:4px">How often each capability is proven where it is tested: the lowest stall POVs.</p>${capsHtml}` }[rightTab]}</div></section>
+    </div></div>`;
+  for (const b of main.querySelectorAll('[data-left]')) b.addEventListener('click', () => ((ui.left = b.dataset.left), save(), rerender()));
+  for (const b of main.querySelectorAll('[data-right]')) b.addEventListener('click', () => ((ui.right = b.dataset.right), save(), rerender()));
+  for (const b of main.querySelectorAll('[data-by]')) b.addEventListener('click', () => ((ui.by = b.dataset.by), save(), rerender()));
+  main.querySelector('#iRegion').addEventListener('change', (e) => ((ui.region = e.target.value), save(), rerender()));
 }

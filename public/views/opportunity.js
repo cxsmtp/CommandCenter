@@ -229,14 +229,14 @@ function overview(d) {
       <div class="health small" style="margin-bottom:10px"><span class="dot ${r.live.health}"></span>${esc(HEALTH[r.live.health])} · read ${ago(s.at)}</div>
       <div class="stats"><div class="stat"><div class="v">${fmt(s.scans7d)}</div><div class="l">Scans, 7 days</div></div><div class="stat ${s.failed24h ? 'bad' : ''}"><div class="v">${fmt(s.failed24h)}</div><div class="l">Failed today</div></div><div class="stat"><div class="v">${fmt(s.fusion7d)}</div><div class="l">Fusion scans</div></div></div>
     </div></section>` : ''}
-    <section class="panel"><div class="head"><h3>Summary for the customer</h3><span class="small muted" id="sumState"></span></div><div class="body">
-      <textarea id="summary" rows="4" style="width:100%" ${ro()} placeholder="Where the POV stands, in a few lines.">${esc(o.summary ?? '')}</textarea>
-      ${current.canEdit ? `<div class="row center" style="margin-top:8px"><button class="btn sm" data-act="draft-summary">${o.summary ? 'Write it again for me' : 'Write it for me'}</button><span class="small muted">Saved as you type. Used in the report and the emails.</span></div>` : ''}
-    </div></section>
   </div><div class="stack">
     <section class="panel"><div class="head"><h3>Next tasks</h3><a href="${tabHref('notes')}" class="small">All</a></div><div class="body list">${openTasks.slice(0, 5).map((t) => `<div class="row center"><span class="${t.due && t.due < new Date().toISOString().slice(0, 10) ? 'bad-t' : ''}">${esc(t.title)}</span><span class="spacer"></span><span class="small muted">${t.due ? day(t.due) : ''}</span></div>`).join('') || '<span class="muted">Nothing open.</span>'}
       ${current.canEdit ? '<form id="quickTask" class="quick-add"><input name="title" placeholder="Add a task…" aria-label="New task"><button class="btn sm">Add</button></form>' : ''}</div></section>
     ${o.salesforce || o.salesforceUrl ? sfPanel(o) : ''}
+    <section class="panel"><div class="head"><h3>Summary for the customer</h3><span class="small muted" id="sumState"></span></div><div class="body">
+      <textarea id="summary" rows="4" style="width:100%" ${ro()} placeholder="Where the POV stands, in a few lines.">${esc(o.summary ?? '')}</textarea>
+      ${current.canEdit ? `<div class="row center" style="margin-top:8px"><button class="btn sm" data-act="draft-summary">${o.summary ? 'Write it again for me' : 'Write it for me'}</button><span class="small muted">Saved as you type. Used in the report and the emails.</span></div>` : ''}
+    </div></section>
   </div></div>`;
 }
 
@@ -380,7 +380,7 @@ function criteria(d) {
       ${current.canEdit ? '<button class="btn primary" data-act="add-caps">Add</button><button class="btn" data-act="add-custom">Your own</button>' : ''}
     </div>
     <div class="seg crit-filter" role="group" aria-label="Show">${[['todo', `To do · ${todo.length}`], ['done', `Done · ${all.length - todo.length}`], ['all', 'All']].map(([k, l]) => `<button data-cf="${k}" aria-pressed="${critFilter === k}">${l}</button>`).join('')}</div>
-    ${shown.length ? [...groups].map(([label, list]) => `<div class="group-title"><h2>${esc(label)}</h2></div><div class="crit-list">${list.map((c) => {
+    ${shown.length ? `<div class="crit-cols">${[...groups].map(([label, list]) => `<div class="crit-group"><div class="group-title"><h2>${esc(label)}</h2></div><div class="crit-list">${list.map((c) => {
       const ev = d.evidence[c.id];
       const [icon, tone] = CRIT_ICON[c.status] ?? CRIT_ICON.not_started;
       const [nt, note] = critNote(c, ev);
@@ -390,7 +390,7 @@ function criteria(d) {
         <span class="crit-t"><b>${esc(c.title)}</b><small class="${nt}">${esc(note)}</small></span>
         ${quick}<span class="crit-go" aria-hidden="true">›</span>
       </div>`;
-    }).join('')}</div>`).join('') : `<p class="empty-line">${critFilter === 'todo' ? '✓ Every criterion is done.' : 'Nothing here yet.'}</p>`}`;
+    }).join('')}</div></div>`).join('')}</div>` : `<p class="empty-line">${critFilter === 'todo' ? '✓ Every criterion is done.' : 'Nothing here yet.'}</p>`}`;
 }
 
 /** Everything about one criterion, in its own sheet. */
@@ -533,7 +533,7 @@ function email(d) {
 // ——— Report ———
 function report(d) {
   const o = d.opportunity;
-  return `${wipPanel(d)}<section class="panel"><div class="body stack">
+  return `<div class="grid2 res-cols">${wipPanel(d)}<section class="panel"><div class="body stack">
     <p style="margin:0"><b>The results page</b> opens with the Checkmarx One platform slide, showing only this POV's engines with their status. Select any engine for its record: progress, the scans and evidence that prove it, notes, links and every timestamp up to the POV's completion. The other slides follow. Printing it gives a PDF of every slide, then one page per engine.</p>
     <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="dl-results">Download the page (HTML)</button><button class="btn" data-act="deck">Download the presentation (.pptx)</button></div>
     <label class="field" style="max-width:520px">Customer presentation <span class="small muted">the design and slides of the WIP deck and the final report</span><select id="deckPick"${current.canEdit ? '' : ' disabled'}><option value="">Team’s choice</option></select></label>
@@ -541,13 +541,10 @@ function report(d) {
       ${d.finals.length ? `<p class="small muted" style="margin:6px 0">The results page exactly as it stood when the POV was marked successful: later activity in the tenant does not change it.</p><div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/results?final=1" target="_blank" rel="noopener">Open the final copy</a><button class="btn" data-act="dl-final">Download it</button>${current.canEdit ? '<button class="btn ghost" data-act="freeze">Keep a new final copy now</button>' : ''}</div>` : `<p class="small muted" style="margin:6px 0">Kept by itself when the POV is marked successful.${current.canEdit ? ' Or keep one now.' : ''}</p>${current.canEdit ? '<div class="row"><button class="btn" data-act="freeze">Keep the results as final now</button></div>' : ''}`}
     </div>
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
-    <p style="margin:0"><b>The RW report</b>: the POV guide as one page to share with the customer. Their business goals with every success criterion (numbered, with milestone, tracker references and status), their toolchain, the platform components with the criteria that test them, the plan with its approval gates, and the team. What is not known yet shows as "To confirm".</p>
-    <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/rw" target="_blank" rel="noopener">Open the RW report</a><button class="btn" data-act="dl-rw">Download HTML</button></div>
-    <hr style="border:0;border-top:1px solid var(--line);width:100%">
     <p style="margin:0">The success-criteria report: the answer first, every criterion with its status and evidence, the sessions held and what the tenant showed. It prints to PDF from the browser.</p>
     <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
     <p class="small muted" style="margin:0">To keep it with the customer's documents, save it as PDF and put it in the SharePoint site${o.sharepointUrl ? '' : ' (add its link under Edit details)'}. Publishing to SharePoint by itself needs a Microsoft Graph app registration; the report layout will follow the formats you supply.</p>
-  </div></section>`;
+  </div></section></div>`;
 }
 
 // ——— The POV work-in-progress deck ———
@@ -560,7 +557,7 @@ function wipPanel(d) {
   const today = new Date().toISOString().slice(0, 10);
   const held = meetings.filter((m) => (m.status || (m.date <= today ? 'done' : 'planned')) === 'done').length;
   const gaps = [!tools.length && 'the customer’s toolchain', !meetings.length && 'the meetings', !(o.stakeholders ?? []).some((p) => p.povRole) && 'POV roles for the people'].filter(Boolean);
-  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>POV work-in-progress deck</h3><span class="small muted">the document you share with the customer during the POV</span></div><div class="body stack">
+  return `<section class="panel"><div class="head"><h3>POV work-in-progress deck</h3><span class="small muted">the document you share with the customer during the POV</span></div><div class="body stack">
     <p style="margin:0">Built from this POV each time you download it: the executive overview, the platform, the toolchain, ${a ? 'the APMA assessment, ' : ''}plan and timeline (${meetings.length} meetings, ${held} held), the environment, the test plan for each business goal with today’s status, and the notes of each meeting held.</p>
     ${gaps.length && current.canEdit ? `<p class="small" style="margin:0"><span class="warn-t">Still empty:</span> ${gaps.join(', ')}.</p>` : ''}
     <div class="row"><button class="btn primary" data-act="wip">Download the WIP deck (.pptx)</button>${current.canEdit && o.sharepointUrl ? '<button class="btn" data-act="sp-publish">Publish to SharePoint</button>' : ''}${current.canEdit ? '<button class="btn" data-act="wip-plan">Plan, toolchain &amp; environment</button>' : ''}</div>

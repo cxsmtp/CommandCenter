@@ -2,6 +2,24 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.70 · 2026-11-24
+
+**Insights rebuilt for leaders; leaders land on Insights, SEs on the Portfolio; pages fit the window**
+
+- Insights, one screen, after Clari, Gong, Salesforce and Vivun: six figures with their change since last week
+  and a 30-day line (commit, best case, expected wins, weighted pipeline, technical win rate, critical gaps); then
+  Needs attention (at risk, the week's movers with why, common gaps), Forecast (commit / best case / pipeline with
+  amounts, and what ends in 30 days), and Team (SE workload: running, ending, open must-haves, average score,
+  stretched / busy / has room; the roll-up by region, team, SE or tenant region; and which capabilities are
+  proven where tested, the lowest first). Lists scroll inside their panel. A reading of every POV is kept each
+  day (120 days) for the week's change and the movers.
+- Where Kendra opens: Insights for Admins, VPs, leaders and team leads; the Portfolio for SEs; anyone can choose
+  in Settings -> Profile ("Kendra opens on").
+- Less scrolling on a desktop: Capabilities in four tabs; Audit, Portfolio list and capabilities scroll inside
+  their panels with headings in view; Settings in two columns (health problems first, healthy checks one line
+  each); the POV page's criteria in two columns, results side by side, AI runs side by side; closed folds take no
+  room (they were counted in the page's height).
+
 ## 1.0.69 · 2026-11-24
 
 **The Kendra logo: menu, sign-in, About, and the browser tab icon, with what the name means**

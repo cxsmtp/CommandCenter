@@ -1166,3 +1166,33 @@ test('Evidence from Checkmarx One: integrations, triage, supply chain and govern
   const empty = await JSZip.loadAsync(await wipDeck({ customer: 'Acme', criteria: [], sessions: [], stakeholders: [] }, { story: { tenantEvidence: null, criteria: [], goals: [] }, layout: { wip: { main: ['cover'], appendix: ['tenantEvidence'] } } }));
   assert.ok(Object.keys(empty.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).length <= 2);
 });
+
+test('Insights, deeper: forecast categories, outcomes, SE workload, capabilities, what ends soon and what moved', async () => {
+  const { insightsMore, dayReading } = await import('../src/insights.js');
+  const DAY = 86_400_000;
+  const now = Date.parse('2026-11-24T12:00:00Z');
+  const row = (id, stage, score, extra = {}) => ({ id, customer: id.toUpperCase(), stage, owner: { id: extra.se ?? 'se1', name: extra.se === 'se2' ? 'Bo' : 'Al' }, prediction: score === null ? null : { score, drivers: [{ effect: score >= 70 ? 10 : -10, text: score >= 70 ? 'On pace' : 'No scans for 6 days' }] }, gaps: extra.gaps ?? [], daysLeft: extra.daysLeft ?? 20, endDate: '2026-12-14', startDate: '2026-11-01', progress: { met: 1, total: 3, must: 2, mustMet: 1 }, sf: extra.amount ? { amount: { value: extra.amount } } : null, povResult: extra.result ?? '' });
+  const rows = [
+    row('a', 'pov', 82, { amount: 100000, daysLeft: 5 }),
+    row('b', 'pov', 55, { se: 'se2', amount: 50000, gaps: [{ level: 'bad' }] }),
+    row('c', 'pov', 20, { se: 'se2' }),
+    row('d', 'won', 100, { result: 'successful' }),
+    row('e', 'lost', 0, { result: 'unsuccessful' }),
+  ];
+  const opps = { a: { criteria: [{ capabilityId: 'sast', status: 'met' }, { capabilityId: 'dast', status: 'not_met' }] }, b: { criteria: [{ capabilityId: 'sast', status: 'met' }, { capabilityId: 'dast', status: 'in_progress' }] }, c: { criteria: [] }, d: { criteria: [{ capabilityId: 'sast', status: 'met' }] }, e: { criteria: [] } };
+  const catalog = { get: (id) => ({ name: { sast: 'SAST', dast: 'DAST' }[id] }) };
+  const weekAgo = new Date(now - 7 * DAY).toISOString().slice(0, 10);
+  const history = { [weekAgo]: { a: { s: 60, c: 0, a: 100000 }, b: { s: 70, c: 0, a: 50000 }, c: { s: 22, c: 0, a: 0 } }, [`${weekAgo}:at`]: 1 };
+  const m = insightsMore(rows, { oppOf: (id) => opps[id], catalog, history, now });
+  assert.deepEqual(m.categories, { commit: { count: 1, amount: 100000 }, best: { count: 1, amount: 50000 }, pipeline: { count: 1, amount: 0 } });
+  assert.equal(m.outcomes.techWinRate, 50, 'one successful of two decided');
+  assert.equal(m.outcomes.winAfterSuccess, 100);
+  assert.deepEqual(m.workload.map((w) => [w.name, w.running]), [['Bo', 2], ['Al', 1]]);
+  assert.deepEqual(m.capabilities.map((c) => [c.name, c.povs, c.rate]), [['SAST', 3, 100], ['DAST', 2, 0]]);
+  assert.deepEqual(m.ending.map((e) => e.id), ['a', 'b', 'c']);
+  assert.equal(m.trend.since, weekAgo);
+  assert.deepEqual(m.trend.before, { likely: 1, atRisk: 1, expected: 1.5, critical: 0, weighted: 95000 });
+  assert.deepEqual(m.movers.map((x) => [x.id, x.delta]), [['a', 22], ['b', -15]], 'small moves are not news');
+  assert.equal(m.movers[1].why, 'No scans for 6 days');
+  assert.deepEqual(Object.keys(dayReading(rows)).sort(), ['a', 'b', 'c'], 'won and lost are not read');
+});
