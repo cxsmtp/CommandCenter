@@ -185,7 +185,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
 
   // 3 — The platform, with this POV's engines
   if (story?.platform) {
-    platformSlide(pptx, story.platform);
+    platformSlide(pptx, story.platform, { band: false });
     kinds.push('content');
   }
 

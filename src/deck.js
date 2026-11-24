@@ -33,7 +33,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   const page = (title, kicker) => {
     const slide = pptx.addSlide();
     slide.background = { color: PAPER };
-    slide.addText(String(kicker ?? '').toUpperCase(), { x: 0.6, y: 0.35, w: 12, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 4 });
+    slide.addText(String(kicker ?? '').toUpperCase(), { x: 0.6, y: 0.35, w: 12, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 1 });
     slide.addText(title, { x: 0.6, y: 0.62, w: 12, h: 0.7, fontFace: HEAD, fontSize: 30, color: INK });
     slide.addShape(pptx.ShapeType.line, { x: 0.6, y: 1.35, w: 1.0, h: 0, line: { color: BRASS, width: 2.25 } });
     slide.addShape(pptx.ShapeType.line, { x: 1.6, y: 1.35, w: 1.0, h: 0, line: { color: '8C3DF8', width: 2.25 } });
@@ -58,7 +58,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     const x = 0.6 + i * 3.1;
     answer.addShape(pptx.ShapeType.rect, { x, y: 1.8, w: 2.9, h: 1.7, fill: { color: PANEL }, line: { color: LINE, width: 0.75 } });
     answer.addText(v, { x, y: 1.95, w: 2.9, h: 0.9, fontFace: HEAD, fontSize: 40, color: INK, align: 'center' });
-    answer.addText(l.toUpperCase(), { x, y: 2.9, w: 2.9, h: 0.4, fontFace: BODY, fontSize: 10, color: MUTED, align: 'center', charSpacing: 2 });
+    answer.addText(l.toUpperCase(), { x, y: 2.9, w: 2.9, h: 0.4, fontFace: BODY, fontSize: 10, color: MUTED, align: 'center', charSpacing: 1 });
   });
   if (opp.summary) answer.addText(opp.summary, { x: 0.6, y: 3.9, w: 12.1, h: 2.8, fontFace: BODY, fontSize: 15, color: INK, valign: 'top', paraSpaceAfter: 6 });
 
@@ -80,7 +80,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     for (const g of goals.filter((x) => x.key !== 'other')) {
       const gs = page(g.title, `Business goal${g.driver ? ` · ${g.driver}` : ''}`);
       if (g.statement) gs.addText(g.statement, { x: 0.6, y: 1.5, w: 12.1, h: 0.5, fontFace: BODY, fontSize: 13, color: MUTED, italic: true });
-      const head = ['Criterion', 'How it was tested', 'What it means for you', 'Status'].map((t) => ({ text: t.toUpperCase(), options: { color: MUTED, fontSize: 9, charSpacing: 2, fill: { color: PANEL } } }));
+      const head = ['Criterion', 'How it was tested', 'What it means for you', 'Status'].map((t) => ({ text: t.toUpperCase(), options: { color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL } } }));
       const body = g.ids.slice(0, 7).map((id) => byId[id]).filter(Boolean).map((c) => [
         { text: c.title, options: { color: INK, fontSize: 11 } },
         { text: String(c.test || '—').slice(0, 200), options: { color: MUTED, fontSize: 9 } },
@@ -94,10 +94,10 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
 
   // 3… — Success criteria, by group, twelve to a page
   const rows = [...(opp.criteria ?? [])].sort((a, b) => String(catLabel[a.category] ?? 'zz').localeCompare(String(catLabel[b.category] ?? 'zz')));
-  for (let i = 0; i < rows.length; i += 11) {
-    const slide = page('Success criteria', `Success criteria ${rows.length > 11 ? `${Math.floor(i / 11) + 1} of ${Math.ceil(rows.length / 11)}` : ''}`);
-    const head = ['Group', 'Criterion', 'Status', 'Evidence'].map((t) => ({ text: t.toUpperCase(), options: { bold: false, color: MUTED, fontSize: 9, charSpacing: 2, fill: { color: PANEL } } }));
-    const body = rows.slice(i, i + 11).map((c) => [
+  for (let i = 0; i < rows.length; i += 10) {
+    const slide = page('Success criteria', `Success criteria ${rows.length > 10 ? `${Math.floor(i / 10) + 1} of ${Math.ceil(rows.length / 10)}` : ''}`);
+    const head = ['Group', 'Criterion', 'Status', 'Evidence'].map((t) => ({ text: t.toUpperCase(), options: { bold: false, color: MUTED, fontSize: 9, charSpacing: 1, fill: { color: PANEL } } }));
+    const body = rows.slice(i, i + 10).map((c) => [
       { text: catLabel[c.category] ?? 'Custom', options: { color: MUTED, fontSize: 10 } },
       { text: `${c.title}${c.priority === 'nice' ? ' (nice to have)' : ''}`, options: { color: INK, fontSize: 11 } },
       { text: CRITERION_STATUS[c.status], options: { color: STATUS_COLOR[c.status], bold: true, fontSize: 11 } },
@@ -118,7 +118,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
       ['AI actions (30 days)', s.credits?.actions ? `${s.credits.actions.triage} triage · ${s.credits.actions.remediation} remediation` : '—'],
       ['People active', s.users?.total != null ? `${s.users.active} active, ${s.users.quiet} in the week, of ${s.users.total}` : '—'],
     ];
-    shown.addTable(lines.map(([k, v]) => [{ text: k.toUpperCase(), options: { color: MUTED, fontSize: 10, charSpacing: 2 } }, { text: String(v), options: { color: INK, fontSize: 14 } }]), { x: 0.6, y: 1.7, w: 12.1, colW: [3.6, 8.5], fontFace: BODY, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: 0.6, valign: 'middle' });
+    shown.addTable(lines.map(([k, v]) => [{ text: k.toUpperCase(), options: { color: MUTED, fontSize: 10, charSpacing: 1 } }, { text: String(v), options: { color: INK, fontSize: 14 } }]), { x: 0.6, y: 1.7, w: 12.1, colW: [3.6, 8.5], fontFace: BODY, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: 0.6, valign: 'middle' });
     const top = (people?.users ?? []).filter((u) => u.status !== 'never' && u.status !== 'unknown').slice(0, 6);
     if (top.length) shown.addText(`Most active: ${top.map((u) => u.name || u.email || u.username).join(', ')}`, { x: 0.6, y: 6.3, w: 12.1, h: 0.4, fontFace: BODY, fontSize: 11, color: MUTED, italic: true });
   }
@@ -127,7 +127,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
   const ex = story?.expansion;
   if (ex) {
     const e = page('From proof to rollout', 'Expansion');
-    e.addText('PROVEN IN THIS POV', { x: 0.6, y: 1.6, w: 5.9, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 3 });
+    e.addText('PROVEN IN THIS POV', { x: 0.6, y: 1.6, w: 5.9, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 1 });
     e.addText((ex.proven.length ? ex.proven : ['The POV is still running: proven work appears here as criteria are completed.']).slice(0, 6).map((t) => ({ text: t, options: { bullet: { code: '25C6' }, paraSpaceAfter: 6 } })), { x: 0.6, y: 1.95, w: 5.9, h: 3.1, fontFace: BODY, fontSize: 12, color: INK, valign: 'top' });
     const figs = [[ex.projects, 'projects scanned'], [ex.integrations.length || null, 'integrations in use'], [ex.people, 'people on the platform']].filter(([v]) => v != null);
     figs.forEach(([v, l], i) => {
@@ -136,7 +136,7 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
       e.addText(l.toUpperCase(), { x, y: 5.75, w: 1.9, h: 0.3, fontFace: BODY, fontSize: 8, color: MUTED, charSpacing: 1 });
     });
     if (ex.organisation) e.addText(`Rollout scope: ${ex.organisation}`, { x: 0.6, y: 6.15, w: 5.9, h: 0.35, fontFace: BODY, fontSize: 10, color: MUTED });
-    e.addText('NEXT ON THE PLATFORM', { x: 7.0, y: 1.6, w: 5.7, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 3 });
+    e.addText('NEXT ON THE PLATFORM', { x: 7.0, y: 1.6, w: 5.7, h: 0.3, fontFace: BODY, fontSize: 10, color: BRASS, charSpacing: 1 });
     ex.next.slice(0, 6).forEach((n, i) => {
       const y = 1.95 + i * 0.75;
       e.addShape(pptx.ShapeType.rect, { x: 7.0, y, w: 0.05, h: 0.62, fill: { color: '6B34FD' }, line: { color: '6B34FD', width: 0 } });
@@ -184,7 +184,7 @@ const hex = (c) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
 const mix = (a, b, t) => hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * t).toString(16).padStart(2, '0')).join('').toUpperCase();
 const SPARKLE = 'FFD44D';
 
-export function platformSlide(pptx, view) {
+export function platformSlide(pptx, view, { band = true } = {}) {
   const slide = pptx.addSlide();
   slide.background = { color: BG };
   const shown = new Set();
@@ -289,6 +289,8 @@ export function platformSlide(pptx, view) {
     ],
     { x: X(80), y: Y(605), w: X(600), h: Y(18), fontFace: FONT, fontSize: 8, margin: 0 },
   );
+  // Its own footer band in the Classic deck; in the team decks the template's (or the deck's) footer shows instead.
+  if (!band) return;
   slide.addShape(pptx.ShapeType.rect, { x: 0, y: Y(669), w: 13.333, h: Y(60), fill: { color: VIOLET }, line: { color: VIOLET } });
   slide.addText('Checkmarx', { x: X(52), y: Y(686), w: X(200), h: Y(26), fontFace: FONT, fontSize: 11, bold: true, color: 'FFFFFF', margin: 0, valign: 'middle' });
   slide.addText('1', { x: X(1240), y: Y(686), w: X(50), h: Y(26), fontFace: FONT, fontSize: 8, color: 'FFFFFF', margin: 0, valign: 'middle', align: 'right' });
@@ -308,7 +310,7 @@ function footer(pptx, slide, customer) {
 function flowSlide(pptx, flow, customer) {
   const slide = pptx.addSlide();
   slide.background = { color: BG };
-  slide.addText(`${customer} · From code to cloud`.toUpperCase(), { x: X(60), y: Y(30), w: X(1200), h: Y(22), fontFace: FONT, fontSize: 10, bold: true, color: 'F25928', charSpacing: 2, margin: 0 });
+  slide.addText(`${customer} · From code to cloud`.toUpperCase(), { x: X(60), y: Y(30), w: X(1200), h: Y(22), fontFace: FONT, fontSize: 10, bold: true, color: 'F25928', charSpacing: 1, margin: 0 });
   slide.addText(`Where Checkmarx One works in ${customer}’s flow`, { x: X(60), y: Y(54), w: X(1210), h: Y(52), fontFace: FONT, fontSize: 26, color: 'FFFFFF', margin: 0 });
   slide.addShape(pptx.ShapeType.line, { x: X(60), y: Y(114), w: X(100), h: 0, line: { color: 'F25928', width: 2.25 } });
   slide.addShape(pptx.ShapeType.line, { x: X(160), y: Y(114), w: X(100), h: 0, line: { color: '8C3DF8', width: 2.25 } });
@@ -326,9 +328,9 @@ function flowSlide(pptx, flow, customer) {
     slide.addText([{ text: `0${i + 1}  `, options: { color: c, bold: true, fontSize: 9 } }, { text: st.title, options: { color: 'FFFFFF', bold: true, fontSize: 14 } }], { x: X(x + 10), y: Y(top + 10), w: X(w - 20), h: Y(24), fontFace: FONT, margin: 0 });
     slide.addText(st.sub, { x: X(x + 10), y: Y(top + 34), w: X(w - 20), h: Y(16), fontFace: FONT, fontSize: 8.5, color: DIM, margin: 0 });
     const runs = (items) => items.flatMap((t, k) => [...(k ? [{ text: '   ', options: {} }] : []), { text: t.label, options: { color: ['done', 'demo'].includes(t.state) ? 'FFFFFF' : DIM, bold: ['done', 'demo'].includes(t.state) } }, ...(t.ai ? [{ text: ' ✦', options: { fontFace: SYMBOL, color: SPARKLE } }] : []), ...(MARK[t.state]?.glyph ? [{ text: ` ${MARK[t.state].glyph}`, options: { fontFace: SYMBOL, color: MARK[t.state].color, bold: true } }] : [])]);
-    slide.addText('CUSTOMER’S TOOLS', { x: X(x + 10), y: Y(top + 58), w: X(w - 20), h: Y(14), fontFace: FONT, fontSize: 7.5, color: DIM, charSpacing: 2, margin: 0 });
+    slide.addText('CUSTOMER’S TOOLS', { x: X(x + 10), y: Y(top + 58), w: X(w - 20), h: Y(14), fontFace: FONT, fontSize: 7.5, color: DIM, charSpacing: 1, margin: 0 });
     slide.addText(st.tools.length ? runs(st.tools) : [{ text: '—', options: { color: DIM } }], { x: X(x + 10), y: Y(top + 74), w: X(w - 20), h: Y(86), fontFace: FONT, fontSize: 9, valign: 'top', margin: 0, paraSpaceAfter: 2 });
-    slide.addText('CHECKMARX ONE', { x: X(x + 10), y: Y(top + 166), w: X(w - 20), h: Y(14), fontFace: FONT, fontSize: 7.5, color: 'B9A2FF', charSpacing: 2, margin: 0 });
+    slide.addText('CHECKMARX ONE', { x: X(x + 10), y: Y(top + 166), w: X(w - 20), h: Y(14), fontFace: FONT, fontSize: 7.5, color: 'B9A2FF', charSpacing: 1, margin: 0 });
     slide.addText(st.engines.length ? runs(st.engines) : [{ text: '—', options: { color: DIM } }], { x: X(x + 10), y: Y(top + 182), w: X(w - 20), h: Y(110), fontFace: FONT, fontSize: 9, valign: 'top', margin: 0 });
     slide.addShape(pptx.ShapeType.line, { x: X(x + 10), y: Y(top + 298), w: X(w - 20), h: 0, line: { color: LINE, width: 0.75 } });
     const val = [];
