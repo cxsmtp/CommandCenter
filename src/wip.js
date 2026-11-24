@@ -142,7 +142,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null }) {
     head(s, 'APMA Assessment', 'Current status and future plan for', 'AppSec process maturity');
     const dims = apma.dimensions.filter((d) => d.current != null);
     const label = (n) => n.replace('Security Testing - Infrastructure', 'Security Testing - Architecture & Scale');
-    s.addText(`The diagram shows the result of the interview assessment${apma.interviewee ? ` with ${apma.interviewee}` : ''}, and the desired state recommended for ${C}’s AppSec program.`, { x: 0.45, y: 1.45, w: 6.6, h: 0.6, fontFace: FONT, fontSize: 11, color: MUTED, margin: 0, valign: 'top' });
+    s.addText(`The diagram shows the result of the APMA interview assessment with ${C}, and the desired state recommended for ${C}’s AppSec program.`, { x: 0.45, y: 1.45, w: 6.6, h: 0.6, fontFace: FONT, fontSize: 11, color: MUTED, margin: 0, valign: 'top' });
     s.addShape(pptx.ShapeType.roundRect, { x: 0.45, y: 2.1, w: 6.6, h: 4.8, rectRadius: 0.06, fill: { color: WHITE }, line: { color: LINE, width: 0.5 } });
     s.addChart(
       pptx.charts.RADAR,
@@ -421,8 +421,20 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
   const used = new Set();
   for (const name of Object.keys(zip.files).filter((n) => n.endsWith('.rels'))) for (const m of (await zip.file(name).async('string')).matchAll(/Target="([^"]+)"/g)) used.add(m[1].split('/').pop());
   for (const name of Object.keys(zip.files)) if (/^ppt\/media\//.test(name) && !used.has(name.split('/').pop())) zip.remove(name);
+  // Nothing of the template's history travels: revisions, authors, comment authors, who made or last saved it.
+  for (const name of Object.keys(zip.files)) if (/^ppt\/(changesInfos\/|revisionInfo\.xml|authors\.xml|commentAuthors\.xml)/.test(name)) zip.remove(name);
+  zip.file('ppt/_rels/presentation.xml.rels', (await zip.file('ppt/_rels/presentation.xml.rels').async('string')).replace(/<Relationship\b[^>]*Target="(?:changesInfos\/[^"]*|revisionInfo\.xml|authors\.xml|commentAuthors\.xml)"[^>]*\/>/g, ''));
+  let ct = await zip.file('[Content_Types].xml').async('string');
+  ct = ct.replace(/<Override PartName="\/([^"]+)"[^>]*\/>/g, (all, part) => (zip.file(part) ? all : ''));
+  zip.file('[Content_Types].xml', ct);
+  const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const title = (await gen.file('docProps/core.xml')?.async('string'))?.match(/<dc:title>([^<]*)<\/dc:title>/)?.[1] ?? '';
+  zip.file(
+    'docProps/core.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${title}</dc:title><dc:creator>Meridian</dc:creator><cp:lastModifiedBy>Meridian</cp:lastModifiedBy><cp:revision>1</cp:revision><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`,
+  );
   const app = await zip.file('docProps/app.xml')?.async('string');
-  if (app) zip.file('docProps/app.xml', app.replace(/<Slides>\d+<\/Slides>/, `<Slides>${newSlides.length}</Slides>`).replace(/<Notes>\d+<\/Notes>/, '<Notes>0</Notes>'));
+  if (app) zip.file('docProps/app.xml', app.replace(/<Slides>\d+<\/Slides>/, `<Slides>${newSlides.length}</Slides>`).replace(/<Company>[^<]*<\/Company>/, '<Company></Company>').replace(/<Manager>[^<]*<\/Manager>/, '').replace(/<Notes>\d+<\/Notes>/, '<Notes>0</Notes>'));
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 

@@ -728,7 +728,11 @@ test('the POV WIP deck: toolchain, plan, meetings, the APMA report read from its
   // The APMA report: optional, read when it is added, kept encrypted.
   const up = await fetch(`${base}/api/opportunities/${opp.id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', Cookie: jar.get('se1') }, body: pdf });
   assert.equal(up.status, 200);
-  assert.equal((await up.json()).found, 5);
+  const upBody = await up.json();
+  assert.equal(upBody.found, 5);
+  assert.equal(upBody.otherCustomer, false, 'Initech’s report on the Initech account');
+  assert.equal(upBody.apma.interviewee, undefined, 'names in the report are never kept');
+  assert.equal(upBody.apma.customer, undefined);
   const back = await fetch(`${base}/api/opportunities/${opp.id}/apma`, { headers: { Cookie: jar.get('se1') } });
   assert.deepEqual(Buffer.from(await back.arrayBuffer()), pdf);
   assert.ok(!fs.readFileSync(path.join(dataDir, 'apma', `${opp.id}.pdf`)).includes(Buffer.from('Initech')), 'stored encrypted');

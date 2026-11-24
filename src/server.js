@@ -28,7 +28,7 @@ import { successReport } from './report.js';
 import { eventsOf, scanLog, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
 import { wipDeck, checkTemplate } from './wip.js';
-import { readApma } from './apma.js';
+import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
 import { predict, gaps, rollups } from './insights.js';
 import { flowView } from './flow.js';
@@ -945,7 +945,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     // An APMA report read without keeping it, for the new-opportunity wizard.
     if (route === 'POST /apma/read') {
       const a = readApma(await readRaw(req, 25 * 1048576));
-      return send(res, 200, { apma: a });
+      const customer = text(decodeURIComponent(req.headers['x-customer'] ?? ''), 160);
+      return send(res, 200, { apma: { ...cleanApma(a), found: a.found }, otherCustomer: forAnotherCustomer(a, customer) });
     }
     // ——— The WIP deck template (.pptx): its look, layouts and closing slide are used for every POV's WIP deck ———
     if (route === 'GET /wip-template') {
@@ -1315,9 +1316,10 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const buf = await readRaw(req, 25 * 1048576);
         const a = readApma(buf);
         const name = text(decodeURIComponent(req.headers['x-file-name'] ?? 'APMA report.pdf'), 200);
+        const other = forAnotherCustomer(a, viewOpp(user, id).customer);
         const opp = opps.update(user, id, { apma: { ...a, file: { name, at: new Date().toISOString() } } }, fullSettings());
         db.vault.writeFile(path.join(dataDir, 'apma', `${id.replace(/[^0-9a-f-]/gi, '')}.pdf`), buf, { keepPrevious: false });
-        return send(res, 200, { opportunity: publicOpp(placed(opp)), apma: opp.apma, found: a.found });
+        return send(res, 200, { opportunity: publicOpp(placed(opp)), apma: opp.apma, found: a.found, otherCustomer: other });
       }
       if (sub === 'apma' && m === 'GET') {
         const opp = viewOpp(user, id);

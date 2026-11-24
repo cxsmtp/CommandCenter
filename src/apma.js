@@ -161,13 +161,24 @@ export function readApma(buf) {
   };
 }
 
-/** Clean an assessment typed or corrected by hand. */
+const SKIP = new Set(['limited', 'ltd', 'inc', 'corp', 'corporation', 'company', 'group', 'the', 'and', 'plc', 'gmbh', 'llc', 'co']);
+const words = (s) => String(s ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !SKIP.has(w));
+
+/** True when the report names a company that is plainly not the account (so the SE is warned, never shown it later). */
+export function forAnotherCustomer(a, customer) {
+  const theirs = words(a?.customer);
+  const ours = words(customer);
+  return Boolean(theirs.length && ours.length && !theirs.some((w) => ours.includes(w)));
+}
+
+/**
+ * What is kept of an assessment: the scores, the overall level and the recommendations. Names in the report (the
+ * company it was written for, the person interviewed) are never kept: the account gives the deck its names.
+ */
 export function cleanApma(a) {
   if (!a || typeof a !== 'object') return null;
   const t = (v, n = 300) => String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
   return {
-    customer: t(a.customer, 200),
-    interviewee: t(a.interviewee, 200),
     overall: t(a.overall, 200),
     lowest: t(a.lowest, 300),
     date: /^\d{4}-\d{2}-\d{2}$/.test(a.date ?? '') ? a.date : '',

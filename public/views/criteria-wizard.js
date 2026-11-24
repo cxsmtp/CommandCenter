@@ -176,7 +176,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
           <input name="am_name" value="${esc(p.am.name)}" placeholder="Name" aria-label="Account manager name"><input name="am_title" value="${esc(p.am.title)}" placeholder="Title" aria-label="Title"><input name="am_email" type="email" value="${esc(p.am.email)}" placeholder="Email" aria-label="Email"></div></div>
         <label class="field">Account name in the tenant <span class="muted small">(optional)</span><input name="pl_account" value="${esc(p.accountName)}"></label>
         <div class="field">APMA assessment <span class="muted small">(optional: the report’s PDF fills the APMA slide)</span>
-          ${w.apma ? `<div class="apma-got"><b>${esc(w.apma.customer || 'Assessment')}</b> · ${w.apma.dimensions.filter((d) => d.current != null).map((d) => `${esc(d.name)} ${d.current} → ${d.desired}`).join(' · ')} <button type="button" class="btn sm ghost" data-act="apma-clear">Remove</button></div>` : '<input type="file" id="wzApma" accept="application/pdf,.pdf">'}</div>`;
+          ${w.apma ? `<div class="apma-got"><b>APMA assessment</b> · ${w.apma.dimensions.filter((d) => d.current != null).map((d) => `${esc(d.name)} ${d.current} → ${d.desired}`).join(' · ')} <button type="button" class="btn sm ghost" data-act="apma-clear">Remove</button></div>` : '<input type="file" id="wzApma" accept="application/pdf,.pdf">'}</div>`;
     },
     goals: () => {
       const mine = [...w.call.personas, ...w.call.people.map((p) => p.persona).filter(Boolean)];
@@ -406,9 +406,10 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const file = e.target.files[0];
       if (!file) return;
       keep(d);
-      const res = await fetch('/api/apma/read', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf' }, body: file });
+      const res = await fetch('/api/apma/read', { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', 'X-Customer': encodeURIComponent(w.details.customer ?? '') }, body: file });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
+      if (j.otherCustomer) toast('This APMA report looks like it was written for another company. Check it is the right file.', { bad: true });
       w.apma = { ...j.apma, file: { name: file.name, at: new Date().toISOString() } };
       w.apmaFile = file;
       draw(d);

@@ -559,7 +559,7 @@ function wipPanel(d) {
     ${gaps.length && current.canEdit ? `<p class="small" style="margin:0"><span class="warn-t">Still empty:</span> ${gaps.join(', ')}.</p>` : ''}
     <div class="row"><button class="btn primary" data-act="wip">Download the WIP deck (.pptx)</button>${current.canEdit ? '<button class="btn" data-act="wip-plan">Plan, toolchain &amp; environment</button>' : ''}</div>
     <div class="item"><div class="top"><b>APMA assessment</b><span class="small muted">optional</span></div>
-      ${a ? `<p class="small" style="margin:6px 0">${a.interviewee ? `Interview with ${esc(a.interviewee)} · ` : ''}${a.dimensions.filter((x) => x.current != null).map((x) => `${esc(x.name)} <b>${x.current}</b> → ${x.desired}`).join(' · ')}</p>
+      ${a ? `<p class="small" style="margin:6px 0">${a.dimensions.filter((x) => x.current != null).map((x) => `${esc(x.name)} <b>${x.current}</b> → ${x.desired}`).join(' · ')}</p>
         <div class="row">${a.file ? `<a class="btn sm" href="/api/opportunities/${esc(o.id)}/apma" target="_blank" rel="noopener">Open the report</a>` : ''}${current.canEdit ? '<button class="btn sm" data-act="apma-up">Replace</button><button class="btn sm ghost danger" data-act="apma-del">Remove</button>' : ''}</div>`
         : `<p class="small muted" style="margin:6px 0">Drop the customer’s APMA report (PDF): its maturity scores, the interview and the recommended first steps fill the APMA slide.</p>${current.canEdit ? '<div class="row"><button class="btn sm" data-act="apma-up">Add the APMA report</button></div>' : ''}`}
       <input type="file" id="apmaFile" accept="application/pdf,.pdf" hidden></div>
@@ -860,7 +860,7 @@ const WIRES = {
       const res = await fetch(`/api/opportunities/${oid()}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Meridian', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) return toast(j.error ?? 'That file could not be read', { bad: true });
-      toast(j.found === 5 ? 'APMA assessment read: all five dimensions' : `APMA assessment read: ${j.found} of 5 dimensions found`);
+      toast(j.otherCustomer ? 'Read — but this report looks like it was written for another company. Check it is the right file.' : j.found === 5 ? 'APMA assessment read: all five dimensions' : `APMA assessment read: ${j.found} of 5 dimensions found`, { bad: Boolean(j.otherCustomer) });
       rerender();
     });
     on(main, '[data-act="apma-del"]', async () => {
