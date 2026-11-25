@@ -303,6 +303,8 @@ export class Users {
   signInLinked(address) {
     const user = this.#all().find((u) => u.email === cleanEmail(address));
     if (!user || user.active === false) throw fail(403, user ? 'Your Kendra account is turned off.' : 'You have no Kendra account yet: ask an Admin to add you with the same email.');
+    // Signed in by the linked app, as with single sign-on: a password of their own is not needed for this.
+    if (user.mustChangePassword) user.mustChangePassword = false;
     const token = randomBytes(32).toString('base64url');
     this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs, created: Date.now(), via: 'linked' });
     this.#dirty = true;
