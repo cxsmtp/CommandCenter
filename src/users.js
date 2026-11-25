@@ -104,6 +104,16 @@ export class Users {
     return this.#db.read('users', []);
   }
 
+  /** When and how someone last signed in (People shows it). */
+  #stampSignIn(id, how) {
+    const all = this.#all();
+    const u = all.find((x) => x.id === id);
+    if (!u) return;
+    u.lastSignInAt = new Date().toISOString();
+    u.lastSignInMethod = how;
+    this.#save(all);
+  }
+
   #save(list) {
     this.#db.write('users', list);
   }
@@ -292,6 +302,7 @@ export class Users {
     // The same work whether or not the account exists.
     const ok = checkPassword(password, user?.password ?? 'scrypt$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
     if (!user || !ok || user.active === false) throw fail(401, 'That email and password do not match.');
+    this.#stampSignIn(user.id, 'password');
     const token = randomBytes(32).toString('base64url');
     this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs, created: Date.now() });
     this.#dirty = true;
@@ -321,6 +332,7 @@ export class Users {
       user.mustChangePassword = false;
       this.#save(all);
     }
+    this.#stampSignIn(user.id, 'linked');
     const token = randomBytes(32).toString('base64url');
     this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs, created: Date.now(), via: 'linked' });
     this.#dirty = true;

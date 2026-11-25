@@ -1,12 +1,9 @@
 import { $, esc, api, state, can, local, toast, attempt, openDialog, closeDialog, sheetsSettled } from './core.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderOpportunity } from './views/opportunity.js';
-import { renderTeam } from './views/team.js';
-import { renderCatalog } from './views/catalog.js';
 import { renderSettings } from './views/settings.js';
 import { openNewOpportunity } from './views/new-opportunity.js';
 import { renderInsights } from './views/insights.js';
-import { renderAudit } from './views/audit.js';
 
 // ——— The detail drawer: a POV opened from a list, on the right half, the list still in view ———
 let drawerFor = '';
@@ -77,7 +74,10 @@ export function homeView() {
 }
 export function route() {
   const [path, query = ''] = location.hash.split('?');
-  const [, view = '', id = '', tab = ''] = path.split('/');
+  let [, view = '', id = '', tab = ''] = path.split('/');
+  // Pages that moved into Settings keep their old addresses.
+  const moved = { team: 'teams', people: 'people', catalog: 'capabilities', audit: 'audit' };
+  if (moved[view]) [view, id] = ['settings', moved[view]];
   const q = new URLSearchParams(query);
   return { view: view || homeView(), id, tab, open: q.get('open') ?? '', openTab: q.get('tab') ?? '' };
 }
@@ -95,10 +95,8 @@ const ICON = {
   insights: svg('<path d="M4 19h16"/><path d="M7 15l3.5-4 3 2.5L18 8"/><circle cx="18" cy="8" r="1.4"/>'),
   ftr: svg('<rect x="3.5" y="5" width="17" height="12" rx="2"/><path d="M8 21h8M12 17v4M7.5 13l3-3 2 2 4-4"/>'),
 };
-const NAV = [
-  ['Work', [['dashboard', ICON.dashboard, 'Portfolio'], ['insights', ICON.insights, 'Insights'], ['team', ICON.team, 'Teams']]],
-  ['Set up', [['catalog', ICON.catalog, 'Capabilities'], ['audit', ICON.audit, 'Audit', 'audit.view'], ['settings', ICON.settings, 'Settings']]],
-];
+// As in the FTR command center: a short menu; People, Teams, Capabilities, the Audit log and the rest are in Settings.
+const NAV = [['Work', [['dashboard', ICON.dashboard, 'Portfolio'], ['insights', ICON.insights, 'Insights'], ['settings', ICON.settings, 'Settings']]]];
 
 // The Kendra mark; its tooltip says what the name means.
 const KENDRA_MEANING = 'Kendra (केन्द्र, Sanskrit for “centre”): the centre for the best solution engineers to manage the growth.';
@@ -129,8 +127,8 @@ function shell() {
       <a href="#/dashboard" ${r.view === 'dashboard' || r.view === 'opp' ? 'aria-current="page"' : ''}>${ICON.dashboard}Portfolio${attention ? `<span class="badge-n">${attention}</span>` : ''}</a>
       <a href="#/insights" ${r.view === 'insights' ? 'aria-current="page"' : ''}>${ICON.insights}Insights</a>
       ${can('opps.create') ? `<button type="button" class="tab-new" data-action="new-opp"><span class="ico">${ICON.plus}</span>New</button>` : '<span></span>'}
-      <a href="#/team" ${r.view === 'team' ? 'aria-current="page"' : ''}>${ICON.team}Teams</a>
-      <button type="button" data-action="more" ${['catalog', 'settings', 'audit'].includes(r.view) ? 'aria-current="page"' : ''}>${ICON.more}More</button>
+      <a href="#/settings/people" ${r.view === 'settings' && ['people', 'teams'].includes(r.id) ? 'aria-current="page"' : ''}>${ICON.team}People</a>
+      <button type="button" data-action="more" ${r.view === 'settings' && !['people', 'teams'].includes(r.id) ? 'aria-current="page"' : ''}>${ICON.more}More</button>
     </nav>
   </div>`;
 }
@@ -141,8 +139,8 @@ function openMore() {
   openDialog(
     `<div class="dbody more-sheet"><div class="row center"><div style="flex:1"><b>${esc(u.name)}</b><div class="small muted">${esc(u.roleLabel)} · ${esc(u.email)}</div></div><button class="btn" data-close>Done</button></div>
       <nav class="more-list">
-        <a href="#/catalog">${ICON.catalog}<span>Capabilities & templates</span></a>
-        ${can('audit.view') ? `<a href="#/audit">${ICON.audit}<span>Audit</span></a>` : ''}
+        <a href="#/settings/capabilities">${ICON.catalog}<span>Capabilities & templates</span></a>
+        ${can('audit.view') ? `<a href="#/settings/audit">${ICON.audit}<span>Audit log</span></a>` : ''}
         <a href="#/settings">${ICON.settings}<span>Settings</span></a>
         <button type="button" data-action="refresh-all">${ICON.refresh}<span>Read every POV tenant now</span></button>
         <button type="button" data-action="signout">${ICON.out}<span>Sign out</span></button>
@@ -169,14 +167,12 @@ async function renderNow() {
   if (!state.session?.user) return;
   if (!$('#main')) shell();
   const r = route();
-  for (const a of document.querySelectorAll('.nav a[href^="#/"], .tabbar a[href^="#/"]')) a.toggleAttribute('aria-current', a.getAttribute('href') === `#/${r.view}` || (r.view === 'opp' && a.getAttribute('href') === '#/dashboard'));
-  document.querySelector('.tabbar [data-action="more"]')?.toggleAttribute('aria-current', ['catalog', 'settings', 'audit'].includes(r.view));
+  for (const a of document.querySelectorAll('.nav a[href^="#/"]')) a.toggleAttribute('aria-current', a.getAttribute('href') === `#/${r.view}` || (r.view === 'opp' && a.getAttribute('href') === '#/dashboard'));
+  for (const a of document.querySelectorAll('.tabbar a[href^="#/"]')) a.toggleAttribute('aria-current', a.getAttribute('href') === `#/${r.view}` || (r.view === 'opp' && a.getAttribute('href') === '#/dashboard') || (r.view === 'settings' && ['people', 'teams'].includes(r.id) && a.getAttribute('href') === '#/settings/people'));
+  document.querySelector('.tabbar [data-action="more"]')?.toggleAttribute('aria-current', r.view === 'settings' && !['people', 'teams'].includes(r.id));
   if (r.view === 'opp') await renderOpportunity($('#main'), r.id, r.tab, { crumbs });
-  else if (r.view === 'team') await renderTeam($('#main'), { crumbs });
-  else if (r.view === 'catalog') await renderCatalog($('#main'), { crumbs });
   else if (r.view === 'settings') await renderSettings($('#main'), r.id, { crumbs, applyLook });
   else if (r.view === 'insights') await renderInsights($('#main'), { crumbs });
-  else if (r.view === 'audit') await renderAudit($('#main'), { crumbs });
   else await renderDashboard($('#main'), { crumbs, open: r.open });
   await renderDrawer(r);
   refreshNote();

@@ -2,6 +2,21 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.79 · 2026-11-25
+
+**Settings like the FTR command center: one menu, People, Teams, Roles, Audit log**
+
+- The main menu is Portfolio, Insights and Settings (as the FTR command center's); People,
+  Teams, Capabilities and the Audit log moved into Settings, grouped You / People / POVs /
+  Records / System. Old addresses (#/team, #/catalog, #/audit) still lead there.
+- Each Settings page has its title and what it is for; panels with a heading and a note.
+- People: a table to sort and filter (search, role, region, reports to, status): role,
+  manager, region, POVs, status, last sign-in, Portfolio and Manage. Sign-ins are recorded.
+- Teams: each leader's team as a tree, with people, POVs and what needs attention.
+- Roles & permissions: people per role, find a permission, show only the differences,
+  Save role changes and Discard.
+- Audit log: the chain check and export on top; filters inline (who, from, to, outcome).
+
 ## 1.0.78 · 2026-11-25
 
 **Portfolio, sleek: quiet rows under column heads, one colour for what needs attention**

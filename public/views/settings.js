@@ -1,6 +1,9 @@
 // Settings: your profile and look; and (by permission) the organisation, connections, the server's security, health,
 // backups, updates and recovery; and About.
 import { $, $$, esc, api, state, can, attempt, toast, formData, when, ago, ask, day } from '../core.js';
+import { renderPeople, renderTeams } from './people.js';
+import { renderAudit } from './audit.js';
+import { renderCatalog } from './catalog.js';
 
 const LOOKS = {
   orbit: ['Orbit — launch control', ['#03050b', '#5ce1ff', '#8b7cff']],
@@ -17,26 +20,89 @@ const LOOKS = {
   studio: ['Studio', ['#f5f4fa', '#1d1933', '#6b4fd6']],
   classic: ['Classic', ['#f5f7fa', '#ffffff', '#2563eb']],
 };
-// Settings, grouped as in CxMissionZero: a side menu by subject, each page one job.
+// Settings, as in the FTR command center: one side menu by subject (You, People, POVs, Records, System), each page
+// with its title and what it is for, panels that say what they do, and settings that save as they are changed.
 const MANAGE = () => can('settings.manage');
+const ALL = () => true;
 const TABS = [
-  ['You', [['profile', 'Profile & look', () => true]]],
-  ['Organisation', [['organisation', 'Organisation', MANAGE], ['roles', 'Roles & permissions', () => can('roles.manage')], ['salesforce', 'Salesforce', MANAGE]]],
-  ['Connections', [['email', 'Email server', MANAGE], ['network', 'Network & certificates', MANAGE], ['linked', 'Linked apps', MANAGE]]],
-  ['Server', [['security', 'Security & sign-in', MANAGE], ['system', 'Health & backups', MANAGE], ['updates', 'Update & recovery', MANAGE]]],
-  ['', [['about', 'About', () => true]]],
+  ['You', [['profile', 'Your profile & look', ALL]]],
+  ['People', [['people', 'People', ALL], ['teams', 'Teams', ALL], ['roles', 'Roles & permissions', () => can('roles.manage')], ['signin', 'Sign-in', MANAGE]]],
+  ['POVs', [['capabilities', 'Capabilities & criteria', ALL], ['salesforce', 'Salesforce', MANAGE]]],
+  ['Records', [['audit', 'Audit log', () => can('audit.view')]]],
+  ['System', [['general', 'General', MANAGE], ['email', 'Email (SMTP)', MANAGE], ['linked', 'Linked apps', MANAGE], ['https', 'HTTPS & network', MANAGE], ['updates', 'Updates', MANAGE], ['backups', 'Backups & health', MANAGE], ['about', 'About', ALL]]],
 ];
+// Old addresses of pages that were renamed.
+const ALIAS = { organisation: 'general', network: 'https', system: 'backups', security: 'signin' };
+const ADMINS = 'for the whole of Kendra · Admins only';
+// Each page's title line: [what it is for, shown beside the title (inline) or under it].
+const META = {
+  profile: ['yours alone: how Kendra looks and opens for you', true],
+  people: ['Everyone who can sign in, and what they may do. You manage the people below you.'],
+  teams: ['The team structure: each leader and everyone below them. A leader sees their team’s POVs, and every team below it.'],
+  roles: ['What each role may do. Admins may do everything; what people see always follows the reporting tree.'],
+  signin: [ADMINS, true],
+  capabilities: ['What a POV can prove (and how Kendra reads it from Checkmarx One), the business goals, the success criteria templates and the customer presentations.'],
+  salesforce: [ADMINS, true],
+  audit: [null],
+  general: [ADMINS, true],
+  email: [ADMINS, true],
+  linked: [ADMINS, true],
+  https: [ADMINS, true],
+  updates: [ADMINS, true],
+  backups: [ADMINS, true],
+  about: ['the version, what changed, and the licence', true],
+};
+/** A settings form that saves as it is changed (after a pause while typing), as in the FTR command center. */
+export function autosave(form, save, status, { delay = 700 } = {}) {
+  let timer = null;
+  const say = (t, bad = false) => {
+    if (!status) return;
+    status.textContent = t;
+    status.classList.toggle('bad', bad);
+  };
+  const run = async () => {
+    clearTimeout(timer);
+    say('Saving…');
+    try {
+      await save(form);
+      say(`All changes are saved ✓ ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+    } catch (error) {
+      say(`${error.message} Nothing was changed.`, true);
+    }
+  };
+  form.addEventListener('submit', (e) => (e.preventDefault(), run()));
+  form.addEventListener('input', (e) => {
+    if (['checkbox', 'radio', 'select-one', 'file'].includes(e.target.type)) return;
+    clearTimeout(timer);
+    timer = setTimeout(run, e.target.tagName === 'TEXTAREA' ? 1200 : delay);
+  });
+  form.addEventListener('change', (e) => e.target.type !== 'file' && run());
+  return { run };
+}
+export const SAVES = '<div class="st-banner">✓ Changes save as you type.</div>';
 
 export async function renderSettings(main, tab, { crumbs, applyLook }) {
   crumbs('<h2 style="font-size:16px">Settings</h2>');
   const groups = TABS.map(([g, items]) => [g, items.filter(([, , ok]) => ok())]).filter(([, items]) => items.length);
   const all = groups.flatMap(([, items]) => items);
-  const active = all.some(([k]) => k === tab) ? tab : 'profile';
+  const want = ALIAS[tab] ?? tab;
+  const active = all.some(([k]) => k === want) ? want : all.some(([k]) => k === 'people') && !tab ? 'people' : 'profile';
+  if (tab !== active && location.hash.startsWith('#/settings')) history.replaceState(null, '', `#/settings/${active}`);
   const data = await api('/settings');
-  main.innerHTML = `<div class="set-layout"><nav class="set-nav" aria-label="Settings">${groups.map(([g, items]) => `${g ? `<div class="set-group">${esc(g)}</div>` : '<div class="set-sep"></div>'}${items.map(([k, l]) => `<a href="#/settings/${k}" class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''}>${esc(l)}</a>`).join('')}`).join('')}</nav>
-    <div class="set-main"><h1 class="set-title">${esc(all.find(([k]) => k === active)[1])}</h1><div id="sBody"></div></div></div>`;
+  const [sub, inline] = META[active] ?? [''];
+  const title = all.find(([k]) => k === active)[1];
+  main.innerHTML = `<div class="set-layout"><nav class="set-nav" aria-label="Settings">${groups.map(([g, items]) => `<div class="set-group">${esc(g)}</div>${items.map(([k, l]) => `<a href="#/settings/${k}" class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''}>${esc(l)}</a>`).join('')}`).join('')}</nav>
+    <div class="set-main">${sub === null ? '' : `<div class="st-head${inline ? ' inline' : ''}"><h1>${esc(title)}</h1>${sub ? `<span class="st-sub">${esc(sub)}</span>` : ''}</div>`}<div id="sBody"></div></div></div>`;
   const body = $('#sBody');
-  ({ profile, organisation, email, roles, salesforce, system, security, network, updates, about, linked })[active](body, data, applyLook);
+  const linked = state.session.linked ?? null;
+  const pages = {
+    profile, general: organisation, email, roles, salesforce, backups: system, signin: security, https: network, updates, about, linked: linkedPage,
+    people: () => renderPeople(body, { linked }),
+    teams: () => renderTeams(body, { linked }),
+    audit: () => renderAudit(body, { crumbs: () => {} }),
+    capabilities: () => renderCatalog(body, { crumbs: () => {} }),
+  };
+  await pages[active](body, data, applyLook);
 }
 
 function profile(body, data, applyLook) {
@@ -144,15 +210,38 @@ function email(body, data) {
 function roles(body, data) {
   const { matrix, permissions, labels } = data.roles;
   const roleKeys = Object.keys(matrix);
-  body.innerHTML = `<form id="roleForm" class="panel">
-    <div class="head"><span class="muted small">What each role may do. Admins may do everything. What people can see always follows the reporting tree: themselves and everyone below them.</span></div>
-    <div class="table-wrap"><table class="matrix"><thead><tr><th>Permission</th>${roleKeys.map((r) => `<th>${esc(labels[r])}</th>`).join('')}</tr></thead><tbody>
-    ${Object.entries(permissions).map(([p, label]) => `<tr><td>${esc(label)} <span class="small muted mono">${esc(p)}</span></td>${roleKeys.map((r) => `<td><input type="checkbox" data-role="${r}" value="${p}" ${matrix[r]?.includes(p) ? 'checked' : ''} aria-label="${esc(labels[r])}: ${esc(label)}"></td>`).join('')}</tr>`).join('')}
-    </tbody></table></div><div class="body"><button class="btn primary">Save roles</button></div></form>`;
-  $('#roleForm').addEventListener('submit', async (e) => {
+  const count = (r) => (state.users ?? []).filter((u) => u.role === r).length;
+  const people = (r) => `${count(r)} ${count(r) === 1 ? 'person' : 'people'}`;
+  const start = Object.fromEntries(roleKeys.map((r) => [r, Object.keys(permissions).filter((p) => matrix[r]?.includes(p))]));
+  body.innerHTML = `<form id="roleForm" class="panel st-panel roles-grid">
+    <div class="st-ph"><h2>Roles &amp; permissions</h2><span class="st-aside">changes apply to everyone with the role · <span class="pill">Admin</span> may do everything</span></div>
+    <div class="st-filters"><input type="search" id="rQ" placeholder="Find a permission" aria-label="Find a permission"><label class="check"><input type="checkbox" id="rDiff"> Show only the differences</label>
+      <span class="st-count"><button class="btn primary" id="rSave" disabled>Save role changes</button> <button type="button" class="btn ghost" id="rDiscard" disabled>Discard</button></span></div>
+    <div class="table-wrap"><table><thead><tr><th>Permission</th><th class="rh">Admin<small>${people('admin')}</small></th>${roleKeys.map((r) => `<th class="rh">${esc(labels[r])}<small>${people(r)}</small></th>`).join('')}</tr></thead><tbody>
+    ${Object.entries(permissions).map(([p, label]) => `<tr data-perm="${esc(p)}" data-text="${esc(`${label} ${p}`.toLowerCase())}"><td class="p"><b>${esc(label)}</b><span class="small muted mono">${esc(p)}</span></td><td class="c"><input type="checkbox" checked disabled aria-label="Admin: ${esc(label)}"></td>${roleKeys.map((r) => `<td class="c"><input type="checkbox" data-role="${r}" value="${p}" ${matrix[r]?.includes(p) ? 'checked' : ''} aria-label="${esc(labels[r])}: ${esc(label)}"></td>`).join('')}</tr>`).join('')}
+    </tbody></table></div><div class="st-foot">What people see always follows the reporting tree: themselves and everyone below them.</div></form>`;
+  const now = () => Object.fromEntries(roleKeys.map((r) => [r, [...body.querySelectorAll(`input[data-role="${r}"]:checked`)].map((x) => x.value)]));
+  const filter = () => {
+    const q = body.querySelector('#rQ').value.toLowerCase();
+    const diff = body.querySelector('#rDiff').checked;
+    for (const tr of body.querySelectorAll('tr[data-perm]')) {
+      const vals = [...tr.querySelectorAll('input[data-role]')].map((x) => x.checked);
+      tr.hidden = Boolean((q && !tr.dataset.text.includes(q)) || (diff && vals.every((v) => v === vals[0])));
+    }
+  };
+  const dirty = () => {
+    const changed = JSON.stringify(now()) !== JSON.stringify(start);
+    body.querySelector('#rSave').disabled = !changed;
+    body.querySelector('#rDiscard').disabled = !changed;
+  };
+  body.querySelector('#rQ').addEventListener('input', filter);
+  body.querySelector('#rDiff').addEventListener('change', filter);
+  body.querySelector('#roleForm').addEventListener('change', (e) => e.target.matches('input[data-role]') && dirty());
+  body.querySelector('#rDiscard').addEventListener('click', () => roles(body, data));
+  body.querySelector('#roleForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const m = Object.fromEntries(roleKeys.map((r) => [r, $$(`input[data-role="${r}"]:checked`, body).map((x) => x.value)]));
-    await attempt(() => api('/settings/roles', { method: 'PUT', body: { matrix: m } }), 'Roles saved');
+    const m = now();
+    if (await attempt(() => api('/settings/roles', { method: 'PUT', body: { matrix: m } }), 'Roles saved')) roles(body, { ...data, roles: { ...data.roles, matrix: m } });
   });
 }
 
@@ -214,7 +303,7 @@ async function system(body) {
 
 // ——— Linked apps: one sign-in for Kendra and the FTR Credits Command Center ———
 const syncLine = (x) => (!x ? 'Not synced yet.' : x.ok ? `${ago(x.at)}: ${x.people} people in ${x.teams} teams · ${x.added} added, ${x.updated} changed${x.off ? `, ${x.off} turned off` : ''}` : `${ago(x.at)}: ${x.error}`);
-async function linked(body) {
+async function linkedPage(body) {
   const l = await api('/settings/link');
   const here = l.here || location.origin;
   body.innerHTML = `<div class="grid2">
@@ -241,7 +330,7 @@ async function linked(body) {
   tf.addEventListener('submit', async (e) => {
     e.preventDefault();
     const b = formData(tf);
-    if (await attempt(() => api('/settings/link', { method: 'PUT', body: { teams: Boolean(b.teams), domains: b.domains ?? '' } }), 'Saved')) linked(body);
+    if (await attempt(() => api('/settings/link', { method: 'PUT', body: { teams: Boolean(b.teams), domains: b.domains ?? '' } }), 'Saved')) linkedPage(body);
   });
   $('[data-act="sync"]', body).addEventListener('click', async (e) => {
     e.target.disabled = true;
@@ -249,7 +338,7 @@ async function linked(body) {
     const r = await attempt(() => api('/settings/link/sync', { method: 'POST' }));
     if (r) {
       toast(r.lastSync.ok ? 'Teams in step' : r.lastSync.error);
-      linked(body);
+      linkedPage(body);
     } else e.target.disabled = false;
   });
   const form = $('#linkForm', body);
@@ -259,7 +348,7 @@ async function linked(body) {
     if (r?.key) {
       $('#newKey', body).innerHTML = `<div class="notice-box"><b>The new shared key</b> (shown once): copy it into the FTR command center.<div class="row center" style="margin-top:6px"><input readonly class="mono" value="${esc(r.key)}" style="flex:1"><button type="button" class="btn sm" data-copy>Copy</button></div></div>`;
       $('[data-copy]', body).addEventListener('click', () => navigator.clipboard?.writeText(r.key).then(() => toast('Copied')));
-    } else if (r) linked(body);
+    } else if (r) linkedPage(body);
     return r;
   };
   form.addEventListener('submit', (e) => (e.preventDefault(), save()));
@@ -269,7 +358,7 @@ async function linked(body) {
   });
   $('[data-act="unlink"]', body)?.addEventListener('click', async () => {
     if (!(await ask('Unlink the FTR command center? Signing in to one no longer signs you in to the other.', { ok: 'Unlink', danger: true }))) return;
-    if (await attempt(() => api('/settings/link', { method: 'PUT', body: { remove: true } }), 'Unlinked')) linked(body);
+    if (await attempt(() => api('/settings/link', { method: 'PUT', body: { remove: true } }), 'Unlinked')) linkedPage(body);
   });
 }
 

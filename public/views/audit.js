@@ -11,20 +11,34 @@ export async function renderAudit(main, { crumbs }) {
   more = [];
   const q = query();
   const d = await api(`/audit?${q}`);
-  const filters = [ui.who ? ['who', d.people.find((p) => p.id === ui.who)?.name ?? 'One person'] : null, ui.from ? ['from', `From ${ui.from}`] : null, ui.to ? ['to', `To ${ui.to}`] : null, ui.writes && ui.kind === 'access' ? ['writes', 'Changes only'] : null, ui.errors && ui.kind === 'access' ? ['errors', 'Refused or failed'] : null].filter(Boolean);
   const chain = d.chain;
   main.innerHTML = `
-    <div class="page-head"><div class="grow"><h1>Audit</h1>
-      <div class="sub">${chain.ok ? `<span class="ok-t">✓ Intact</span> — ${chain.records.toLocaleString()} ${d.kind === 'access' ? 'requests' : 'changes'} chained since ${chain.from ? esc(when(chain.from)) : 'the start'}` : `<span class="bad-t">✕ The chain is broken at ${esc(chain.brokenAt ?? '?')}: ${esc(chain.reason ?? '')}</span>`}${d.keepDays ? ` · kept ${Math.round(d.keepDays / 365 * 10) / 10} years` : ' · kept for good'}</div></div>
-      <div class="actions"><a class="btn" href="/api/audit/export?${q}" download>Export CSV</a></div></div>
-    <div class="seg roll-pick" role="group" aria-label="Show" style="margin-bottom:12px"><button data-kind="changes" aria-pressed="${ui.kind !== 'access'}">Changes</button><button data-kind="access" aria-pressed="${ui.kind === 'access'}">Every request</button></div>
-    <div class="findbar">
-      <input type="search" id="aQ" placeholder="${ui.kind === 'access' ? 'Find a person, address, page, IP…' : 'Find a person, POV or change…'}" value="${esc(ui.q ?? '')}" aria-label="Find">
-      <button class="btn" data-act="filters">Filters${filters.length ? ` <span class="count-dot">${filters.length}</span>` : ''}</button>
-    </div>
-    ${filters.length ? `<div class="chips">${filters.map(([k, l]) => `<button class="chip-x" data-clear="${k}">${esc(l)}</button>`).join('')}</div>` : ''}
-    <section class="panel list-panel" id="aList">${rowsTable(d.records)}</section>
-    <div class="row center" style="margin-top:12px" id="aMore">${d.next ? `<button class="btn" data-next="${d.next}">Older</button>` : d.records.length ? '<span class="small muted">That is everything that matches.</span>' : ''}</div>`;
+    <div class="st-head"><h1>Audit log</h1><span class="st-sub">Every action, by everyone: sign-ins, changes to POVs, criteria, people, roles and settings, exports, updates and backups, and anything refused, with the reason. Newest first. Each entry is chained to the one before, so a changed or removed entry is found.</span></div>
+    <div class="row center" style="margin:-4px 0 14px;gap:10px;flex-wrap:wrap">
+      ${chain.ok ? `<span class="status on" title="${chain.records.toLocaleString()} entries since ${chain.from ? esc(when(chain.from)) : 'the start'}"><i></i>The log is intact · ${chain.records.toLocaleString()} ${d.kind === 'access' ? 'requests' : 'changes'}</span>` : `<span class="status off bad-t"><i></i>Broken at ${esc(chain.brokenAt ?? '?')}: ${esc(chain.reason ?? '')}</span>`}
+      <span class="small muted">${d.keepDays ? `kept ${Math.round((d.keepDays / 365) * 10) / 10} years` : 'kept for good'}</span>
+      <a class="btn" href="/api/audit/export?${q}" download>Export CSV</a></div>
+    <section class="panel st-panel">
+      <div class="st-filters" style="padding-top:16px">
+        <div class="seg" role="group" aria-label="Show"><button data-kind="changes" aria-pressed="${ui.kind !== 'access'}">Changes</button><button data-kind="access" aria-pressed="${ui.kind === 'access'}">Every request</button></div>
+        <input type="search" id="aQ" placeholder="${ui.kind === 'access' ? 'Search people, addresses, pages, IPs' : 'Search everything'}" value="${esc(ui.q ?? '')}" aria-label="Search">
+        <select id="aWho" aria-label="Who"><option value="">Everyone</option>${d.people.map((p) => `<option value="${esc(p.id)}" ${ui.who === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+        <label class="small muted">From <input type="date" id="aFrom" value="${esc(ui.from ?? '')}" style="width:auto"></label>
+        <label class="small muted">To <input type="date" id="aTo" value="${esc(ui.to ?? '')}" style="width:auto"></label>
+        ${ui.kind === 'access' ? `<select id="aOutcome" aria-label="Outcome"><option value="">All</option><option value="writes" ${ui.writes ? 'selected' : ''}>Changes only</option><option value="errors" ${ui.errors ? 'selected' : ''}>Refused or failed</option></select>` : ''}
+      </div>
+      <div id="aList">${rowsTable(d.records)}</div>
+      <div class="st-foot row center" id="aMore">${d.records.length} shown${d.next ? ` · <button class="btn sm" data-next="${d.next}">Older</button>` : d.records.length ? ' · that is everything that matches' : ''}</div></section>`;
+  const set = (k, v) => ((ui[k] = v), save(), document.dispatchEvent(new CustomEvent('cc:rerender')));
+  main.querySelector('#aWho').addEventListener('change', (e) => set('who', e.target.value));
+  main.querySelector('#aFrom').addEventListener('change', (e) => set('from', e.target.value));
+  main.querySelector('#aTo').addEventListener('change', (e) => set('to', e.target.value));
+  main.querySelector('#aOutcome')?.addEventListener('change', (e) => {
+    ui.writes = e.target.value === 'writes';
+    ui.errors = e.target.value === 'errors';
+    save();
+    document.dispatchEvent(new CustomEvent('cc:rerender'));
+  });
   wire(main, d);
 }
 
@@ -88,7 +102,7 @@ function wire(main, d) {
     all.push(...page.records);
     more = all;
     main.querySelector('#aList').innerHTML = rowsTable(all);
-    main.querySelector('#aMore').innerHTML = page.next ? `<button class="btn" data-next="${page.next}">Older</button>` : '<span class="small muted">That is everything that matches.</span>';
+    main.querySelector('#aMore').innerHTML = `${all.length} shown${page.next ? ` · <button class="btn sm" data-next="${page.next}">Older</button>` : ' · that is everything that matches'}`;
   });
   // A record in full, with its place in the chain.
   main.querySelector('#aList').addEventListener('click', (e) => {
@@ -105,7 +119,7 @@ function wire(main, d) {
       { onOpen: (dl) => dl.querySelector('[data-close]').addEventListener('click', () => closeDialog()) },
     );
   });
-  main.querySelector('[data-act="filters"]').addEventListener('click', () =>
+  main.querySelector('[data-act="filters"]')?.addEventListener('click', () =>
     openDialog(
       `<form class="dbody" id="aF"><h2>Filters</h2>
         <label class="field">Who<select name="who"><option value="">Everyone</option>${d.people.map((p) => `<option value="${esc(p.id)}" ${ui.who === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>

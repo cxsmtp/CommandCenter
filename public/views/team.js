@@ -31,7 +31,7 @@ export async function renderTeam(main, { crumbs }) {
 
 const countBelow = (n) => (n.reports ?? []).reduce((k, r) => k + 1 + countBelow(r), 0);
 
-function editUser(u) {
+export function editUser(u) {
   const roles = Object.entries(state.meta.roles).filter(([k]) => k !== 'admin' || state.session.user.role === 'admin');
   return openDialog(
     `<form id="userForm"><h2>${u ? `Edit ${esc(u.name)}` : 'Add a person'}</h2>
