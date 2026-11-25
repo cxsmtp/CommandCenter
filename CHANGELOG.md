@@ -2,6 +2,16 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.78 · 2026-11-25
+
+**Portfolio, sleek: quiet rows under column heads, one colour for what needs attention**
+
+- The list has column heads (customer, stage, criteria, dates, what is going on, outlook);
+  rows are shorter, so a dozen POVs fit on one screen.
+- Colour only where it matters: a small dot and red text for what needs you; warnings in
+  plain text; criteria as a thin progress bar; the outlook score as a soft pill.
+- The three counts at the top are compact pills; nothing runs past the window's width.
+
 ## 1.0.77 · 2026-11-25
 
 **Staging and production, as in the FTR command center**

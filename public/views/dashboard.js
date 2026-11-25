@@ -105,19 +105,28 @@ function datesLine(r) {
   const bits = [];
   if (lic?.end) bits.push(`<span title="Tenant licence ${lic.start ? `${day(lic.start)} – ` : 'until '}${day(lic.end)}" class="${r.endDate && lic.end < String(r.endDate).slice(0, 10) ? 'warn-t' : ''}">tenant to ${shortDay(lic.end)}</span>`);
   if (r.closeDate) bits.push(`<span title="${r.closeFrom === 'report' ? 'Salesforce close date, from the report' : 'Salesforce close date, as typed'}" class="${r.stage === 'pov' && r.endDate && r.closeDate < r.endDate ? 'warn-t' : ''}">closes ${shortDay(r.closeDate)}</span>`);
-  return bits.length ? `<span class="small muted dates">${bits.join(' · ')}</span>` : '';
+  return bits.length ? bits.join('') : '';
 }
 function rowsHtml(rows) {
-  return `<div class="povs">${rows
+  const stageText = (r) => esc(r.stage === 'pov' ? 'POV' : state.meta.stages[r.stage] ?? r.stage);
+  const days = (r) => {
+    if (r.stage !== 'pov' || r.daysLeft === null || r.daysLeft === undefined) return '';
+    const d = r.daysLeft;
+    return `<span class="${d < 0 ? 'bad-t' : d <= 7 ? 'warn-t' : 'muted'}">${d < 0 ? `${-d} d over` : d === 0 ? 'ends today' : `${d} d left`}</span>`;
+  };
+  return `<div class="povs pv2"><div class="pv-head" aria-hidden="true"><span></span><span>Customer</span><span>Stage</span><span>Criteria</span><span>Dates</span><span>What is going on</span><span class="r">Outlook</span></div>${rows
     .map((r) => {
       const [tone, text] = why(r);
       const score = r.prediction?.score;
       const scoreTone = score === null || score === undefined ? '' : score >= 70 ? 'ok' : score >= 40 ? 'warn' : 'bad';
       const p = r.progress;
+      const pct = p.total ? Math.round((100 * p.met) / p.total) : 0;
       return `<a class="pov${ui.open === r.id ? ' selected' : ''}" href="${wide() ? `#/dashboard?open=${esc(r.id)}` : `#/opp/${esc(r.id)}`}">
-        <span class="bar ${tone || (scoreTone === 'ok' ? 'ok' : '')}"></span>
+        <span class="dot ${tone}" aria-hidden="true"></span>
         <span class="who"><b>${esc(r.customer)}</b><span>${esc([r.owner.name, r.tenant ? r.tenant.tenant : r.stage === 'pov' ? 'no tenant yet' : ''].filter(Boolean).join(' · '))}</span></span>
-        <span class="stage">${stageBadge(r.stage)}${daysBadge(r)}${p.total ? `<span class="small muted">${p.met}/${p.total} criteria</span>` : ''}${datesLine(r)}</span>
+        <span class="stg"><span>${stageText(r)}${days(r) ? ` · ${days(r)}` : ''}</span></span>
+        <span class="crit">${p.total ? `<span class="meter" title="${p.met} of ${p.total} criteria met"><i style="width:${pct}%"></i></span><span class="n">${p.met}/${p.total}</span>` : '<span class="muted">—</span>'}</span>
+        <span class="dts">${datesLine(r) || '<span class="muted">—</span>'}</span>
         <span class="why ${tone}">${esc(text)}</span>
         ${score === null || score === undefined ? '<span></span>' : `<span class="score ${scoreTone}" title="Outlook: ${esc(r.prediction?.label ?? '')}">${score}</span>`}
       </a>`;
