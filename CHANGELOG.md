@@ -2,6 +2,15 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.74 · 2026-11-25
+
+**Portfolio: the tenant's licence start and end dates**
+
+Read from the access token's ast-license claim (activation and expiration dates) with every
+tenant read. Two new Portfolio columns, Tenant start and Tenant end, with the days left; amber
+within 14 days or when the licence ends before the POV does. The POV's own dates are now
+POV start and POV end. New default columns also appear for people who chose their columns.
+
 ## 1.0.73 · 2026-11-25
 
 **Linked sign-in: no temporary-password prompt for someone the FTR command center vouched for**

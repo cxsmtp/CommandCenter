@@ -117,17 +117,26 @@ function rowsHtml(rows) {
 }
 // ——— The table view: a heading for every column, sorted by a click, filtered column by column, exported ———
 const n0 = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+/** The tenant's licence end, with the days left: amber within 14 days, ended in grey. */
+function tenantEnd(end, povEnd) {
+  if (!end) return '—';
+  const left = Math.ceil((Date.parse(`${end}T23:59:59Z`) - Date.now()) / 86400000);
+  const early = left >= 0 && povEnd && end < String(povEnd).slice(0, 10);
+  return `<span${early ? ' class="warn-t" title="The tenant’s licence ends before the POV does: extend it"' : ''}>${day(end)}</span> <span class="small ${left < 0 ? 'muted' : left <= 14 || early ? 'warn-t' : 'muted'}">${left < 0 ? 'ended' : `${left}d`}${early ? ' · before POV end' : ''}</span>`;
+}
 const COLS = [
   { key: 'customer', label: 'Customer', on: true, filter: 'text', v: (r) => r.customer, html: (r) => `<b>${esc(r.customer)}</b>${r.name && r.name !== r.customer ? `<div class="small muted">${esc(r.name)}</div>` : ''}` },
   { key: 'se', label: 'SE', on: true, filter: 'select', v: (r) => r.owner.name },
   { key: 'manager', label: 'Manager', on: false, filter: 'select', v: (r) => r.managers?.[0]?.name ?? '' },
   { key: 'region', label: 'Region', on: true, filter: 'select', v: (r) => r.region || '' },
   { key: 'stage', label: 'Stage', on: true, filter: 'select', v: (r) => state.meta.stages[r.stage] ?? r.stage, html: (r) => stageBadge(r.stage) },
-  { key: 'start', label: 'Start', on: false, filter: 'text', v: (r) => r.startDate || '', html: (r) => (r.startDate ? day(r.startDate) : '—') },
-  { key: 'end', label: 'End', on: true, filter: 'text', v: (r) => r.endDate || '', html: (r) => (r.endDate ? day(r.endDate) : '—') },
+  { key: 'start', label: 'POV start', on: false, filter: 'text', v: (r) => r.startDate || '', html: (r) => (r.startDate ? day(r.startDate) : '—') },
+  { key: 'end', label: 'POV end', on: true, filter: 'text', v: (r) => r.endDate || '', html: (r) => (r.endDate ? day(r.endDate) : '—') },
   { key: 'days', label: 'Days left', on: true, num: true, filter: 'num', v: (r) => (['pov', 'technical', 'discovery', 'first_call'].includes(r.stage) ? r.daysLeft : null), html: (r) => (['pov', 'technical', 'discovery', 'first_call'].includes(r.stage) && r.daysLeft !== null ? `<span class="${r.daysLeft < 0 ? 'bad-t' : r.daysLeft <= 7 ? 'warn-t' : ''}">${r.daysLeft}</span>` : '—') },
   { key: 'criteria', label: 'Criteria met', on: true, num: true, filter: 'num', v: (r) => (r.progress.total ? Math.round((100 * r.progress.met) / r.progress.total) : null), html: (r) => (r.progress.total ? `${r.progress.met}/${r.progress.total} <span class="small muted">${Math.round((100 * r.progress.met) / r.progress.total)}%</span>` : '—') },
   { key: 'must', label: 'Must-haves', on: true, num: true, filter: 'num', v: (r) => (r.progress.must ? r.progress.mustMet : null), html: (r) => (r.progress.must ? `<span class="${r.progress.mustMet === r.progress.must ? 'ok-t' : ''}">${r.progress.mustMet}/${r.progress.must}</span>` : '—') },
+  { key: 'tStart', label: 'Tenant start', on: true, filter: 'text', v: (r) => r.live?.summary?.license?.start ?? '', html: (r) => (r.live?.summary?.license?.start ? day(r.live.summary.license.start) : '—') },
+  { key: 'tEnd', label: 'Tenant end', on: true, filter: 'text', v: (r) => r.live?.summary?.license?.end ?? '', html: (r) => tenantEnd(r.live?.summary?.license?.end, r.endDate) },
   { key: 'tenant', label: 'Tenant', on: true, filter: 'text', v: (r) => r.tenant?.tenant ?? '', html: (r) => (r.tenant ? esc(r.tenant.tenant) : r.stage === 'pov' ? '<span class="warn-t">not connected</span>' : '—') },
   { key: 'scans', label: 'Scans 7d', on: true, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.scans7d) },
   { key: 'critical', label: 'Critical', on: true, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.findings?.critical) },
@@ -143,6 +152,16 @@ const COLS = [
   { key: 'amount', label: 'Amount', on: false, num: true, filter: 'num', v: (r) => n0(r.sf?.amount ?? r.amount) },
   { key: 'note', label: 'Last note', on: false, filter: 'text', v: (r) => r.lastNoteAt ?? '', html: (r) => (r.lastNoteAt ? ago(r.lastNoteAt) : '—') },
 ];
+// A column added since someone chose theirs is shown when it is on by default (they can hide it again).
+if (ui.cols) {
+  const known = new Set(ui.colsKnown ?? ui.cols);
+  const added = COLS.filter((c) => c.on && !known.has(c.key)).map((c) => c.key);
+  if (added.length || !ui.colsKnown) {
+    ui.cols = COLS.map((c) => c.key).filter((k) => ui.cols.includes(k) || added.includes(k));
+    ui.colsKnown = COLS.map((c) => c.key);
+    local.set('cc.dash', ui);
+  }
+}
 const shownCols = () => COLS.filter((c) => (ui.cols ? ui.cols.includes(c.key) : c.on));
 /** "> 5", "<10", "=0" or plain text: what a filter box asks for. */
 function passes(col, r, want) {
@@ -232,6 +251,7 @@ function wireTable(main, rows) {
           form.addEventListener('submit', (e) => {
             e.preventDefault();
             ui.cols = ['customer', ...COLS.filter((c) => c.key !== 'customer' && form[c.key].checked).map((c) => c.key)];
+            ui.colsKnown = COLS.map((c) => c.key);
             save();
             closeDialog();
             rerender();

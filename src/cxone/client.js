@@ -57,6 +57,36 @@ export function networkReason(error) {
   return known[code] || [code, error?.cause?.message || error?.message].filter(Boolean).join(': ') || 'network error';
 }
 
+/** A date Checkmarx One gives as epoch seconds, epoch milliseconds or text: as YYYY-MM-DD, or null. */
+const dayOf = (v) => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' || /^\d+$/.test(String(v)) ? Number(v) : NaN;
+  const t = Number.isFinite(n) ? (n < 1e11 ? n * 1000 : n) : Date.parse(String(v));
+  return Number.isFinite(t) && t > 0 ? new Date(t).toISOString().slice(0, 10) : null;
+};
+/**
+ * The tenant's licence, from the access token's `ast-license` claim: when it started and when it ends, whether it is
+ * active, and its engines. Null when the token carries none.
+ */
+export function licenseOf(claims) {
+  let raw = claims?.['ast-license'] ?? claims?.astLicense ?? null;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw.LicenseData ?? raw.licenseData ?? raw;
+  const pick = (...names) => names.map((n) => data[n] ?? raw[n]).find((v) => v !== undefined && v !== null && v !== '');
+  const start = dayOf(pick('activationDate', 'ActivationDate', 'startDate', 'StartDate'));
+  const end = dayOf(pick('expirationDate', 'ExpirationDate', 'endDate', 'EndDate'));
+  if (!start && !end) return null;
+  const engines = pick('allowedEngines', 'AllowedEngines');
+  return { start, end, active: raw.IsActive ?? raw.isActive ?? null, engines: Array.isArray(engines) ? engines.map(String).slice(0, 30) : [] };
+}
+
 export class CxClient {
   #connection;
   #tokens;
@@ -77,9 +107,9 @@ export class CxClient {
     try {
       const token = await this.#tokens.getToken();
       const claims = JSON.parse(Buffer.from(String(token).split('.')[1] ?? '', 'base64url').toString('utf8'));
-      return { user: claims.preferred_username || claims.email || claims.name || claims.sub || '', email: claims.email || '' };
+      return { user: claims.preferred_username || claims.email || claims.name || claims.sub || '', email: claims.email || '', license: licenseOf(claims) };
     } catch {
-      return { user: '', email: '' };
+      return { user: '', email: '', license: null };
     }
   }
 

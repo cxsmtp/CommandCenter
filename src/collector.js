@@ -653,6 +653,8 @@ export function summarize(snapshot, previous = null, now = Date.now()) {
     credits: snapshot.credits ? { available: snapshot.credits.available, total: snapshot.credits.total, used: snapshot.credits.used, used30d: snapshot.credits.used30d, actions: snapshot.credits.actions, state: snapshot.credits.state } : null,
     ai: snapshot.ai ?? null,
     aspm: snapshot.aspm ?? null,
+    // The tenant's licence dates (from the access token): when it started and when it ends.
+    license: snapshot.identity?.license ?? null,
     users: (() => {
       const p = peopleActivity(snapshot, now);
       return { iamRead: p.iamRead, eventsKnown: p.eventsKnown, total: p.total, active: p.active, quiet: p.quiet, inactive: p.inactive, top: p.users.slice(0, 3).map((u) => ({ name: u.name || u.email || u.username, status: u.status })) };
