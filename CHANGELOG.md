@@ -2,6 +2,19 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.81 · 2026-11-25
+
+**Settings like the FTR command center: Updates and HTTPS**
+
+- Updates: Update & recovery as three cards (running, latest published, auto-update), the
+  installation marked Not marked / Staging / Production with a switch, software integrity,
+  then the actions; saved as you change them.
+- HTTPS & network: how the server is reached and the certificate it presents (whom for,
+  issuer, valid until, names); an Admin uploads a certificate and its key (PEM, checked that
+  they belong together and are in date), used at once without a restart, or goes back to the
+  self-signed one.
+- Tables and older panels in Settings take the same headings.
+
 ## 1.0.80 · 2026-11-25
 
 **Settings like the FTR command center: General, Branding, Email, Sign-in, Get help**

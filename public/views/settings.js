@@ -473,11 +473,41 @@ async function linkedPage(body) {
 // ——— Security & sign-in ———
 
 // ——— Network & certificates ———
+// ——— HTTPS: how the server is reached and the certificate it presents (as in the FTR command center) ———
+async function httpsPanels(el) {
+  const h = await api('/settings/https');
+  const c = h.cert;
+  const days = c?.validTo ? Math.ceil((Date.parse(c.validTo) - Date.now()) / 86400000) : null;
+  el.innerHTML = `<div class="grid2" style="margin-bottom:16px">
+    <section class="panel st-panel"><div class="st-ph"><h2>How the server is reached</h2><span class="st-aside"><span class="status ${h.mode === 'https' ? 'on' : 'off'}"><i></i>${h.mode === 'https' ? 'HTTPS, by Kendra' : 'HTTP only'}</span></span></div>
+      <p class="st-note">${h.mode === 'https' ? `Kendra answers HTTPS itself on port ${h.port} (HTTPS=on, the container image’s default). Plain http to the same port is sent to https.` : `Kendra answers plain http on port ${h.port}: right behind a reverse proxy or load balancer that does HTTPS. Without one, start it with HTTPS=on (the container image does) so passwords never cross the network in clear.`} You are viewing this page over <b>${esc(h.viewedOver)}</b>.${h.publicUrl ? ` People use <span class="mono">${esc(h.publicUrl)}</span>.` : ' <span class="warn-t">CC_PUBLIC_URL is not set</span>: links in emails need it.'}</p></section>
+    <section class="panel st-panel"><div class="st-ph"><h2>Certificate in use</h2>${c ? `<span class="st-aside"><span class="status ${c.selfSigned ? 'warn' : 'on'}"><i></i>${c.selfSigned ? 'Self-signed' : 'Trusted chain'}</span></span>` : ''}</div>
+      ${c ? `<dl class="st-kv"><dt>For</dt><dd>${esc(c.subject)}</dd>${c.issuer ? `<dt>Issued by</dt><dd>${esc(c.issuer)}</dd>` : ''}${c.validTo ? `<dt>Valid until</dt><dd class="${days < 30 ? 'warn-t' : ''}">${esc(day(c.validTo))} · ${days} days</dd>` : ''}${c.names ? `<dt>Names</dt><dd class="small">${esc(c.names)}</dd>` : ''}</dl>` : `<p class="st-note">${h.mode === 'https' ? 'The certificate could not be read.' : 'No certificate in use (HTTP only).'}</p>`}
+      ${h.envCert ? '<p class="st-note">From TLS_CERT_FILE / TLS_PFX_FILE: renewed by replacing those files (taken within a minute, no restart).</p>' : `<form id="certForm" class="st-form"><b>Upload your certificate</b>
+        <label class="field">Certificate <span class="small muted">PEM, with its chain after it</span><textarea name="cert" rows="3" placeholder="-----BEGIN CERTIFICATE-----" spellcheck="false"></textarea></label>
+        <label class="field">Private key <span class="small muted">PEM</span><textarea name="key" rows="3" placeholder="-----BEGIN PRIVATE KEY-----" spellcheck="false"></textarea></label>
+        <label class="field">Key passphrase <span class="small muted">if any</span><input type="password" name="passphrase" autocomplete="off"></label>
+        <div class="row"><button class="btn primary">Check and put to use</button>${h.uploaded ? '<button type="button" class="btn ghost" data-act="cert-rm">Use the self-signed one again</button>' : ''}</div></form>`}
+      <div style="height:8px"></div></section></div>`;
+  el.querySelector('#certForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = formData(e.target);
+    const r = await attempt(() => api('/settings/https/certificate', { method: 'POST', body: b }));
+    if (r) {
+      toast(r.live ? 'In use now' : 'Kept: in use from the next start with HTTPS on');
+      httpsPanels(el);
+    }
+  });
+  el.querySelector('[data-act="cert-rm"]')?.addEventListener('click', async () => {
+    if (await attempt(() => api('/settings/https/certificate', { method: 'DELETE' }), 'Back to the self-signed certificate')) httpsPanels(el);
+  });
+}
+
 async function network(body) {
   const n = await api('/settings/network');
   const net = n.network;
   const sheet = n.allowlist.map((a) => `${a.direction === 'in' ? 'IN ' : 'OUT'}  ${a.host}:${a.port}  ${a.why}`).join('\n');
-  body.innerHTML = `<div class="stack">
+  body.innerHTML = `<div id="httpsBox"></div><div class="stack">
     ${n.restartNeeded ? `<section class="panel notice warn"><div class="body row center"><div style="flex:1"><b>Restart to apply</b><div class="small muted">The proxy or the trusted certificates changed: they take effect when the server restarts (a few seconds).</div></div>${n.launched ? '<button class="btn primary" data-act="restart">Restart now</button>' : '<span class="small muted">Restart the container to apply.</span>'}</div></section>` : ''}
     <div class="grid2">
     <section class="panel"><div class="head"><h3>Company proxy</h3>${net.proxy ? (net.active ? '<span class="badge ok">In use</span>' : '<span class="badge warn">Saved, applies at the next restart</span>') : net.active ? '<span class="badge">From the server’s environment</span>' : '<span class="badge">None</span>'}</div>
@@ -496,6 +526,7 @@ async function network(body) {
       <div class="body small muted" style="padding-bottom:0">For the network team: every connection this server makes, from its own settings and the tenants it reads.</div>
       <div class="table-wrap sheet"><table><thead><tr><th>Direction</th><th>Host</th><th class="n">Port</th><th>Why</th></tr></thead><tbody>${n.allowlist.map((a) => `<tr><td>${a.direction === 'in' ? 'In' : 'Out'}</td><td class="mono">${esc(a.host)}</td><td class="n">${esc(a.port)}</td><td>${esc(a.why)}</td></tr>`).join('')}</tbody></table></div></section>
 </div>`;
+  httpsPanels($('#httpsBox', body));
   const again = () => network(body);
   const restart = async () => (await attempt(() => api('/system/restart', { method: 'POST', body: {} }), 'Restarting')) && setTimeout(() => location.reload(), 6000);
   $('[data-act="restart"]', body)?.addEventListener('click', restart);
@@ -537,27 +568,24 @@ async function updates(body) {
   const shown = Number(body.dataset.more || 10);
   const notes = (t) => esc(String(t || '').replace(/\r/g, '').trim()).replace(/\n{2,}/g, '</p><p>').replace(/\n- /g, '<br>• ').replace(/\n/g, ' ');
   body.innerHTML = `<div class="stack">
-    <section class="panel sys-head ${u.updateAvailable ? 'warn' : 'ok'}"><div class="body row center" style="gap:14px;flex-wrap:wrap">
-      <span class="sys-dot ${u.updateAvailable ? 'warn' : 'ok'}"></span>
-      <div style="flex:1;min-width:240px"><h3 style="margin:0">Running <span class="mono">${esc(u.current)}</span>${u.updateAvailable ? ` · <span class="accent-t">${esc(u.available[0].version)} available</span>` : u.checkError ? ' · <span class="warn-t">could not check</span>' : ' · up to date'}</h3>
-        <div class="small muted">${u.lastCheck ? `Last checked ${esc(ago(u.lastCheck))}` : 'Not checked yet'}${u.checkError ? ` · ${esc(u.checkError)}` : ''}${u.signed ? ' · releases must be signed' : ''}</div></div>
-      <button class="btn" data-act="check">Check now</button>${u.updateAvailable && u.launched ? `<button class="btn primary" data-install="${esc(u.available[0].version)}">Install ${esc(u.available[0].version)}</button>` : ''}</div></section>
-    ${u.lastFailure ? `<section class="panel notice bad" style="display:flex;align-items:center"><div class="body"><b>${esc(u.lastFailure.version)} did not start</b> and the server went back by itself; it is never installed by itself again.<div class="small muted">${esc(u.lastFailure.message ?? '')}</div></div><button class="btn sm ghost" data-act="dismiss-failure" style="margin:0 16px 0 auto">Dismiss</button></section>` : ''}
-    <div class="grid2">
-      <section class="panel"><div class="head"><h3>Keep up to date</h3></div><div class="body stack" style="gap:10px">
-        <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''}> Install new versions by itself, checking every <select id="autoEvery">${[5, 10, 15, 30, 60, 240, 1440].map((m) => `<option value="${m}" ${u.auto.everyMinutes === m ? 'selected' : ''}>${m < 60 ? `${m} minutes` : m === 60 ? 'hour' : m === 1440 ? 'day' : `${m / 60} hours`}</option>`).join('')}</select></label>
-        <label class="field" style="max-width:460px">This installation is<select id="autoStage"><option value="" ${!u.stage ? 'selected' : ''}>Not marked (takes released versions)</option><option value="staging" ${u.stage === 'staging' ? 'selected' : ''}>Staging: also takes candidates, to try them first</option><option value="production" ${u.stage === 'production' ? 'selected' : ''}>Production: only promoted releases</option></select></label>
-        ${u.candidates?.length ? `<p class="small muted" style="margin:0">Candidate${u.candidates.length === 1 ? '' : 's'} ${u.candidates.map(esc).join(', ')} wait${u.candidates.length === 1 ? 's' : ''} for promotion (they run on Staging first).</p>` : ''}
-        <p class="small muted" style="margin:0">A checked backup is taken first; people see a pause of a few seconds. A version that does not start is rolled back by itself and never tried again.${u.heldBack ? ` Held back: ${esc(u.heldBack)} and older (you went back from it).` : ''}</p>
-        ${u.launched ? '' : '<p class="small warn-t" style="margin:0">This server was not started by the launcher (the container image or npm start), so it cannot update itself.</p>'}
-        <div class="row">${u.previous && u.launched ? `<button class="btn ghost" data-act="rollback">Go back to ${esc(u.previous)}</button>` : ''}${u.launched ? '<button class="btn ghost" data-act="restart">Restart the server</button>' : ''}<a class="btn ghost" href="/api/system/report" download>Troubleshooting report</a></div>
-      </div></section>
-      <section class="panel"><div class="head"><h3>Software integrity</h3><span class="badge ${tone}">${i?.checked ? (i.ok ? 'Genuine' : 'Files changed') : 'Image version'}</span></div><div class="body stack" style="gap:10px">
-        <p style="margin:0">${i?.checked ? (i.ok ? `Every file of ${esc(u.current)} matches what was installed.` : `${i.changed.length} file${i.changed.length === 1 ? '' : 's'} changed since it was installed: <span class="mono small">${esc(i.changed.slice(0, 6).join(', '))}</span>`) : `${esc(u.current)} is the container image’s own version; its files were checked when the image was built.`}</p>
-        <p class="small muted" style="margin:0">Each installed version keeps a fingerprint of its files: they are checked before it starts, every 6 hours and when you ask; the Admins are emailed if one changes.${i?.at ? ` Last checked ${esc(ago(i.at))}.` : ''}</p>
-        <div class="row"><button class="btn sm" data-act="integrity">Check now</button></div>
-      </div></section>
-    </div>
+    ${SAVES}
+    <section class="panel st-panel"><div class="st-ph"><h2>Update &amp; recovery</h2></div>
+      <div class="st-stats">
+        <div class="st-stat"><span>Running</span><b class="mono">${esc(u.current)}</b><small>${installed.has(u.current) ? 'Installed by the launcher' : 'Built into this server'}${u.signed ? ' · releases must be signed' : ''}</small></div>
+        <div class="st-stat"><span>Latest published</span><b class="mono">${esc(u.available?.[0]?.version ?? '—')}</b><small>${u.updateAvailable ? `<span class="accent-t">Newer than this one</span>` : u.checkError ? `<span class="warn-t">Could not check: ${esc(u.checkError)}</span>` : 'Up to date'} · ${u.lastCheck ? `checked ${esc(ago(u.lastCheck))}` : 'not checked yet'}</small></div>
+        <div class="st-stat"><span>Auto-update</span><b class="${u.auto.enabled ? 'ok-t' : 'muted'}" style="font-size:17px">${u.auto.enabled ? 'Always on the newest' : 'Off: install by hand'}</b>
+          <label class="small"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''}> On, checking every <select id="autoEvery" style="width:auto;padding:2px 6px">${[5, 10, 15, 30, 60, 240, 1440].map((m) => `<option value="${m}" ${u.auto.everyMinutes === m ? 'selected' : ''}>${m < 60 ? `${m} min` : m === 60 ? 'hour' : m === 1440 ? 'day' : `${m / 60} h`}</option>`).join('')}</select></label>
+          <small>A checked backup first; a version that fails to start is rolled back and never installed again by itself.</small></div>
+      </div>
+      <div class="st-box"><div class="row center" style="gap:14px;flex-wrap:wrap"><b>This installation is</b>
+        <div class="seg st-seg" id="stageSeg">${[['', 'Not marked'], ['staging', 'Staging'], ['production', 'Production']].map(([v, l]) => `<label><input type="radio" name="stage" value="${v}" ${(u.stage ?? '') === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></div>
+        <p class="small muted" style="margin:8px 0 0">Not marked: it takes every published release, as it always has. Mark it <b>Staging</b> to try candidate releases first; mark the one people work on <b>Production</b>: it takes a version only once it is promoted.${u.candidates?.length ? ` Waiting for promotion: ${u.candidates.map(esc).join(', ')}.` : ''}${u.heldBack ? ` Held back: ${esc(u.heldBack)} and older (you went back from it).` : ''}</p></div>
+      <div class="st-box"><div class="row center" style="gap:10px"><b>Software integrity</b><span class="status ${i?.checked && !i.ok ? 'off bad-t' : 'on'}"><i></i>${i?.checked ? (i.ok ? 'Genuine' : 'Files changed') : 'Image version'}</span><span class="spacer"></span><button class="btn sm" data-act="integrity">Check now</button></div>
+        <p class="small" style="margin:8px 0 0">${i?.checked ? (i.ok ? `Every file of ${esc(u.current)} matches what was installed.` : `${i.changed.length} file${i.changed.length === 1 ? '' : 's'} changed since it was installed: <span class="mono small">${esc(i.changed.slice(0, 6).join(', '))}</span>`) : `${esc(u.current)} is the container image’s own version; its files were checked when the image was built.`} <span class="muted">Checked before it starts, every 6 hours and when you ask${i?.at ? `; last ${esc(ago(i.at))}` : ''}.</span></p></div>
+      ${u.lastFailure ? `<div class="st-warn st-box-m" style="display:flex;align-items:center;gap:12px"><div><b>${esc(u.lastFailure.version)} did not start</b> and the server went back by itself; it is never installed by itself again.<div class="small muted">${esc(u.lastFailure.message ?? '')}</div></div><button class="btn sm ghost" data-act="dismiss-failure" style="margin-left:auto">Dismiss</button></div>` : ''}
+      ${u.launched ? '' : '<div class="st-warn st-box-m">Not started by the launcher (npm start / the container’s command), so versions can be installed but not switched to from here.</div>'}
+      <div class="row st-box-m" style="gap:8px;flex-wrap:wrap;padding-bottom:16px"><button class="btn primary" data-act="check">Check for updates</button>${u.updateAvailable && u.launched ? `<button class="btn primary" data-install="${esc(u.available[0].version)}">Install ${esc(u.available[0].version)}</button>` : ''}${u.previous && u.launched ? `<button class="btn" data-act="rollback">Go back to ${esc(u.previous)}</button>` : ''}${u.launched ? '<button class="btn" data-act="restart">Restart the server</button>' : ''}<a class="btn" href="/api/system/report" download>Download troubleshooting report</a></div>
+    </section>
     <section class="panel"><div class="head"><h3>Versions</h3><span class="small muted">every release, newest first</span></div>
       <div class="versions">${(u.available ?? []).slice(0, shown).map((r) => `<details class="version${r.version === u.current ? ' current' : ''}"><summary><span class="mono"><b>${esc(r.version)}</b></span>${r.version === u.current ? '<span class="badge ok">Running</span>' : r.newer ? '<span class="badge accent">Newer</span>' : installed.has(r.version) ? '<span class="badge">Installed</span>' : ''}${(u.failed ?? []).includes(r.version) ? '<span class="badge bad">Did not start</span>' : ''}<span class="v-title">${esc(String(r.notes || r.name || '').split('\n')[0].slice(0, 120))}</span><span class="small muted">${r.publishedAt ? esc(when(r.publishedAt)) : ''}</span>
           ${u.launched && r.version !== u.current ? `<button class="btn sm${r.newer ? ' primary' : ' ghost'}" data-install="${esc(r.version)}">${r.newer ? 'Install' : 'Switch to it'}</button>` : '<span></span>'}</summary>
@@ -576,10 +604,11 @@ async function updates(body) {
     again();
   });
   $('[data-act="more"]', body)?.addEventListener('click', () => ((body.dataset.more = String(shown + 10)), again()));
-  const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, everyMinutes: Number($('#autoEvery').value), stage: $('#autoStage').value } }), 'Saved');
+  const stageNow = () => body.querySelector('input[name="stage"]:checked')?.value ?? '';
+  const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, everyMinutes: Number($('#autoEvery').value), stage: stageNow() } }), 'Saved');
   $('#autoOn', body).addEventListener('change', saveAuto);
   $('#autoEvery', body).addEventListener('change', saveAuto);
-  $('#autoStage', body).addEventListener('change', async () => (await saveAuto()) && again());
+  for (const r of body.querySelectorAll('input[name="stage"]')) r.addEventListener('change', async () => (await saveAuto()) && again());
   for (const b of $$('[data-install]', body))
     b.addEventListener('click', async (e) => {
       e.preventDefault();

@@ -6,7 +6,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
-import { startMode, tlsOptions } from './tls.js';
+import { startMode, tlsOptions, certificateInfo, saveUploaded, removeUploaded } from './tls.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1018,6 +1018,33 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const u = users.approveJoined(parts[1], user.name);
       audit.record(user, 'people', `Approved ${u.name}, who joined by themselves`);
       return send(res, 200, { user: u });
+    }
+    // ——— HTTPS (Settings → HTTPS & network): how the server is reached, and the certificate it presents ———
+    if (route === 'GET /settings/https') {
+      need(user, 'settings.manage');
+      const envCert = Boolean(process.env.TLS_CERT_FILE || process.env.TLS_PFX_FILE);
+      let info = null;
+      try {
+        info = cert ? (cert.load().cert ? certificateInfo(cert.load().cert) : { subject: 'the .pfx certificate' }) : null;
+      } catch {}
+      return send(res, 200, { mode: cert ? 'https' : 'http', viewedOver: req.socket.encrypted ? 'https' : 'http', envCert, uploaded: fs.existsSync(path.join(dataDir, 'tls', 'uploaded.crt')), cert: info, publicUrl: process.env.CC_PUBLIC_URL || '', port: Number(process.env.PORT) || 4310 });
+    }
+    if (route === 'POST /settings/https/certificate' || route === 'DELETE /settings/https/certificate') {
+      need(user, 'settings.manage');
+      if (process.env.TLS_CERT_FILE || process.env.TLS_PFX_FILE) throw fail(409, 'This server takes its certificate from TLS_CERT_FILE / TLS_PFX_FILE: change those files instead.');
+      let info = null;
+      if (m === 'POST') info = saveUploaded(dataDir, await readBody(req));
+      else removeUploaded(dataDir);
+      // In use at once when this server does HTTPS itself; otherwise from its next start with HTTPS on.
+      let live = false;
+      if (cert && tlsServer) {
+        const next = tlsOptions(dataDir);
+        tlsServer.setSecureContext({ ...next.load(), minVersion: 'TLSv1.2' });
+        Object.assign(cert, { load: next.load, files: next.files, selfSigned: next.selfSigned });
+        live = true;
+      }
+      audit.record(user, 'settings', m === 'POST' ? `Put a certificate to use: ${info.subject}, until ${info.validTo.slice(0, 10)}` : 'Removed the uploaded certificate (back to the self-signed one)');
+      return send(res, 200, { cert: info, live });
     }
     if (route === 'GET /settings/link') {
       need(user, 'settings.manage');

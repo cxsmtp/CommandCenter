@@ -41,6 +41,12 @@ export function tlsOptions(dataDir, env = process.env) {
   } else if (pfxFile) {
     files = [pfxFile];
     load = () => ({ pfx: fs.readFileSync(pfxFile), passphrase: env.TLS_PFX_PASSPHRASE || undefined });
+  } else if (fs.existsSync(path.join(dataDir, 'tls', 'uploaded.crt')) && fs.existsSync(path.join(dataDir, 'tls', 'uploaded.key'))) {
+    // The certificate an Admin put to use in Settings → HTTPS & network.
+    const crt = path.join(dataDir, 'tls', 'uploaded.crt');
+    const k = path.join(dataDir, 'tls', 'uploaded.key');
+    files = [crt, k];
+    load = () => ({ cert: fs.readFileSync(crt), key: fs.readFileSync(k) });
   } else {
     const made = ensureSelfSigned(path.join(dataDir, 'tls'), selfSignedNames(env));
     files = [made.cert, made.key];
@@ -196,4 +202,43 @@ function ipBytes(ip) {
   const t = groups(tail);
   const all = [...h, ...Array(8 - h.length - t.length).fill('0'), ...t];
   return Buffer.from(all.flatMap((g) => [parseInt(g, 16) >> 8, parseInt(g, 16) & 0xff]));
+}
+
+/** What a PEM certificate says: whom it is for, who issued it, until when, its names, and whether it signed itself. */
+export function certificateInfo(certPem) {
+  const pem = String(certPem ?? '').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)?.[0];
+  if (!pem) return null;
+  const c = new X509Certificate(pem);
+  return { subject: c.subject.replace(/\n/g, ', '), issuer: c.issuer.replace(/\n/g, ', '), validFrom: new Date(c.validFrom).toISOString(), validTo: new Date(c.validTo).toISOString(), names: c.subjectAltName ?? '', selfSigned: c.subject === c.issuer, fingerprint: c.fingerprint256 };
+}
+
+/**
+ * An Admin's certificate (PEM certificate with its chain, and its key, a passphrase when the key has one): checked that
+ * the key belongs to it and that it has not expired, then kept in <data>/tls (the key unencrypted, readable by this
+ * server only). Returns what is now in use.
+ */
+export function saveUploaded(dataDir, { cert, key, passphrase = '' }) {
+  const certText = String(cert ?? '').trim();
+  if (!/-----BEGIN CERTIFICATE-----/.test(certText)) throw Object.assign(new Error('Give the certificate as PEM (-----BEGIN CERTIFICATE-----), with its chain after it.'), { status: 400 });
+  let keyObj;
+  try {
+    keyObj = createPrivateKey({ key: String(key ?? ''), passphrase: passphrase || undefined });
+  } catch (error) {
+    throw Object.assign(new Error(/passphrase|decrypt|bad decrypt/i.test(error.message) ? 'The key did not open: a passphrase is needed, or it is wrong.' : 'Give the private key as PEM (-----BEGIN PRIVATE KEY-----).'), { status: 400 });
+  }
+  const keyPem = keyObj.export({ type: 'pkcs8', format: 'pem' });
+  describeCertificate({ cert: certText, key: keyPem });
+  const info = certificateInfo(certText);
+  if (Date.parse(info.validTo) < Date.now()) throw Object.assign(new Error(`The certificate expired on ${info.validTo.slice(0, 10)}.`), { status: 400 });
+  createSecureContext({ cert: certText, key: keyPem });
+  const dir = path.join(dataDir, 'tls');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(dir, 'uploaded.key'), keyPem, { mode: 0o600 });
+  fs.writeFileSync(path.join(dir, 'uploaded.crt'), `${certText}\n`, { mode: 0o644 });
+  return info;
+}
+
+/** Back to the self-signed certificate (or the files the server was started with). */
+export function removeUploaded(dataDir) {
+  for (const f of ['uploaded.crt', 'uploaded.key']) fs.rmSync(path.join(dataDir, 'tls', f), { force: true });
 }

@@ -86,3 +86,23 @@ test('the routes: options before signing in, a dead link refused, Get help kept,
     app.server.close();
   }
 });
+
+test('HTTPS: an uploaded certificate is checked, kept and preferred to the self-signed one', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { makeCertificate, saveUploaded, removeUploaded, tlsOptions, certificateInfo } = await import('../src/tls.js');
+  const dir = tmp();
+  const env = {};
+  assert.equal(tlsOptions(dir, env).selfSigned, true);
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const cert = makeCertificate({ subject: { cn: 'kendra.northwind.example' }, names: ['kendra.northwind.example'], publicKey, signerKey: privateKey });
+  const key = privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const other = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  assert.throws(() => saveUploaded(dir, { cert, key: other }), /does not belong/);
+  assert.throws(() => saveUploaded(dir, { cert: 'nonsense', key }), /PEM/);
+  assert.match(saveUploaded(dir, { cert, key }).subject, /kendra\.northwind\.example/);
+  const now = tlsOptions(dir, env);
+  assert.equal(now.selfSigned, false);
+  assert.match(certificateInfo(now.load().cert).subject, /kendra\.northwind\.example/);
+  removeUploaded(dir);
+  assert.equal(tlsOptions(dir, env).selfSigned, true);
+});
