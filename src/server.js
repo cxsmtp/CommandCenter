@@ -21,6 +21,7 @@ import { Bank } from './bank.js';
 import { rwReport } from './guide.js';
 import { makePass, readPass, newLinkKey, safePath, cleanPartnerUrl, movePage } from './link.js';
 import { Links, Help, imageFrom, maskEmail } from './self-service.js';
+import { Sso, mergeSso } from './sso.js';
 import { tenantEvidence } from './tenant-evidence.js';
 import { Library } from './library.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
@@ -85,6 +86,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const opps = new Opportunities(db, { users, catalog, bank });
   const mailer = new Mailer(db);
   const links = new Links(db);
+  // Single sign-on with SAML 2.0 (src/sso.js, as in the FTR command center).
+  const sso = new Sso({ settings: () => db.read('settings', {}).sso, publicUrl: String(process.env.CC_PUBLIC_URL || '') });
+  const leadersList = () => users.list().filter((u) => u.active !== false && ['vp', 'leader', 'team_lead'].includes(u.role)).map((u) => ({ id: u.id, name: u.name, role: u.roleLabel }));
   const help = new Help(db);
   // Sign-in rules (Settings → Sign-in): who may reset a forgotten password by email; who may join by themselves.
   const signinRules = () => {
@@ -655,6 +659,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const body = await readBody(req);
       res.auditEmail = text(body.email, 254).toLowerCase();
       throttle(`${req.socket.remoteAddress}|${res.auditEmail}`);
+      if (sso.ready() && sso.config().passwordSignIn === 'admins' && users.list().find((u) => u.email === res.auditEmail)?.role !== 'admin') throw fail(403, `Passwords are kept for Admins: use “${sso.config().label}”.`);
       const { token, user } = users.signIn(body.email, body.password);
       return send(res, 200, { user, expiresAt: users.expiresAt(token) }, { 'Set-Cookie': sessionCookie(token, 30 * 86400) });
     }
@@ -667,7 +672,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (route === 'GET /auth/options') {
       const r = signinRules();
       const ready = !mailReady().length;
-      return send(res, 200, { reset: ready && r.reset !== 'nobody', join: ready && r.join.enabled ? { domains: r.join.domains } : null });
+      return send(res, 200, { reset: ready && r.reset !== 'nobody', join: ready && r.join.enabled ? { domains: r.join.domains } : null, sso: sso.ready() ? { label: sso.config().label, adminsOnlyPasswords: sso.config().passwordSignIn === 'admins' } : null });
     }
     if (route.startsWith('POST /auth/')) {
       if (!['Kendra', 'Meridian', 'CommandCenter'].includes(req.headers['x-requested-with'])) return send(res, 403, { error: 'Missing request header.' });
@@ -1045,6 +1050,19 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
       audit.record(user, 'settings', m === 'POST' ? `Put a certificate to use: ${info.subject}, until ${info.validTo.slice(0, 10)}` : 'Removed the uploaded certificate (back to the self-signed one)');
       return send(res, 200, { cert: info, live });
+    }
+    if (route === 'GET /settings/sso') {
+      need(user, 'settings.manage');
+      return send(res, 200, { ...sso.view(), leaders: leadersList(), publicUrl: process.env.CC_PUBLIC_URL || '' });
+    }
+    if (route === 'PUT /settings/sso') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = fullSettings();
+      all.sso = mergeSso(all.sso ?? {}, b, { leaders: leadersList() });
+      db.write('settings', all);
+      audit.record(user, 'settings', `Single sign-on ${all.sso.enabled ? 'on' : 'off'} (changed: ${Object.keys(b).filter((k) => k !== 'idpCert').join(', ')}${b.idpCert ? ', certificate' : ''})`);
+      return send(res, 200, { ...sso.view(), leaders: leadersList() });
     }
     if (route === 'GET /settings/link') {
       need(user, 'settings.manage');
@@ -2192,6 +2210,43 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     });
   }
 
+  // ——— Single sign-on (SAML 2.0): the identity provider signs people in ———
+  async function samlRoute(req, res, url) {
+    const htmlPage = (body, headers = {}) => send(res, 200, body, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', ...headers });
+    try {
+      if (req.method === 'GET' && url.pathname === '/saml/metadata') return send(res, 200, sso.metadata(), { 'Content-Type': 'application/samlmetadata+xml; charset=utf-8' });
+      if (req.method === 'GET' && url.pathname === '/saml/login') return send(res, 302, '', { Location: await sso.loginUrl() });
+      if (req.method === 'POST' && url.pathname === '/saml/acs') {
+        let text_ = '';
+        for await (const chunk of req) {
+          text_ += chunk;
+          if (text_.length > 1024 * 1024) throw fail(413, 'Too large.');
+        }
+        let who;
+        try {
+          who = await sso.verify(new URLSearchParams(text_).get('SAMLResponse'));
+        } catch (error) {
+          audit.record(null, 'auth', `Single sign-on refused: ${error.message}`);
+          return htmlPage(movePage('/#/login?linked=none', 'Single sign-on failed', `${error.message} Ask an Admin, or sign in with your password if you have one.`));
+        }
+        const c = sso.config();
+        let r;
+        try {
+          r = users.signInSso(who.email, { name: who.name, jit: c.jit, managerId: c.jitManagerId });
+        } catch (error) {
+          audit.record(null, 'auth', `Single sign-on refused for ${who.email}: ${error.message}`);
+          return htmlPage(movePage('/#/login?linked=none', 'No access yet', error.message));
+        }
+        if (r.added) audit.record(r.user, 'people', `Added on their first single sign-on (${r.user.email})`);
+        audit.record(r.user, 'auth', 'Signed in with single sign-on');
+        return htmlPage(movePage('/#/', 'Signed in'), { 'Set-Cookie': sessionCookie(r.token, 30 * 86400) });
+      }
+      return send(res, 404, { error: 'Not found.' });
+    } catch (error) {
+      return send(res, error.status ?? 500, { error: error.message });
+    }
+  }
+
   // ——— Linked apps: one sign-in for Kendra and the FTR Credits Command Center ———
   const html = (res, body, headers = {}) => send(res, 200, body, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', ...headers });
   function linkRoute(req, res, url) {
@@ -2260,6 +2315,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
       if (url.pathname.startsWith('/api/')) await api(req, res, url);
       else if (req.method === 'GET' && url.pathname.startsWith('/link/ftr')) linkRoute(req, res, url);
+      else if (url.pathname.startsWith('/saml/')) await samlRoute(req, res, url);
       else if (req.method === 'GET') serveStatic(req, res, url);
       else send(res, 405, { error: 'Method not allowed.' });
     } catch (error) {

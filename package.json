@@ -17,6 +17,7 @@
     "bundle": "node scripts/bundle.mjs"
   },
   "dependencies": {
+    "@node-saml/node-saml": "^5.2.0",
     "imapflow": "^2.12.1",
     "jszip": "^3.10.1",
     "mailparser": "^3.14.5",

@@ -398,6 +398,16 @@ function showLogin(message = '') {
     const bits = [o.reset ? '<a href="#/forgot">Forgot your password?</a>' : '', o.join ? `<a href="#/join">New here? Join with your ${o.join.domains.map((d) => `@${esc(d)}`).join(' or ')} email</a>` : ''].filter(Boolean);
     const el = document.getElementById('ssLinks');
     if (el) el.innerHTML = bits.join(' · ');
+    if (o.sso && document.getElementById('loginForm')) {
+      const btn = document.createElement('a');
+      btn.className = 'btn sso-btn';
+      btn.href = '/saml/login';
+      btn.textContent = o.sso.label;
+      const form = document.getElementById('loginForm');
+      form.querySelector('.btn.primary').insertAdjacentHTML('afterend', '<div class="or"><span>or</span></div>');
+      form.querySelector('.or').after(btn);
+      if (o.sso.adminsOnlyPasswords) form.querySelector('.btn.primary').insertAdjacentHTML('beforebegin', '<p class="small muted" style="margin:0">Passwords are kept for Admins: everyone else signs in with single sign-on.</p>');
+    }
   }).catch(() => {});
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();

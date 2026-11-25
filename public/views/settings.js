@@ -29,7 +29,7 @@ const TABS = [
   ['People', [['people', 'People', ALL], ['teams', 'Teams', ALL], ['roles', 'Roles & permissions', () => can('roles.manage')], ['signin', 'Sign-in', MANAGE]]],
   ['POVs', [['capabilities', 'Capabilities & criteria', ALL], ['salesforce', 'Salesforce', MANAGE]]],
   ['Records', [['audit', 'Audit log', () => can('audit.view')]]],
-  ['System', [['general', 'General', MANAGE], ['branding', 'Branding', MANAGE], ['email', 'Email (SMTP)', MANAGE], ['linked', 'Linked apps', MANAGE], ['https', 'HTTPS & network', MANAGE], ['updates', 'Updates', MANAGE], ['backups', 'Backups & health', MANAGE], ['help', 'Get help', ALL], ['about', 'About', ALL]]],
+  ['System', [['general', 'General', MANAGE], ['branding', 'Branding', MANAGE], ['email', 'Email (SMTP)', MANAGE], ['sso', 'Single sign-on', MANAGE], ['linked', 'Linked apps', MANAGE], ['https', 'HTTPS & network', MANAGE], ['updates', 'Updates', MANAGE], ['backups', 'Backups & health', MANAGE], ['help', 'Get help', ALL], ['about', 'About', ALL]]],
 ];
 // Old addresses of pages that were renamed.
 const ALIAS = { organisation: 'general', network: 'https', system: 'backups', security: 'signin' };
@@ -52,6 +52,7 @@ const META = {
   backups: [ADMINS, true],
   about: ['the version, what changed, and the licence', true],
   branding: [ADMINS, true],
+  sso: [ADMINS, true],
   help: ['a support case or an idea, to the team that runs Kendra', true],
 };
 /** A settings form that saves as it is changed (after a pause while typing), as in the FTR command center. */
@@ -98,7 +99,7 @@ export async function renderSettings(main, tab, { crumbs, applyLook }) {
   const body = $('#sBody');
   const linked = state.session.linked ?? null;
   const pages = {
-    profile, general: organisation, branding, email, roles, salesforce, backups: system, signin: security, https: network, updates, about, linked: linkedPage, help: helpPage,
+    profile, general: organisation, branding, email, roles, salesforce, backups: system, signin: security, https: network, updates, about, linked: linkedPage, help: helpPage, sso: ssoPage,
     people: () => renderPeople(body, { linked }),
     teams: () => renderTeams(body, { linked }),
     audit: () => renderAudit(body, { crumbs: () => {} }),
@@ -473,6 +474,38 @@ async function linkedPage(body) {
 // ——— Security & sign-in ———
 
 // ——— Network & certificates ———
+// ——— Single sign-on (SAML 2.0), as in the FTR command center ———
+async function ssoPage(body) {
+  const x = await api('/settings/sso');
+  const chip = x.ready ? '<span class="status on"><i></i>On</span>' : x.enabled ? '<span class="status warn"><i></i>On, but CC_PUBLIC_URL is missing</span>' : '<span class="status off"><i></i>Off</span>';
+  body.innerHTML = `${SAVES}<div class="grid2">
+    <section class="panel st-panel"><div class="st-ph"><h2>Identity provider (SAML 2.0)</h2><span class="st-aside">${chip}</span></div>
+      <form id="ssoForm" class="st-form">
+        <label class="field">Sign-in URL of the identity provider (SSO URL)<input name="entryPoint" value="${esc(x.entryPoint)}" placeholder="https://login.microsoftonline.com/<tenant>/saml2"></label>
+        <label class="field">Identity provider issuer (entity ID) <span class="small muted">optional, checked when given</span><input name="idpIssuer" value="${esc(x.idpIssuer)}" placeholder="https://sts.windows.net/<tenant>/"></label>
+        <label class="field">Signing certificate of the identity provider <span class="small muted">PEM or base64; two for a rollover</span><textarea name="idpCert" rows="4" placeholder="${x.certificates.length ? 'Kept: paste to replace' : '-----BEGIN CERTIFICATE-----'}" spellcheck="false"></textarea></label>
+        ${x.certificates.map((c) => `<div class="small muted">${esc(c.subject)} · valid until ${esc(day(c.validTo))} · <span class="mono">${esc(c.fingerprint.slice(0, 23))}…</span></div>`).join('')}
+        <div class="st-cols2"><label class="field">Email attribute<input name="emailAttribute" value="${esc(x.emailAttribute)}"></label><label class="field">Name attribute<input name="nameAttribute" value="${esc(x.nameAttribute)}"></label></div>
+        <label class="opt"><input type="checkbox" name="wantResponseSigned" ${x.wantResponseSigned ? 'checked' : ''}><span><b>Require the whole response signed too</b><small>Assertions must always be signed. Turn this on if your identity provider signs both.</small></span></label>
+        <label class="field">Button on the sign-in page<input name="label" maxlength="60" value="${esc(x.label)}"></label>
+        <label class="opt"><input type="checkbox" name="jit" ${x.jit ? 'checked' : ''}><span><b>Add people on their first sign-in</b><small>Otherwise only people with an account can sign in. They join as Associates, under the leader chosen here; never as anything more.</small></span></label>
+        <label class="field">They report to<select name="jitManagerId"><option value="">Nobody yet (set on People)</option>${x.leaders.map((l) => `<option value="${esc(l.id)}" ${l.id === x.jitManagerId ? 'selected' : ''}>${esc(l.name)} · ${esc(l.role)}</option>`).join('')}</select></label>
+        <label class="field">Who may still sign in with a password<select name="passwordSignIn"><option value="everyone" ${x.passwordSignIn === 'everyone' ? 'selected' : ''}>Everyone</option><option value="admins" ${x.passwordSignIn === 'admins' ? 'selected' : ''}>Admins only (a way in if the identity provider is down)</option></select></label>
+        <label class="opt"><input type="checkbox" name="enabled" ${x.enabled ? 'checked' : ''}><span><b>Single sign-on is on</b></span></label>
+      </form><div class="st-foot" id="ssoSaved">All changes are saved.</div></section>
+    <section class="panel st-panel"><div class="st-ph"><h2>This service, for the identity provider</h2></div>
+      ${x.sp ? `<dl class="st-kv"><dt>Entity ID (audience)</dt><dd class="mono">${esc(x.sp.entityId)}</dd><dt>Reply URL (ACS)</dt><dd class="mono">${esc(x.sp.acs)}</dd><dt>Sign-on URL</dt><dd class="mono">${esc(x.sp.login)}</dd><dt>Metadata</dt><dd><a href="/saml/metadata" target="_blank" rel="noopener">${esc(x.sp.metadata)}</a></dd><dt>Name ID</dt><dd class="mono">emailAddress</dd></dl>
+        <p class="st-note">In your identity provider, add an enterprise application (SAML) with the Entity ID and Reply URL above, send the work email as the NameID or the email attribute, and assign the solution engineers and leaders. Then paste its SSO URL and signing certificate here.</p>` : '<div class="st-warn st-box-m">Set <b>CC_PUBLIC_URL</b> to the https address people use, and restart: the identity provider needs it.</div>'}
+    </section></div>`;
+  autosave($('#ssoForm', body), async (f) => {
+    const fd = new FormData(f);
+    const b = { entryPoint: fd.get('entryPoint'), idpIssuer: fd.get('idpIssuer'), emailAttribute: fd.get('emailAttribute'), nameAttribute: fd.get('nameAttribute'), wantResponseSigned: fd.get('wantResponseSigned') === 'on', label: fd.get('label'), jit: fd.get('jit') === 'on', jitManagerId: fd.get('jitManagerId'), passwordSignIn: fd.get('passwordSignIn'), enabled: fd.get('enabled') === 'on' };
+    if (String(fd.get('idpCert') ?? '').trim()) b.idpCert = fd.get('idpCert');
+    await api('/settings/sso', { method: 'PUT', body: b });
+    f.idpCert.value = '';
+  }, $('#ssoSaved', body), { delay: 1000 });
+}
+
 // ——— HTTPS: how the server is reached and the certificate it presents (as in the FTR command center) ———
 async function httpsPanels(el) {
   const h = await api('/settings/https');

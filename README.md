@@ -72,7 +72,7 @@ This starts a made-up team (VP, leader, two team leads, four SEs) with opportuni
 | `CC_BACKUP_DIR` | none | A mounted share or second disk: every backup is copied there too |
 | `CC_BACKUP_HOURS` | `6` | How often the automatic backup runs |
 | `CC_MAX_RSS_MB` | `1536` | Memory above this for 3 minutes: a clean restart |
-| `CC_PUBLIC_URL` | none | Kendra's address, so Salesforce activities link back to the POV |
+| `CC_PUBLIC_URL` | none | Kendra's https address: links in emails ("Forgot your password?", joining, Salesforce activities) and single sign-on (SAML) need it |
 | `CC_ACCESS_DAYS` | `730` | How long every request stays in the audit trail (changes are kept for good) |
 | `CC_TRUST_PROXY` | `false` | `true` behind a reverse proxy, so the audit trail records the person's address from X-Forwarded-For |
 | `CC_UPDATE_TOKEN` or `CC_UPDATE_TOKEN_FILE` | none | A read-only GitHub token (fine-grained, *Contents: read* on this repository). Needed while the repository is private; sent to api.github.com only |

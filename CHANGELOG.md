@@ -2,6 +2,20 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.82 · 2026-11-25
+
+**Settings like the FTR command center: Single sign-on (SAML 2.0)**
+
+- Settings > Single sign-on: the company identity provider (Entra ID, Okta, Ping, ADFS) signs
+  people in, as in the FTR command center (src/sso.js, @node-saml/node-saml): its SSO URL,
+  signing certificate (two for a rollover), issuer and attributes; this service's Entity ID,
+  Reply URL and metadata to give it; saved as you type.
+- Every assertion must be signed by that certificate, for this service, recent, and an answer
+  to a sign-in Kendra started, used once. Someone new is refused unless "Add people on their
+  first sign-in" is on (then an Associate under the chosen leader); passwords can be kept
+  for Admins only.
+- The sign-in page shows the button; /saml/login, /saml/acs and /saml/metadata.
+
 ## 1.0.81 · 2026-11-25
 
 **Settings like the FTR command center: Updates and HTTPS**

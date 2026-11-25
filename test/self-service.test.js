@@ -59,7 +59,7 @@ test('the routes: options before signing in, a dead link refused, Get help kept,
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const H = { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/json' };
   try {
-    assert.deepEqual(await (await fetch(`${base}/api/auth/options`)).json(), { reset: false, join: null }, 'no email server: nothing offered');
+    assert.deepEqual(await (await fetch(`${base}/api/auth/options`)).json(), { reset: false, join: null, sso: null }, 'no email server, no SSO: nothing offered');
     const forgot = await fetch(`${base}/api/auth/forgot`, { method: 'POST', headers: H, body: JSON.stringify({ email: 'nobody@northwind.example' }) });
     assert.match((await forgot.json()).message, /Check your inbox/, 'the same answer for everyone');
     assert.equal((await fetch(`${base}/api/auth/reset/check`, { method: 'POST', headers: H, body: JSON.stringify({ token: 'x'.repeat(43) }) })).status, 400);

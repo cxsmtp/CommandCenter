@@ -269,6 +269,32 @@ export class Users {
     return publicUser(user);
   }
 
+  /**
+   * A session for someone the identity provider signed in (single sign-on). Someone new is added as an Associate under
+   * the chosen leader when "Add people on their first sign-in" is on; otherwise they need an account first.
+   */
+  signInSso(address, { name = '', jit = false, managerId = '' } = {}) {
+    const all = this.#all();
+    const email = cleanEmail(address);
+    let user = all.find((u) => u.email === email);
+    let added = false;
+    if (!user && jit && email) {
+      const manager = managerId ? all.find((u) => u.id === managerId && u.active !== false) : null;
+      user = { id: randomUUID(), email, name: text(name, 120) || email.split('@')[0], role: 'associate', managerId: manager?.id ?? null, title: '', region: manager?.region ?? '', active: true, password: hashPassword(randomBytes(24).toString('base64url')), mustChangePassword: false, prefs: {}, createdAt: new Date().toISOString(), source: 'sso' };
+      all.push(user);
+      added = true;
+    }
+    if (!user || user.active === false) throw fail(403, user ? 'Your Kendra account is turned off: ask an Admin.' : 'You signed in with the identity provider, but you have no Kendra account yet: ask an Admin to add you.');
+    user.mustChangePassword = false;
+    this.#save(all);
+    this.#stampSignIn(user.id, 'sso');
+    const token = randomBytes(32).toString('base64url');
+    this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs, created: Date.now(), via: 'sso' });
+    this.#dirty = true;
+    this.flush();
+    return { token, user: publicUser(user), added };
+  }
+
   /** A new password from a one-time email link (the address proved it is theirs): every sign-in ends. */
   setPasswordByLink(id, next) {
     const problem = passwordProblem(next);
