@@ -91,6 +91,7 @@ const ICON = {
   out: svg('<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/>'),
   audit: svg('<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/>'),
   insights: svg('<path d="M4 19h16"/><path d="M7 15l3.5-4 3 2.5L18 8"/><circle cx="18" cy="8" r="1.4"/>'),
+  ftr: svg('<rect x="3.5" y="5" width="17" height="12" rx="2"/><path d="M8 21h8M12 17v4M7.5 13l3-3 2 2 4-4"/>'),
 };
 const NAV = [
   ['Work', [['dashboard', ICON.dashboard, 'Portfolio'], ['insights', ICON.insights, 'Insights'], ['team', ICON.team, 'Teams']]],
@@ -108,6 +109,7 @@ function shell() {
     <nav class="nav" id="nav" aria-label="Main">
       <div class="brand" title="${KENDRA_MEANING}">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Kendra')}</span><span class="brand-tag">One line of sight</span></span></div>
       ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.filter(([, , , need]) => !need || can(need)).map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
+      ${state.session.linked?.ftr ? `<div class="nav-group">Linked</div><a href="/link/ftr?to=%2F" target="_blank" rel="noopener" title="The FTR Credits Command Center, signed in as you"><span class="ico">${ICON.ftr}</span>FTR command center<span class="ext">↗</span></a>` : ''}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
       <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button>${state.session.version ? `<a class="nav-version" href="#/settings/${can('settings.manage') ? 'updates' : 'about'}" title="${can('settings.manage') ? 'Update & recovery' : 'About Kendra'}">Kendra ${esc(state.session.version)}</a>` : ''}</div>
@@ -276,6 +278,21 @@ setInterval(() => document.visibilityState === 'visible' && !$('#dialog').open &
 
 // ——— Sign-in ———
 function showLogin(message = '') {
+  const ftr = state.session?.linked?.ftr;
+  let tried = false;
+  try {
+    tried = sessionStorage.getItem('kendra.linkTried') === '1';
+  } catch {}
+  if (ftr && !tried && !/[?&]linked=none/.test(location.hash) && !message) {
+    try {
+      sessionStorage.setItem('kendra.linkTried', '1');
+    } catch {}
+    const back = location.hash && !location.hash.startsWith('#/login') ? `/${location.hash}` : '/';
+    location.replace(`${ftr}/link/kendra/authorize?to=${encodeURIComponent(back)}`);
+    root.innerHTML = '<div class="login"><div class="panel" style="padding:24px">Checking your FTR command center sign-in…</div></div>';
+    return;
+  }
+
   root.innerHTML = `<div class="login"><form class="panel" id="loginForm">
     <div class="brand" style="padding:0">${MARK}<h1 style="font-size:20px">${esc(state.session?.settings?.orgName || 'Kendra')}</h1></div>
     <p class="muted" style="margin:0">Every POV, the technical value it proves and the revenue it moves — in one line of sight.</p>

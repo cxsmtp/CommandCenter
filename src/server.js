@@ -19,6 +19,7 @@ import { SfMailbox } from './sf-mailbox.js';
 import { Templates } from './templates.js';
 import { Bank } from './bank.js';
 import { rwReport } from './guide.js';
+import { makePass, readPass, newLinkKey, safePath, cleanPartnerUrl, movePage } from './link.js';
 import { tenantEvidence } from './tenant-evidence.js';
 import { Library } from './library.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
@@ -90,6 +91,16 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
   };
   const fullSettings = () => db.read('settings', {});
+  // Linked apps: the FTR Credits Command Center, one sign-in for both (src/link.js).
+  const linkSettings = () => {
+    const l = db.read('settings', {}).link ?? {};
+    return { ftrUrl: l.ftrUrl ?? '', key: l.key ? db.open(l.key) : '', at: l.at ?? null, by: l.by ?? '' };
+  };
+  const linkReady = () => {
+    const l = linkSettings();
+    return Boolean(l.ftrUrl && l.key);
+  };
+  const usedPasses = new Map();
   // Insights: one reading of every POV a day (score, critical gaps, amount), 120 days kept, to show what moved.
   const recordReading = () => {
     const day = new Date().toISOString().slice(0, 10);
@@ -583,7 +594,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     // A look at the session that does not renew it (the browser's expiry warning).
     const user = users.fromToken(cookie(req, 'cc_session'), { slide: req.headers['x-peek'] !== '1' });
     if (route === 'GET /session') {
-      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode }, version: VERSION });
+      const linked = linkReady() ? { ftr: linkSettings().ftrUrl } : null;
+      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours, linked } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode }, version: VERSION, linked });
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
@@ -793,6 +805,33 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         throw fail(400, smtpHint(error));
       }
       return send(res, 200, { ok: true, smtp: mailer.settings });
+    }
+    if (route === 'GET /settings/link') {
+      need(user, 'settings.manage');
+      const l = linkSettings();
+      return send(res, 200, { ftrUrl: l.ftrUrl, hasKey: Boolean(l.key), at: l.at, by: l.by, ready: linkReady(), here: process.env.CC_PUBLIC_URL || '' });
+    }
+    if (route === 'PUT /settings/link') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = fullSettings();
+      const prev = all.link ?? {};
+      const ftrUrl = 'ftrUrl' in b ? cleanPartnerUrl(b.ftrUrl) : prev.ftrUrl ?? '';
+      let shown = null;
+      let key = prev.key ?? '';
+      if (b.remove) key = '';
+      else if (b.newKey) {
+        shown = newLinkKey();
+        key = db.seal(shown);
+      } else if (b.key) {
+        const k = String(b.key).trim();
+        if (!/^[A-Za-z0-9_-]{32,128}$/.test(k)) throw fail(400, 'The shared key is the 43 letters and digits the other app shows when it makes one.');
+        key = db.seal(k);
+      }
+      all.link = b.remove ? null : { ftrUrl, key, at: new Date().toISOString(), by: user.name };
+      db.write('settings', all);
+      audit.record(user, 'settings', b.remove ? 'Unlinked the FTR Credits Command Center' : `Linked the FTR Credits Command Center at ${ftrUrl}${shown ? ' (new shared key)' : b.key ? ' (key pasted)' : ''}`);
+      return send(res, 200, { ftrUrl, hasKey: Boolean(key), ready: Boolean(ftrUrl && key), key: shown });
     }
     if (route === 'PUT /settings/security') {
       need(user, 'settings.manage');
@@ -1901,6 +1940,49 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     });
   }
 
+  // ——— Linked apps: one sign-in for Kendra and the FTR Credits Command Center ———
+  const html = (res, body, headers = {}) => send(res, 200, body, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', ...headers });
+  function linkRoute(req, res, url) {
+    const l = linkSettings();
+    const step = url.pathname.slice('/link/ftr'.length) || '/';
+    if (!linkReady()) return html(res, movePage('/#/', 'Not linked', 'This Kendra is not linked to an FTR Credits Command Center: an Admin links them in Settings → Linked apps.'));
+    const to = safePath(url.searchParams.get('to') || '/');
+    const passFor = (u) => makePass({ key: l.key, from: 'kendra', to: 'ftr', email: u.email, name: u.name });
+    const me = () => users.fromToken(cookie(req, 'cc_session'));
+    // Kendra's menu: go to the FTR command center, signed in.
+    if (step === '/' || step === '') {
+      const u = me();
+      if (!u) return html(res, movePage('/#/login', 'Sign in to Kendra first'));
+      audit.record(u, 'auth', 'Opened the FTR Credits Command Center, signed in');
+      return send(res, 302, '', { Location: `${l.ftrUrl}/link/kendra/in?pass=${makePassSafe(passFor(u))}&to=${encodeURIComponent(to)}` });
+    }
+    // The FTR command center asks who is signed in here. A redirect from another site carries no SameSite=Strict
+    // cookie: one hop through a page of this site, and the cookie comes with it.
+    if (step === '/authorize') return html(res, movePage(`/link/ftr/authorize2?to=${encodeURIComponent(to)}`, 'Checking your Kendra sign-in…'));
+    if (step === '/authorize2') {
+      const u = me();
+      if (!u) return send(res, 302, '', { Location: `${l.ftrUrl}/link/kendra/none` });
+      audit.record(u, 'auth', 'Signed in to the FTR Credits Command Center through Kendra');
+      return send(res, 302, '', { Location: `${l.ftrUrl}/link/kendra/in?pass=${makePassSafe(passFor(u))}&to=${encodeURIComponent(to)}` });
+    }
+    // The FTR command center vouches for someone signed in there.
+    if (step === '/in') {
+      try {
+        const who = readPass(url.searchParams.get('pass'), { key: l.key, me: 'kendra', from: 'ftr', used: usedPasses });
+        const { token, user } = users.signInLinked(who.email);
+        audit.record(user, 'auth', 'Signed in through the FTR Credits Command Center');
+        return html(res, movePage(to === '/' ? '/#/' : to, 'Signed in'), { 'Set-Cookie': sessionCookie(token, 30 * 86400) });
+      } catch (error) {
+        audit.record(null, 'auth', `Refused a sign-in from the FTR Credits Command Center: ${error.message}`);
+        return html(res, movePage('/#/login?linked=none', 'Could not sign you in', error.message));
+      }
+    }
+    // Nobody signed in on the FTR side: Kendra's own sign-in, without asking again.
+    if (step === '/none') return html(res, movePage('/#/login?linked=none', 'Sign in to Kendra'));
+    return send(res, 404, { error: 'Not found.' });
+  }
+  const makePassSafe = (p) => encodeURIComponent(p);
+
   const handler = async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (draining && url.pathname.startsWith('/api/')) return send(res, 503, { error: 'Kendra is restarting. Try again in a few seconds.', restarting: true }, { 'Retry-After': '3' });
@@ -1921,6 +2003,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         return send(res, draining ? 503 : 200, { ok: !draining, restarting: draining || undefined, version: VERSION, reading: monitor.load(), memoryMb: Math.round(process.memoryUsage().rss / 1048576), signedIn: users.sessionCount });
       }
       if (url.pathname.startsWith('/api/')) await api(req, res, url);
+      else if (req.method === 'GET' && url.pathname.startsWith('/link/ftr')) linkRoute(req, res, url);
       else if (req.method === 'GET') serveStatic(req, res, url);
       else send(res, 405, { error: 'Method not allowed.' });
     } catch (error) {

@@ -511,3 +511,5 @@ details:not([open]) > :not(summary) { display: none; }
   .ai-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; margin-bottom: 16px; }
   .ai-pair .list { max-height: 260px; overflow: auto; }
 }
+
+.nav a .ext{margin-left:auto;opacity:.55;font-size:12px}

@@ -2,6 +2,16 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.72 · 2026-11-25
+
+**Linked apps: one sign-in for Kendra and the FTR Credits Command Center**
+
+The menu has an FTR command center item that opens it already signed in, and the
+sign-in screen first asks the FTR command center (once) so someone signed in there
+arrives signed in here. Each hop carries a pass signed with a shared key (HMAC-SHA256),
+for one app, good for a minute and used once; nobody is created by it. Admins set the
+address and the key (sealed, shown once) in Settings > Linked apps.
+
 ## 1.0.71 · 2026-11-25
 
 **Insights says what it is: Kendra's score of each POV's chance of success, not a sales forecast**

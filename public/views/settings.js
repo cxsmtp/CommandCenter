@@ -22,7 +22,7 @@ const MANAGE = () => can('settings.manage');
 const TABS = [
   ['You', [['profile', 'Profile & look', () => true]]],
   ['Organisation', [['organisation', 'Organisation', MANAGE], ['roles', 'Roles & permissions', () => can('roles.manage')], ['salesforce', 'Salesforce', MANAGE]]],
-  ['Connections', [['email', 'Email server', MANAGE], ['network', 'Network & certificates', MANAGE]]],
+  ['Connections', [['email', 'Email server', MANAGE], ['network', 'Network & certificates', MANAGE], ['linked', 'Linked apps', MANAGE]]],
   ['Server', [['security', 'Security & sign-in', MANAGE], ['system', 'Health & backups', MANAGE], ['updates', 'Update & recovery', MANAGE]]],
   ['', [['about', 'About', () => true]]],
 ];
@@ -36,7 +36,7 @@ export async function renderSettings(main, tab, { crumbs, applyLook }) {
   main.innerHTML = `<div class="set-layout"><nav class="set-nav" aria-label="Settings">${groups.map(([g, items]) => `${g ? `<div class="set-group">${esc(g)}</div>` : '<div class="set-sep"></div>'}${items.map(([k, l]) => `<a href="#/settings/${k}" class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''}>${esc(l)}</a>`).join('')}`).join('')}</nav>
     <div class="set-main"><h1 class="set-title">${esc(all.find(([k]) => k === active)[1])}</h1><div id="sBody"></div></div></div>`;
   const body = $('#sBody');
-  ({ profile, organisation, email, roles, salesforce, system, security, network, updates, about })[active](body, data, applyLook);
+  ({ profile, organisation, email, roles, salesforce, system, security, network, updates, about, linked })[active](body, data, applyLook);
 }
 
 function profile(body, data, applyLook) {
@@ -202,6 +202,46 @@ async function system(body) {
       toast(r.ok ? 'Restore drill passed: the newest backup opens and reads back' : `Restore drill failed: ${r.message}`, { bad: !r.ok });
       again();
     }
+  });
+}
+
+// ——— Linked apps: one sign-in for Kendra and the FTR Credits Command Center ———
+async function linked(body) {
+  const l = await api('/settings/link');
+  const here = l.here || location.origin;
+  body.innerHTML = `<div class="grid2">
+    <section class="panel"><div class="head"><h3>FTR Credits Command Center</h3>${l.ready ? '<span class="badge ok">Linked</span>' : '<span class="badge">Not linked</span>'}</div>
+      <form id="linkForm" class="body stack" style="gap:12px">
+        <p class="small muted" style="margin:0">Someone signed in to one opens the other already signed in, as the same person (their email): from the menu, or by opening it directly. They need an account, turned on, in both; nobody is created this way.</p>
+        <label class="field">Its address<input name="ftrUrl" value="${esc(l.ftrUrl)}" placeholder="https://ftr.company.com" required></label>
+        <label class="field">Shared key <span class="small muted">${l.hasKey ? 'set (paste a new one to replace it)' : 'paste the key the FTR command center made, or make one here'}</span><input name="key" autocomplete="off" spellcheck="false" placeholder="${l.hasKey ? '••••••••••••••••' : '43 letters and digits'}"></label>
+        <div id="newKey"></div>
+        <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" data-act="new-key">Make a new key</button>${l.ready ? '<a class="btn ghost" href="/link/ftr?to=%2F" target="_blank" rel="noopener">Try it ↗</a><button type="button" class="btn ghost danger" data-act="unlink">Unlink</button>' : ''}</div>
+        ${l.at ? `<p class="small muted" style="margin:0">Set ${esc(ago(l.at))}${l.by ? ` by ${esc(l.by)}` : ''}.</p>` : ''}
+      </form></section>
+    <section class="panel"><div class="head"><h3>On the FTR command center</h3></div><div class="body"><ol class="facts-list">
+      <li>Settings → Linked apps: give it Kendra’s address, <span class="mono">${esc(here)}</span>.</li>
+      <li>Paste the same shared key on both sides (make it on one, copy it to the other).</li>
+      <li>Try it: the menu of each shows the other; opening one while signed in to the other signs you in.</li></ol>
+      <p class="small muted">Each sign-in travels as a pass signed with the key, for one app, good for a minute and used once; both audit trails record it. Unlink here or there to stop it.</p></div></section></div>`;
+  const form = $('#linkForm', body);
+  const save = async (extra = {}) => {
+    const b = formData(form);
+    const r = await attempt(() => api('/settings/link', { method: 'PUT', body: { ftrUrl: b.ftrUrl, ...(b.key ? { key: b.key } : {}), ...extra } }), 'Saved');
+    if (r?.key) {
+      $('#newKey', body).innerHTML = `<div class="notice-box"><b>The new shared key</b> (shown once): copy it into the FTR command center.<div class="row center" style="margin-top:6px"><input readonly class="mono" value="${esc(r.key)}" style="flex:1"><button type="button" class="btn sm" data-copy>Copy</button></div></div>`;
+      $('[data-copy]', body).addEventListener('click', () => navigator.clipboard?.writeText(r.key).then(() => toast('Copied')));
+    } else if (r) linked(body);
+    return r;
+  };
+  form.addEventListener('submit', (e) => (e.preventDefault(), save()));
+  $('[data-act="new-key"]', body).addEventListener('click', async () => {
+    if (l.hasKey && !(await ask('Make a new shared key? The old one stops working, so paste the new one in the FTR command center too.', { ok: 'Make a new key' }))) return;
+    save({ newKey: true });
+  });
+  $('[data-act="unlink"]', body)?.addEventListener('click', async () => {
+    if (!(await ask('Unlink the FTR command center? Signing in to one no longer signs you in to the other.', { ok: 'Unlink', danger: true }))) return;
+    if (await attempt(() => api('/settings/link', { method: 'PUT', body: { remove: true } }), 'Unlinked')) linked(body);
   });
 }
 
