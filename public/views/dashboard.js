@@ -117,6 +117,15 @@ function rowsHtml(rows) {
 }
 // ——— The table view: a heading for every column, sorted by a click, filtered column by column, exported ———
 const n0 = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+/** The Salesforce close date: days to go, amber when the POV ends after it, grey when typed rather than from a report. */
+function closeCell(r) {
+  if (!r.closeDate) return '—';
+  const left = Math.ceil((Date.parse(`${r.closeDate}T23:59:59Z`) - Date.now()) / 86400000);
+  const open = !['won', 'lost'].includes(r.stage) && !/closed/i.test(r.sf?.stage ?? '');
+  const late = open && r.stage === 'pov' && r.endDate && r.closeDate < r.endDate;
+  const title = `${r.closeFrom === 'report' ? 'From the Salesforce report' : 'Typed on the POV'}${late ? ': the POV ends after the deal closes' : ''}`;
+  return `<span title="${esc(title)}" class="${late || (open && left < 0) ? 'warn-t' : ''}">${day(r.closeDate)}</span> <span class="small ${late || (open && left < 0) ? 'warn-t' : 'muted'}">${open ? (left < 0 ? 'passed' : `${left}d`) : ''}${late ? ' · before POV end' : ''}${r.closeFrom === 'typed' ? ' · typed' : ''}</span>`;
+}
 /** The tenant's licence end, with the days left: amber within 14 days, ended in grey. */
 function tenantEnd(end, povEnd) {
   if (!end) return '—';
@@ -132,6 +141,7 @@ const COLS = [
   { key: 'stage', label: 'Stage', on: true, filter: 'select', v: (r) => state.meta.stages[r.stage] ?? r.stage, html: (r) => stageBadge(r.stage) },
   { key: 'start', label: 'POV start', on: false, filter: 'text', v: (r) => r.startDate || '', html: (r) => (r.startDate ? day(r.startDate) : '—') },
   { key: 'end', label: 'POV end', on: true, filter: 'text', v: (r) => r.endDate || '', html: (r) => (r.endDate ? day(r.endDate) : '—') },
+  { key: 'close', label: 'Close date', on: true, filter: 'text', v: (r) => r.closeDate || '', html: (r) => closeCell(r) },
   { key: 'days', label: 'Days left', on: true, num: true, filter: 'num', v: (r) => (['pov', 'technical', 'discovery', 'first_call'].includes(r.stage) ? r.daysLeft : null), html: (r) => (['pov', 'technical', 'discovery', 'first_call'].includes(r.stage) && r.daysLeft !== null ? `<span class="${r.daysLeft < 0 ? 'bad-t' : r.daysLeft <= 7 ? 'warn-t' : ''}">${r.daysLeft}</span>` : '—') },
   { key: 'criteria', label: 'Criteria met', on: true, num: true, filter: 'num', v: (r) => (r.progress.total ? Math.round((100 * r.progress.met) / r.progress.total) : null), html: (r) => (r.progress.total ? `${r.progress.met}/${r.progress.total} <span class="small muted">${Math.round((100 * r.progress.met) / r.progress.total)}%</span>` : '—') },
   { key: 'must', label: 'Must-haves', on: true, num: true, filter: 'num', v: (r) => (r.progress.must ? r.progress.mustMet : null), html: (r) => (r.progress.must ? `<span class="${r.progress.mustMet === r.progress.must ? 'ok-t' : ''}">${r.progress.mustMet}/${r.progress.must}</span>` : '—') },

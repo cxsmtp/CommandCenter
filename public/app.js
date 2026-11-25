@@ -57,8 +57,10 @@ const LUXE = new Set(['maison', 'calibre', 'joaillier', 'hypercar']);
 const media = matchMedia('(prefers-color-scheme: dark)');
 export function applyLook(prefs = {}) {
   const s = state.session?.settings ?? {};
-  const theme = prefs.theme || s.defaultTheme || 'orbit';
-  const mode = prefs.mode || s.defaultMode || 'dark';
+  // The Admin may set one look for everyone (Settings → Organisation); otherwise each person's own, else the default.
+  const own = s.lookForAll ? {} : prefs;
+  const theme = own.theme || s.defaultTheme || 'orbit';
+  const mode = own.mode || s.defaultMode || 'light';
   document.documentElement.dataset.look = theme;
   document.documentElement.toggleAttribute('data-lux', LUXE.has(theme));
   document.documentElement.dataset.theme = mode === 'dark' || (mode === 'auto' && media.matches) ? 'dark' : 'light';

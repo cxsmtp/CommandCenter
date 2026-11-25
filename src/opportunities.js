@@ -106,6 +106,8 @@ export class Opportunities {
       amount: '',
       startDate: '',
       endDate: '',
+      // The Salesforce close date as typed by the SE, for when no Salesforce report brings it in.
+      closeDate: '',
       stakeholders: [],
       discovery: {},
       sessions: [],
@@ -431,6 +433,7 @@ function applyFields(opp, b) {
   if ('amount' in b) set('amount', text(b.amount, 40));
   if ('startDate' in b) set('startDate', dateOnly(b.startDate));
   if ('endDate' in b) set('endDate', dateOnly(b.endDate));
+  if ('closeDate' in b) set('closeDate', dateOnly(b.closeDate));
   if ('summary' in b) set('summary', text(b.summary, 4000));
   if (b.valueRates && typeof b.valueRates === 'object') {
     opp.valueRates = cleanRates(b.valueRates);

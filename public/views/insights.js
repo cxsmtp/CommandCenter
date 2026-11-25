@@ -63,7 +63,9 @@ export async function renderInsights(main, { crumbs }) {
   const c = m.categories;
   const n = Math.max(1, c.commit.count + c.best.count + c.pipeline.count);
   const catRow = (k, label, tone, x) => `<div class="cat"><span class="cl"><i class="${tone}"></i>${label}</span><b>${x.count}</b><span class="muted small">${rv.linked && x.amount ? cur(x.amount) : ''}</span></div>`;
-  const endingHtml = m.ending.map((e) => `<a class="irow" href="${go(e.id)}"><span class="when"><b>${e.daysLeft}</b><span>d</span></span><span class="grow"><b>${esc(e.customer)}</b><span class="small muted">${esc(e.owner)} · ${esc(day(e.endDate))} · ${e.met}/${e.total} criteria${rv.linked && e.amount ? ` · ${cur(e.amount)}` : ''}</span></span>${pill(e.score)}</a>`).join('') || '<p class="muted pad">No POV ends in the next 30 days.</p>';
+  const midTab = ui.mid === 'closing' ? 'closing' : 'ending';
+  const closingHtml = (m.closing ?? []).map((e) => `<a class="irow" href="${go(e.id)}"><span class="when"><b>${e.daysToClose}</b><span>d</span></span><span class="grow"><b>${esc(e.customer)}</b><span class="small muted">${esc(e.owner)} · closes ${esc(day(e.closeDate))}${e.endDate ? ` · <span class="${e.povAfterClose ? 'warn-t' : ''}">POV ${e.povAfterClose ? 'ends after, on' : 'ends'} ${esc(day(e.endDate))}</span>` : ''}${rv.linked && e.amount ? ` · ${cur(e.amount)}` : ''}</span></span>${pill(e.score)}</a>`).join('') || '<p class="muted pad">No open deal closes in Salesforce in the next 30 days. Close dates come from Salesforce reports, or as typed on a POV.</p>';
+  const endingHtml = m.ending.map((e) => `<a class="irow" href="${go(e.id)}"><span class="when"><b>${e.daysLeft}</b><span>d</span></span><span class="grow"><b>${esc(e.customer)}</b><span class="small muted">${esc(e.owner)} · ${esc(day(e.endDate))}${e.closeDate ? ` · <span class="${e.closeDate < e.endDate ? 'warn-t' : ''}" title="${e.closeDate < e.endDate ? 'Salesforce closes before the POV ends' : 'Salesforce close date'}">closes ${esc(day(e.closeDate))}</span>` : ''} · ${e.met}/${e.total} criteria${rv.linked && e.amount ? ` · ${cur(e.amount)}` : ''}</span></span>${pill(e.score)}</a>`).join('') || '<p class="muted pad">No POV ends in the next 30 days.</p>';
 
   // ——— Team ———
   const rightTab = ['load', 'rollup', 'caps'].includes(ui.right) ? ui.right : 'load';
@@ -91,12 +93,13 @@ export async function renderInsights(main, { crumbs }) {
       <section class="panel ipanel"><div class="head"><h3 title="Kendra’s own score of each POV, not a sales forecast">Where the POVs are heading</h3><span class="small muted">${n === 1 && !c.commit.count && !c.best.count && !c.pipeline.count ? '' : `${c.commit.count + c.best.count + c.pipeline.count} POVs scored`}</span></div>
         <div class="fbar" role="img" aria-label="${c.commit.count} likely to succeed, ${c.best.count} at risk, ${c.pipeline.count} unlikely"><span class="ok" style="flex:${c.commit.count / n}"></span><span class="warn" style="flex:${c.best.count / n}"></span><span class="bad" style="flex:${c.pipeline.count / n}"></span></div>
         <div class="cats">${catRow('commit', 'Likely to succeed', 'ok', c.commit)}${catRow('best', 'At risk', 'warn', c.best)}${catRow('pipeline', 'Unlikely', 'bad', c.pipeline)}</div>
-        <div class="sub-head">Ending in the next 30 days <span class="muted">${m.ending.length}</span></div>
-        <div class="ibody">${endingHtml}</div></section>
+        <div class="itabs" role="tablist">${[['ending', `POVs ending ≤30 d <span>${m.ending.length}</span>`], ['closing', `Deals closing ≤30 d <span>${(m.closing ?? []).length}</span>`]].map(([k, l]) => `<button role="tab" data-mid="${k}" aria-selected="${midTab === k}">${l}</button>`).join('')}</div>
+        <div class="ibody">${midTab === 'closing' ? closingHtml : endingHtml}</div></section>
       <section class="panel ipanel"><div class="head"><h3>Team</h3></div>
         <div class="itabs" role="tablist">${[['load', 'SE workload'], ['rollup', 'Roll-up'], ['caps', 'Capabilities']].map(([k, l]) => `<button role="tab" data-right="${k}" aria-selected="${rightTab === k}">${l}</button>`).join('')}</div>
         <div class="ibody">${{ load: loadHtml, rollup: rollHtml, caps: `<p class="small muted pad" style="padding-bottom:4px">How often each capability is proven where it is tested: the lowest stall POVs.</p>${capsHtml}` }[rightTab]}</div></section>
     </div></div>`;
+  for (const b of main.querySelectorAll('[data-mid]')) b.addEventListener('click', () => ((ui.mid = b.dataset.mid), save(), rerender()));
   for (const b of main.querySelectorAll('[data-left]')) b.addEventListener('click', () => ((ui.left = b.dataset.left), save(), rerender()));
   for (const b of main.querySelectorAll('[data-right]')) b.addEventListener('click', () => ((ui.right = b.dataset.right), save(), rerender()));
   for (const b of main.querySelectorAll('[data-by]')) b.addEventListener('click', () => ((ui.by = b.dataset.by), save(), rerender()));

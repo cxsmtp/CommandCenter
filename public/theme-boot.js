@@ -2,7 +2,7 @@
 (function () {
   try {
     var p = JSON.parse(localStorage.getItem('cc.look') || '{}');
-    var mode = p.mode || 'dark';
+    var mode = p.mode || 'light';
     var dark = mode === 'dark' || (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
     var look = p.theme || 'orbit';
     document.documentElement.dataset.look = look;

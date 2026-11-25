@@ -120,11 +120,13 @@ export function gaps(opp, row, { facts = null, people = null, catalog = null, no
     // Salesforce (from the latest report) and the POV should tell the same story.
     if (/lost/i.test(sf.stage ?? '')) add('bad', 'sf-lost', `Salesforce says “${sf.stage}” while the POV is still open`, 'Check with the account executive, then close or reopen');
     else if (/closed\s*won|\bwon\b/i.test(sf.stage ?? '') && opp.stage !== 'won') add('info', 'sf-won', `Salesforce says “${sf.stage}”`, 'Mark the opportunity won');
-    if (sf.closeDate && !/closed/i.test(sf.stage ?? '')) {
-      if (Date.parse(`${sf.closeDate}T23:59:59Z`) < now) add('warn', 'sf-past', `The Salesforce close date (${sf.closeDate}) has passed`, 'Ask the account executive to update it');
-      else if (pov && opp.endDate && sf.closeDate < opp.endDate) add('warn', 'sf-close', `Salesforce closes on ${sf.closeDate}, before the POV ends on ${opp.endDate}`, 'Align the close date and the POV plan');
-    }
     if (sf.reportAt && now - Date.parse(sf.reportAt) > 14 * DAY) add('info', 'sf-stale', `The Salesforce figures are ${Math.floor((now - Date.parse(sf.reportAt)) / DAY)} days old`, 'Bring in a newer report');
+  }
+  // The close date, from the Salesforce report or as typed on the POV: the POV must finish before the deal closes.
+  const closeDate = sf?.closeDate || opp.closeDate || '';
+  if (closeDate && !/closed/i.test(sf?.stage ?? '') && !['won', 'lost'].includes(opp.stage)) {
+    if (Date.parse(`${closeDate}T23:59:59Z`) < now) add('warn', 'sf-past', `The Salesforce close date (${closeDate}) has passed`, 'Ask the account executive to update it');
+    else if (pov && opp.endDate && closeDate < opp.endDate) add('warn', 'sf-close', `Salesforce closes on ${closeDate}, before the POV ends on ${opp.endDate}`, 'Align the close date and the POV plan');
   }
   if (!opp.sharepointUrl && ['pov', 'completed'].includes(opp.stage)) add('info', 'sharepoint', 'No SharePoint site linked', 'Add the site’s link');
   const overdue = (opp.tasks ?? []).filter((t) => !t.done && t.due && Date.parse(`${t.due}T23:59:59Z`) < now);
@@ -300,7 +302,13 @@ export function insightsMore(rows, { oppOf, catalog, history = {}, now = Date.no
   const ending = live
     .filter((r) => r.stage === 'pov' && r.daysLeft !== null && r.daysLeft >= 0 && r.daysLeft <= 30)
     .sort((a, b) => a.daysLeft - b.daysLeft)
-    .map((r) => ({ id: r.id, customer: r.customer, owner: r.owner.name, daysLeft: r.daysLeft, endDate: r.endDate, score: r.prediction?.score ?? null, amount: amount(r), met: r.progress?.met ?? 0, total: r.progress?.total ?? 0 }));
+    .map((r) => ({ id: r.id, customer: r.customer, owner: r.owner.name, daysLeft: r.daysLeft, endDate: r.endDate, score: r.prediction?.score ?? null, amount: amount(r), met: r.progress?.met ?? 0, total: r.progress?.total ?? 0, closeDate: r.closeDate || r.sf?.closeDate || '' }));
+  // Closing in Salesforce within 30 days (open deals), soonest first: is each POV done in time?
+  const closing = live
+    .map((r) => ({ r, close: r.closeDate || r.sf?.closeDate || '' }))
+    .filter(({ r, close }) => close && !['won', 'lost'].includes(r.stage) && !/closed/i.test(r.sf?.stage ?? '') && Date.parse(`${close}T23:59:59Z`) >= now && Date.parse(`${close}T23:59:59Z`) - now <= 30 * DAY)
+    .sort((a, b) => a.close.localeCompare(b.close))
+    .map(({ r, close }) => ({ id: r.id, customer: r.customer, owner: r.owner.name, closeDate: close, daysToClose: Math.ceil((Date.parse(`${close}T23:59:59Z`) - now) / DAY), endDate: r.endDate, povAfterClose: Boolean(r.stage === 'pov' && r.endDate && close < r.endDate), score: r.prediction?.score ?? null, amount: amount(r) }));
 
   // What moved: the totals now against a week ago, the last 30 days, and the POVs that moved most.
   const ids = new Set(live.map((r) => r.id));
@@ -323,5 +331,5 @@ export function insightsMore(rows, { oppOf, catalog, history = {}, now = Date.no
     }
     movers.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }
-  return { categories, outcomes, workload, capabilities, ending, trend: { since: weekAgoDay, before, series }, movers: movers.slice(0, 12) };
+  return { categories, outcomes, workload, capabilities, ending, closing, trend: { since: weekAgoDay, before, series }, movers: movers.slice(0, 12) };
 }

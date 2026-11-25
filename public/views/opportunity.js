@@ -530,49 +530,45 @@ function email(d) {
     <section class="panel"><div class="head"><h3>Outbox</h3></div><ul class="feed">${d.outbox.map((m) => `<li data-outbox="${esc(m.id)}" style="cursor:pointer"><span class="icon">${m.status === 'sent' ? '✉' : m.status === 'draft' ? '✎' : '⇩'}</span><div><div class="t">${esc(m.subject)}</div><div class="m">${esc(m.status)} · ${esc((m.to ?? []).join(', '))}${m.by ? ` · ${esc(person(m.by))}` : ' · scheduled draft'}</div></div><span class="when">${ago(m.at)}</span></li>`).join('') || '<li class="empty" style="display:block">Nothing yet.</li>'}</ul></section></div>`;
 }
 
-// ——— Report ———
+// ——— Results: the four documents, one line each, then what goes into them ———
 function report(d) {
   const o = d.opportunity;
-  return `<div class="grid2 res-cols">${wipPanel(d)}<section class="panel"><div class="body stack">
-    <p style="margin:0"><b>The results page</b> opens with the Checkmarx One platform slide, showing only this POV's engines with their status. Select any engine for its record: progress, the scans and evidence that prove it, notes, links and every timestamp up to the POV's completion. The other slides follow. Printing it gives a PDF of every slide, then one page per engine.</p>
-    <div class="row"><a class="btn primary" href="/api/opportunities/${esc(o.id)}/results" target="_blank" rel="noopener">Open the results page</a><button class="btn" data-act="dl-results">Download the page (HTML)</button><button class="btn" data-act="deck">Download the presentation (.pptx)</button></div>
-    <label class="field" style="max-width:520px">Customer presentation <span class="small muted">the design and slides of the WIP deck and the final report</span><select id="deckPick"${current.canEdit ? '' : ' disabled'}><option value="">Team’s choice</option></select></label>
-    <div class="item"><div class="top"><b>Final results</b>${d.finals.length ? `<span class="small muted">kept ${esc(when(d.finals[0].at))}${d.finals.length > 1 ? ` · ${d.finals.length} copies` : ''}</span>` : ''}</div>
-      ${d.finals.length ? `<p class="small muted" style="margin:6px 0">The results page exactly as it stood when the POV was marked successful: later activity in the tenant does not change it.</p><div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/results?final=1" target="_blank" rel="noopener">Open the final copy</a><button class="btn" data-act="dl-final">Download it</button>${current.canEdit ? '<button class="btn ghost" data-act="freeze">Keep a new final copy now</button>' : ''}</div>` : `<p class="small muted" style="margin:6px 0">Kept by itself when the POV is marked successful.${current.canEdit ? ' Or keep one now.' : ''}</p>${current.canEdit ? '<div class="row"><button class="btn" data-act="freeze">Keep the results as final now</button></div>' : ''}`}
-    </div>
-    <hr style="border:0;border-top:1px solid var(--line);width:100%">
-    <p style="margin:0">The success-criteria report: the answer first, every criterion with its status and evidence, the sessions held and what the tenant showed. It prints to PDF from the browser.</p>
-    <div class="row"><a class="btn" href="/api/opportunities/${esc(o.id)}/report" target="_blank" rel="noopener">Open the report</a><button class="btn" data-act="dl-report">Download HTML</button>${o.sharepointUrl ? `<a class="btn" href="${esc(o.sharepointUrl)}" target="_blank" rel="noopener noreferrer">Open SharePoint ↗</a>` : ''}</div>
-    <p class="small muted" style="margin:0">To keep it with the customer's documents, save it as PDF and put it in the SharePoint site${o.sharepointUrl ? '' : ' (add its link under Edit details)'}. Publishing to SharePoint by itself needs a Microsoft Graph app registration; the report layout will follow the formats you supply.</p>
-  </div></section></div>`;
-}
-
-// ——— The POV work-in-progress deck ———
-function wipPanel(d) {
-  const o = d.opportunity;
   const a = o.apma;
+  const id = esc(o.id);
+  const edit = current.canEdit;
   const tc = o.toolchain ?? {};
   const tools = (state.meta.toolchain ?? []).flatMap((t) => tc[t.key]?.tools ?? []);
   const meetings = o.sessions ?? [];
-  const today = new Date().toISOString().slice(0, 10);
-  const held = meetings.filter((m) => (m.status || (m.date <= today ? 'done' : 'planned')) === 'done').length;
-  const gaps = [!tools.length && 'the customer’s toolchain', !meetings.length && 'the meetings', !(o.stakeholders ?? []).some((p) => p.povRole) && 'POV roles for the people'].filter(Boolean);
-  return `<section class="panel"><div class="head"><h3>POV work-in-progress deck</h3><span class="small muted">the document you share with the customer during the POV</span></div><div class="body stack">
-    <p style="margin:0">Built from this POV each time you download it: the executive overview, the platform, the toolchain, ${a ? 'the APMA assessment, ' : ''}plan and timeline (${meetings.length} meetings, ${held} held), the environment, the test plan for each business goal with today’s status, and the notes of each meeting held.</p>
-    ${gaps.length && current.canEdit ? `<p class="small" style="margin:0"><span class="warn-t">Still empty:</span> ${gaps.join(', ')}.</p>` : ''}
-    <div class="row"><button class="btn primary" data-act="wip">Download the WIP deck (.pptx)</button>${current.canEdit && o.sharepointUrl ? '<button class="btn" data-act="sp-publish">Publish to SharePoint</button>' : ''}${current.canEdit ? '<button class="btn" data-act="wip-plan">Plan, toolchain &amp; environment</button>' : ''}</div>
-    <div class="item"><div class="top"><b>APMA assessment</b><span class="small muted">optional</span></div>
-      ${a ? `<p class="small" style="margin:6px 0">${a.dimensions.filter((x) => x.current != null).map((x) => `${esc(x.name)} <b>${x.current}</b> → ${x.desired}`).join(' · ')}</p>
-        <div class="row">${a.file ? `<a class="btn sm" href="/api/opportunities/${esc(o.id)}/apma" target="_blank" rel="noopener">Open the report</a>` : ''}${current.canEdit ? '<button class="btn sm" data-act="apma-up">Replace</button><button class="btn sm ghost danger" data-act="apma-del">Remove</button>' : ''}</div>`
-        : `<p class="small muted" style="margin:6px 0">Drop the customer’s APMA report (PDF): its maturity scores, the interview and the recommended first steps fill the APMA slide.</p>${current.canEdit ? '<div class="row"><button class="btn sm" data-act="apma-up">Add the APMA report</button></div>' : ''}`}
-      <input type="file" id="apmaFile" accept="application/pdf,.pdf" hidden></div>
-    <div class="item"><div class="top"><b>POV screenshots</b><span class="small muted">${(o.screenshots ?? []).length ? `${o.screenshots.length} · each is a slide, in this order` : 'optional'}</span></div>
-      ${(o.screenshots ?? []).length ? `<ul class="shots">${o.screenshots.map((x, i) => `<li><img src="/api/opportunities/${esc(o.id)}/screenshots/${esc(x.id)}" alt="" loading="lazy"><span>Checkmarx ONE – <b>${esc(x.caption)}</b></span>${current.canEdit ? `<span class="row"><button class="btn sm ghost" data-shot-up="${esc(x.id)}" ${i ? '' : 'disabled'} aria-label="Move up">↑</button><button class="btn sm ghost" data-shot-down="${esc(x.id)}" ${i < o.screenshots.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button><button class="btn sm ghost" data-shot-name="${esc(x.id)}">Rename</button><button class="btn sm ghost danger" data-shot-del="${esc(x.id)}">Remove</button></span>` : ''}</li>`).join('')}</ul>` : '<p class="small muted" style="margin:6px 0">Screenshots from the tenant (the Analytics dashboard, the compliance page, triage, an SCA exploitable path, the integrations) become the deck’s POV screenshots slides, before the appendix.</p>'}
-      ${current.canEdit ? '<div class="row"><button class="btn sm" data-act="shot-add">Add screenshots</button></div>' : ''}
-      <input type="file" id="shotFile" accept="image/png,image/jpeg" multiple hidden></div>
-    <div class="item"><div class="top"><b>The RW report</b><span class="small muted">the POV guide as one page (HTML)</span></div>
-      <div class="row" style="margin-top:6px"><a class="btn sm" href="/api/opportunities/${esc(o.id)}/rw" target="_blank" rel="noopener">Open the RW report</a><button class="btn sm" data-act="dl-rw">Download HTML</button></div></div>
-  </div></section>`;
+  const shots = o.screenshots ?? [];
+  const empty = [!tools.length && 'toolchain', !meetings.length && 'meetings', !(o.stakeholders ?? []).some((p) => p.povRole) && 'POV roles'].filter(Boolean);
+  const final = d.finals[0];
+  const doc = (name, when, what, actions, extra = '') => `<div class="rdoc"><div class="rdoc-t"><b>${name}</b><span class="rdoc-when">${when}</span><span class="small muted">${what}</span>${extra}</div><div class="rdoc-a">${actions}</div></div>`;
+  const link = (href, label, cls = 'btn sm') => `<a class="${cls}" href="${href}" target="_blank" rel="noopener">${label}</a>`;
+  const docs = [
+    doc('Work-in-progress deck', 'During the POV', 'Overview, platform, toolchain, plan, test plan per goal with today’s status, meeting notes.',
+      `<button class="btn sm primary" data-act="wip">Download .pptx</button>${edit && o.sharepointUrl ? '<button class="btn sm" data-act="sp-publish">To SharePoint</button>' : ''}`,
+      empty.length && edit ? `<span class="small warn-t">Still empty: ${empty.join(', ')}</span>` : ''),
+    doc('Results page', 'At the end', 'The platform slide with this POV’s engines; each engine opens its proof. Prints to PDF.',
+      `${link(`/api/opportunities/${id}/results`, 'Open', 'btn sm primary')}<button class="btn sm" data-act="dl-results">HTML</button><button class="btn sm" data-act="deck">.pptx</button>`,
+      `<span class="small muted">${final ? `Final copy kept ${esc(day(final.at))}: ${link(`/api/opportunities/${id}/results?final=1`, 'open', 'link')} · <button type="button" class="link" data-act="dl-final">download</button>${edit ? ' · <button type="button" class="link" data-act="freeze">keep a new one</button>' : ''}` : `A final copy is kept when the POV is marked successful${edit ? ` · <button type="button" class="link" data-act="freeze">keep one now</button>` : ''}`}</span>`),
+    doc('Success-criteria report', 'At the end', 'The answer first, then every criterion with its status and evidence.',
+      `${link(`/api/opportunities/${id}/report`, 'Open')}<button class="btn sm" data-act="dl-report">HTML</button>${o.sharepointUrl ? link(esc(o.sharepointUrl), 'SharePoint ↗') : ''}`),
+    doc('RW report', 'Anytime', 'The POV guide on one page: goals, success criteria, scope and plan.',
+      `${link(`/api/opportunities/${id}/rw`, 'Open')}<button class="btn sm" data-act="dl-rw">HTML</button>`),
+  ];
+  const apmaLine = a
+    ? `${a.dimensions.filter((x) => x.current != null).map((x) => `${esc(x.name)} <b>${x.current}</b>→${x.desired}`).join(' · ')}`
+    : 'Optional: the customer’s APMA report (PDF) fills the APMA slide.';
+  return `<div class="res-wrap">
+    <section class="panel"><div class="head"><h3>Documents</h3>
+      <label class="rdesign small muted">Design <select id="deckPick"${edit ? '' : ' disabled'}><option value="">Team’s choice</option></select></label></div>
+      <div class="rdocs">${docs.join('')}</div></section>
+    <section class="panel"><div class="head"><h3>What goes into the decks</h3></div><div class="rins">
+      <div class="rin"><div><b>Plan, toolchain &amp; environment</b><span class="small muted">${tools.length} tools · ${meetings.length} meetings${empty.length ? ` · <span class="warn-t">${empty.length} empty</span>` : ''}</span></div>${edit ? '<button class="btn sm" data-act="wip-plan">Edit</button>' : ''}</div>
+      <div class="rin"><div><b>APMA assessment</b><span class="small ${a ? '' : 'muted'}">${apmaLine}</span></div><div class="row">${a?.file ? link(`/api/opportunities/${id}/apma`, 'Open') : ''}${edit ? `<button class="btn sm" data-act="apma-up">${a ? 'Replace' : 'Add PDF'}</button>${a ? '<button class="btn sm ghost danger" data-act="apma-del">Remove</button>' : ''}` : ''}</div><input type="file" id="apmaFile" accept="application/pdf,.pdf" hidden></div>
+      <div class="rin"><div><b>Screenshots</b><span class="small muted">${shots.length ? `${shots.length} · one slide each, before the appendix` : 'Optional: Analytics, compliance, triage, integrations…'}</span></div>${edit ? '<button class="btn sm" data-act="shot-add">Add</button>' : ''}<input type="file" id="shotFile" accept="image/png,image/jpeg" multiple hidden></div>
+      ${shots.length ? `<details class="rshots"><summary class="small">Show and order the ${shots.length} screenshot${shots.length === 1 ? '' : 's'}</summary><ul class="shots">${shots.map((x, i) => `<li><img src="/api/opportunities/${id}/screenshots/${esc(x.id)}" alt="" loading="lazy"><span>Checkmarx ONE – <b>${esc(x.caption)}</b></span>${edit ? `<span class="row"><button class="btn sm ghost" data-shot-up="${esc(x.id)}" ${i ? '' : 'disabled'} aria-label="Move up">↑</button><button class="btn sm ghost" data-shot-down="${esc(x.id)}" ${i < shots.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button><button class="btn sm ghost" data-shot-name="${esc(x.id)}">Rename</button><button class="btn sm ghost danger" data-shot-del="${esc(x.id)}">Remove</button></span>` : ''}</li>`).join('')}</ul></details>` : ''}
+    </div></section></div>`;
 }
 
 function editPlan() {
@@ -1001,10 +997,9 @@ function editDetails() {
     'Opportunity details',
     `<div class="row"><label class="field">Customer<input name="customer" value="${esc(o.customer)}" required></label><label class="field">Name<input name="name" value="${esc(o.name)}"></label></div>
      <div class="row">${can('opps.reassign') ? `<label class="field">SE (owner)<select name="ownerId">${peopleOptions(o.ownerId)}</select></label>` : ''}<label class="field">Stage<select name="stage">${Object.entries(state.meta.stages).map(([k, l]) => `<option value="${k}" ${o.stage === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label><label class="field">Value<input name="amount" value="${esc(o.amount)}" placeholder="e.g. $250k ARR"></label></div>
-     <div class="row"><label class="field">POV start<input type="date" name="startDate" value="${esc(o.startDate)}"></label><label class="field">POV end<input type="date" name="endDate" value="${esc(o.endDate)}"></label></div>
+     <div class="row"><label class="field">POV start<input type="date" name="startDate" value="${esc(o.startDate)}"></label><label class="field">POV end<input type="date" name="endDate" value="${esc(o.endDate)}"></label><label class="field">Salesforce close date${o.salesforce?.closeDate ? ` <span class="small muted">the report says ${esc(day(o.salesforce.closeDate))}</span>` : ''}<input type="date" name="closeDate" value="${esc(o.closeDate ?? '')}"></label></div>
      <label class="field">Salesforce opportunity link<input name="salesforceUrl" type="url" value="${esc(o.salesforceUrl)}"></label>
      <label class="field">SharePoint site link<input name="sharepointUrl" type="url" value="${esc(o.sharepointUrl)}"></label>
-     <label class="field">Deal size<input name="amount" value="${esc(o.amount ?? '')}" placeholder="e.g. $420k ARR"></label>
      <div class="row"><button type="button" class="btn ghost danger" id="delOpp">Delete this opportunity</button></div>`,
     (b) => api(`/opportunities/${oid()}`, { method: 'PATCH', body: b }),
   ).then(() => {});

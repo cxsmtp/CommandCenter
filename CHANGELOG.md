@@ -2,6 +2,19 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.75 · 2026-11-25
+
+**Close dates, light by default, and a cleaner Results tab**
+
+- Salesforce close date: from the latest Salesforce report, else typed on the POV (Edit
+  details). A Close date column on the Portfolio (days to go; amber when the POV ends after it
+  or it has passed); Insights lists the deals closing in 30 days beside the POVs ending; the
+  gap checks use it whichever way it came.
+- Light is the default look (an organisation on the old dark default moves once); Admins can
+  use one look and mode for everyone (Settings > Organisation).
+- Results: the four documents one line each (when, what, actions), the design picker once,
+  and what goes into the decks (plan, APMA, screenshots) beside them.
+
 ## 1.0.74 · 2026-11-25
 
 **Portfolio: the tenant's licence start and end dates**

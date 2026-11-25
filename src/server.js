@@ -62,7 +62,7 @@ const MAX_BODY = 512 * 1024;
 const DAY = 86_400_000;
 const KINDS = new Set(['stakeholders', 'sessions', 'notes', 'tasks', 'criteria']);
 const POLLED_STAGES = new Set(['pov']);
-const DEFAULT_SETTINGS = { orgName: 'Kendra', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'dark', weeklyDrafts: true, reportStyle: 'classic' };
+const DEFAULT_SETTINGS = { orgName: 'Kendra', refreshMinutes: 10, defaultTheme: 'orbit', defaultMode: 'light', lookForAll: false, weeklyDrafts: true, reportStyle: 'classic' };
 
 export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT, 'data'), collectFn, verifyKey = defaultVerify, secureCookies = process.env.CC_SECURE_COOKIES === 'true', updaterOptions = null, backupOptions = null, startBackground = true, tls = false } = {}) {
   // HTTPS served here (src/tls.js): the given certificate, else a self-signed one; cookies are then always Secure.
@@ -91,6 +91,15 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
   };
   const fullSettings = () => db.read('settings', {});
+  // Light became the default look (2026-11): once, an organisation still on the old dark default moves to light.
+  {
+    const all = db.read('settings', {});
+    if (!all.lightDefault) {
+      if (all.defaultMode === 'dark') all.defaultMode = 'light';
+      all.lightDefault = true;
+      db.write('settings', all);
+    }
+  }
   // Linked apps: the FTR Credits Command Center, one sign-in for both (src/link.js).
   const linkSettings = () => {
     const l = db.read('settings', {}).link ?? {};
@@ -378,6 +387,9 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       startDate: opp.startDate,
       endDate: opp.endDate,
       daysLeft: opp.endDate ? Math.ceil((Date.parse(`${opp.endDate}T23:59:59Z`) - now) / DAY) : null,
+      // The Salesforce close date: from the latest report, else as the SE typed it.
+      closeDate: opp.salesforce?.closeDate || opp.closeDate || '',
+      closeFrom: opp.salesforce?.closeDate ? 'report' : opp.closeDate ? 'typed' : '',
       salesforceUrl: opp.salesforceUrl,
       sharepointUrl: opp.sharepointUrl,
       amount: opp.amount,
@@ -595,7 +607,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const user = users.fromToken(cookie(req, 'cc_session'), { slide: req.headers['x-peek'] !== '1' });
     if (route === 'GET /session') {
       const linked = linkReady() ? { ftr: linkSettings().ftrUrl } : null;
-      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours, linked } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode }, version: VERSION, linked });
+      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours, linked } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode, lookForAll: settings().lookForAll }, version: VERSION, linked });
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
@@ -747,6 +759,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if ('refreshMinutes' in b) all.refreshMinutes = Math.min(1440, Math.max(1, Math.trunc(Number(b.refreshMinutes)) || 10));
       if (THEMES.includes(b.defaultTheme)) all.defaultTheme = b.defaultTheme;
       if (['auto', 'light', 'dark'].includes(b.defaultMode)) all.defaultMode = b.defaultMode;
+      if ('lookForAll' in b) all.lookForAll = Boolean(b.lookForAll);
       if ('weeklyDrafts' in b) all.weeklyDrafts = Boolean(b.weeklyDrafts);
       if (['classic', 'team'].includes(b.reportStyle)) all.reportStyle = b.reportStyle;
       db.write('settings', all);

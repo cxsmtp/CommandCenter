@@ -20,3 +20,13 @@ test('the POV summary carries the tenant licence dates', () => {
   assert.deepEqual([s.license.start, s.license.end], ['2026-10-01', '2026-12-31']);
   assert.equal(summarize({ at: new Date().toISOString(), identity: { user: 'x' }, projects: { total: 0, list: [] }, scans: [], active: [] }).license, null);
 });
+
+test('the Salesforce close date: from the report, else typed; Insights lists deals closing in 30 days', async () => {
+  const { gaps } = await import('../src/insights.js');
+  const now = Date.parse('2026-11-25T12:00:00Z');
+  const base = { stage: 'pov', endDate: '2026-12-20', stakeholders: [], tasks: [], criteria: [], salesforceUrl: 'https://x.lightning.force.com/r/Opportunity/006/view', sharepointUrl: 'https://s' };
+  assert.ok(JSON.stringify(gaps({ ...base, closeDate: '2026-12-10' }, { daysLeft: 25, live: null }, { now })).includes('before the POV ends'), 'typed close date before the POV end');
+  assert.ok(JSON.stringify(gaps({ ...base, closeDate: '2026-11-01' }, { daysLeft: 25, live: null }, { now })).includes('has passed'));
+  assert.ok(!JSON.stringify(gaps({ ...base, closeDate: '2027-01-15' }, { daysLeft: 25, live: null }, { now })).includes('close date'));
+  assert.ok(JSON.stringify(gaps({ ...base, closeDate: '2027-01-15', salesforce: { closeDate: '2026-12-01', stage: 'Proposal' } }, { daysLeft: 25, live: null }, { now })).includes('2026-12-01'), 'the report wins over the typed date');
+});

@@ -46,9 +46,12 @@ function profile(body, data, applyLook) {
   const mode = p.mode || data.settings.defaultMode;
   body.innerHTML = `<div class="grid2">
     <div class="stack"><section class="panel"><div class="head"><h3>Your look</h3></div><div class="body stack">
+      ${data.settings.lookForAll ? '<p class="small muted" style="margin:0">Your Admin set one look for everyone (Settings → Organisation).</p>' : ''}
+      <div class="stack" ${data.settings.lookForAll ? 'inert style="opacity:.45"' : ''}>
       <div class="looks">${Object.entries(LOOKS).slice(0, 4).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div>
       <details ${Object.keys(LOOKS).indexOf(theme) >= 4 ? 'open' : ''}><summary class="small muted">More looks</summary><div class="looks" style="margin-top:10px">${Object.entries(LOOKS).slice(4).map(([k, [label, sw]]) => `<button class="look" data-look="${k}" aria-pressed="${theme === k}"><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${label}</div></button>`).join('')}</div></details>
       <div class="row center"><span class="small muted">Mode</span><div class="seg">${['auto', 'light', 'dark'].map((m) => `<button data-mode="${m}" aria-pressed="${mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div></div>
+      </div>
       <div class="pref-rows"><span class="small muted">Kendra opens on</span><div class="seg">${[['', 'By role'], ['insights', 'Insights'], ['dashboard', 'Portfolio']].map(([v, l]) => `<button data-phome="${v}" aria-pressed="${(p.home ?? '') === v}">${l}</button>`).join('')}</div>
         <span class="small muted">Portfolio opens as</span><div class="seg">${[['', 'By role'], ['cards', 'Cards'], ['table', 'Line items']].map(([v, l]) => `<button data-pview="${v}" aria-pressed="${(p.view ?? '') === v}">${l}</button>`).join('')}</div></div>
     </div></section>
@@ -89,13 +92,14 @@ function profile(body, data, applyLook) {
   });
 }
 
-function organisation(body, data) {
+function organisation(body, data, applyLook) {
   const s = data.settings;
-  body.innerHTML = `<div class="grid2 org-cols"><div class="stack" id="orgLeft"><form id="orgForm" class="panel body stack">
+  body.innerHTML = `<div class="grid2 org-cols"><div class="stack" id="orgLeft"><form id="orgForm" class="panel body stack" style="padding:16px">
     <label class="field">Name shown in the menu and on reports<input name="orgName" value="${esc(s.orgName)}"></label>
     <label class="field">Read each running POV tenant every (minutes)<input type="number" name="refreshMinutes" min="1" max="1440" value="${esc(s.refreshMinutes)}"></label>
     <div class="row"><label class="field">Default look<select name="defaultTheme">${Object.entries(LOOKS).map(([k, [l]]) => `<option value="${k}" ${s.defaultTheme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    <label class="field">Default mode<select name="defaultMode">${['auto', 'light', 'dark'].map((m) => `<option ${s.defaultMode === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label></div>
+    <label class="field">Default mode<select name="defaultMode">${[['light', 'Light'], ['dark', 'Dark'], ['auto', 'As the device']].map(([m, l]) => `<option value="${m}" ${s.defaultMode === m ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <label class="check"><input type="checkbox" name="lookForAll" ${s.lookForAll ? 'checked' : ''}> Use this look and mode for everyone (people cannot choose their own)</label>
     <label class="field">Results presentation<select name="reportStyle"><option value="classic" ${s.reportStyle !== 'team' ? 'selected' : ''}>Classic (Kendra’s own design)</option><option value="team" ${s.reportStyle === 'team' ? 'selected' : ''}>Team template (the WIP design, in the uploaded template)</option></select></label>
     <label class="check"><input type="checkbox" name="weeklyDrafts" ${s.weeklyDrafts ? 'checked' : ''}> Every Monday, write a weekly status draft for each running POV (waiting in its Email tab, never sent by itself)</label>
     <div><button class="btn primary">Save</button></div>
@@ -105,7 +109,10 @@ function organisation(body, data) {
   $('#orgForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const r = await attempt(() => api('/settings', { method: 'PUT', body: formData(e.target) }), 'Saved');
-    if (r) state.session.settings = r.settings;
+    if (r) {
+      state.session.settings = r.settings;
+      applyLook(state.session.user.prefs);
+    }
   });
 }
 
