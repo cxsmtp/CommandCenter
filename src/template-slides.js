@@ -213,7 +213,10 @@ export function fillTestSlide(xml, { number, title, statement, rows = [] }) {
   const base = header ? trs[1] : trs[0];
   const cellsOf = (tr) => [...tr.matchAll(/<a:tc\b[^>]*>[\s\S]*?<\/a:tc>/g)].map((m) => m[0]);
   const long = Math.max(0, ...rows.map((r) => Math.max((r.description ?? '').length, (r.measure ?? '').length)));
-  const size = long > 230 ? 1100 : long > 160 ? 1250 : null;
+  // The table keeps the template's height: more rows than the example are shorter, their text a little smaller.
+  const templateRows = trs.length - (header ? 1 : 0);
+  const crowd = rows.length / Math.max(1, templateRows);
+  const size = crowd > 1.5 || long > 230 ? 1100 : crowd > 1 || long > 160 ? 1250 : null;
   const fillCell = (tc, lines) => {
     const ps = [...tc.matchAll(/<a:p>[\s\S]*?<\/a:p>/g)].map((m) => m[0]).filter((p) => /<a:r>/.test(p));
     const first = tc.indexOf('<a:p>');
@@ -232,7 +235,9 @@ export function fillTestSlide(xml, { number, title, statement, rows = [] }) {
     });
     return tr;
   });
-  const rowH = Number(/<a:tr\b[^>]*\bh="(\d+)"/.exec(base)?.[1] ?? 0);
+  const baseH = Number(/<a:tr\b[^>]*\bh="(\d+)"/.exec(base)?.[1] ?? 0);
+  const rowH = baseH && rows.length > templateRows ? Math.max(Math.round((baseH * templateRows) / rows.length), 520000) : baseH;
+  if (rowH && rowH !== baseH) for (let i = 0; i < built.length; i++) built[i] = built[i].replace(/(<a:tr\b[^>]*\bh=")\d+(")/, `$1${rowH}$2`);
   const kept = header ? trs[0] : '';
   let tbl = frame.xml;
   const start = tbl.indexOf(trs[0]);

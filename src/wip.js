@@ -508,7 +508,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       let h = 0;
       for (const id of ids) {
         const rh = rowH(crit[id]);
-        if (cur.length && (tpl ? cur.length >= 6 : tplT ? cur.length >= 3 : h + rh > 4.3)) {
+        if (cur.length && (tpl ? cur.length >= 6 : tplT ? cur.length >= 5 : h + rh > 4.3)) {
           pages.push(cur);
           cur = [];
           h = 0;
@@ -517,6 +517,13 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
         h += rh;
       }
       if (cur.length) pages.push(cur);
+      // On the template's own slide: up to six criteria a slide, shared evenly (never a last page of one).
+      if (tplT) {
+        const k = Math.ceil(ids.length / 6);
+        const per = Math.ceil(ids.length / Math.max(1, k));
+        pages.length = 0;
+        for (let i = 0; i < ids.length; i += per) pages.push(ids.slice(i, i + per));
+      }
       let n = 0;
       pages.forEach((page, pi) => {
         // The template's own test plan slide, when it has one: six rows a page, the result under each criterion.
@@ -756,7 +763,28 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
 
   const sNotes = () => {
   const held = [...(opp.sessions ?? [])].filter((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
-  if (held.length) {
+  if (held.length && tinfo?.notes) {
+    // The template's notes slide, as few as the notes need: short meetings share a slide (about 16 lines a slide),
+    // newest first; a meeting alone on its slide keeps the template's three headings.
+    const linesOf = (m) => lines(m.did || m.notes).length + lines(m.theirNext).length + lines(m.ourNext || m.followUps).length + 1;
+    const groups = [];
+    for (const m of held) {
+      const g = groups.at(-1);
+      if (g && g.reduce((t, x) => t + linesOf(x), 0) + linesOf(m) <= 16) g.push(m);
+      else groups.push([m]);
+    }
+    for (const g of groups) {
+      const n = add('notes');
+      void n;
+      const one = g.length === 1;
+      const m0 = g[0];
+      const sections = one
+        ? [{ heading: 'What we did today', items: lines(m0.did || m0.notes) }, { heading: `Next steps from ${C}`, items: lines(m0.theirNext) }, { heading: 'From the Checkmarx side', items: lines(m0.ourNext || m0.followUps) }]
+        : g.map((m) => ({ heading: `${longDay(m.date)} · ${m.title || SESSION_TYPES[m.type] || 'Meeting'}`, items: [...lines(m.did || m.notes), ...lines(m.theirNext).map((x) => `Next from ${C}: ${x}`), ...lines(m.ourNext || m.followUps).map((x) => `From Checkmarx: ${x}`)] }));
+      const date = one ? longDay(m0.date) : `${longDay(g.at(-1).date)} – ${longDay(g[0].date)}`;
+      kinds[kinds.length - 1] = { kind: 'notes', reuse: 'notes', fill: { date, sections } };
+    }
+  } else if (held.length) {
     for (const m of held) {
       const n = add('notes');
       if (tinfo?.notes) {

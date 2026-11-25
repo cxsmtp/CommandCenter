@@ -2,6 +2,18 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.84 · 2026-11-25
+
+**The team template's deck in fewer slides**
+
+- Test plan: up to six criteria on the template's own goal slide, shared evenly between
+  pages (never a last page of one); the table keeps the template's height, its rows shorter
+  and their text a little smaller when there are more than in the example.
+- Meeting notes: short meetings share the template's notes slide (about 16 lines a slide),
+  each under its date and name; a meeting alone keeps the template's three headings.
+- The cover, the dividers, the closing slides, the logo and branding stay the template's
+  own, untouched.
+
 ## 1.0.83 · 2026-11-25
 
 **The team template's deck as the template is: its order, its slides, its graphics and fonts**
