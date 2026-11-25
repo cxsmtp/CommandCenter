@@ -182,6 +182,8 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
     otherCurrencies: live.filter((r) => r.sf?.amount?.value).length - inCur.length,
     closing30: Math.round(inCur.filter((r) => r.sf.closeDate && Date.parse(`${r.sf.closeDate}T23:59:59Z`) - now <= 30 * DAY && Date.parse(`${r.sf.closeDate}T23:59:59Z`) >= now).reduce((t, r) => t + r.sf.amount.value, 0)),
     linked: rows.filter((r) => r.sf).length,
+    // The figures come only from Salesforce reports someone imported (Kendra does not read Salesforce): their latest date.
+    reportAt: rows.map((r) => r.sf?.reportAt).filter(Boolean).sort().pop() ?? null,
   };
   const gapCounts = new Map();
   for (const r of live) for (const g of r.gaps ?? []) if (g.level !== 'info') gapCounts.set(g.key, { key: g.key, text: g.text.split(':')[0], count: (gapCounts.get(g.key)?.count ?? 0) + 1, level: g.level });
@@ -234,7 +236,7 @@ export function insightsMore(rows, { oppOf, catalog, history = {}, now = Date.no
   const live = rows.filter((r) => !['won', 'lost'].includes(r.stage));
   const scored = live.filter((r) => r.prediction?.score !== null && r.prediction?.score !== undefined && ['pov', 'completed'].includes(r.stage));
   const amount = (r) => r.sf?.amount?.value ?? 0;
-  // Forecast categories, as sales forecasts are called: commit (likely), best case (at risk), pipeline (unlikely).
+  // Where the POVs are heading, by Kendra's own score of each: likely to succeed (70+), at risk (40-69), unlikely.
   const cat = (test) => {
     const list = scored.filter((r) => test(r.prediction.score));
     return { count: list.length, amount: Math.round(list.reduce((t, r) => t + amount(r), 0)) };

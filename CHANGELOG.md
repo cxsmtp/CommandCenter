@@ -2,6 +2,17 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.71 · 2026-11-25
+
+**Insights says what it is: Kendra's score of each POV's chance of success, not a sales forecast**
+
+- "Commit / Best case / Pipeline" (sales-forecast words, misleading here) are now "Likely to succeed / At risk /
+  Unlikely", "Expected wins" is "Expected successes", and the panel is "Where the POVs are heading".
+- The page says how the score is made and that it is not a sales forecast.
+- Amounts appear only when a Salesforce report has been imported by hand, and every one says so: "Amount at stake,
+  from the report imported <date>"; "Amount (report)" in the roll-up. Kendra does not read Salesforce; with no report
+  imported, no amount is shown anywhere.
+
 ## 1.0.70 · 2026-11-24
 
 **Insights rebuilt for leaders; leaders land on Insights, SEs on the Portfolio; pages fit the window**
