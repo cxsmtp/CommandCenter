@@ -14,7 +14,8 @@ import { SESSION_TYPES } from './opportunities.js';
 import { platformSlide } from './deck.js';
 import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS } from './toolchain.js';
 import { fillCover, fillPlan, fillEnvironment, fillTestPlan } from './template-fill.js';
-import { DEFAULT_LAYOUT } from './deck-templates.js';
+import { fillCoverSlide, fillOverviewSlide, fillPlanSlide, fillTestSlide, fillNotesSlide, fillShotSlide, picRelOf, MONTH_NAMES } from './template-slides.js';
+import { DEFAULT_LAYOUT, TEAM_LAYOUT } from './deck-templates.js';
 
 const BG = '170B2B';
 const PANEL = '1F1235';
@@ -23,7 +24,7 @@ const ORANGE = 'F25928';
 const VIOLET = '7A45FF';
 const WHITE = 'FFFFFF';
 const MUTED = 'B9B0CC';
-const FONT = 'Arial';
+let FONT = 'Arial';
 // Status colours: completed green, in progress amber, planned yellow, not met grey (never red).
 const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5A524'], planned: ['Planned', 'F5C518'], missed: ['Not met', '8A8197'] };
 const PLATFORM_CATS = new Set(['code', 'supply', 'aisc', 'runtime', 'agents', 'aspm']);
@@ -56,6 +57,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   pptx.layout = 'LAYOUT_WIDE';
   pptx.title = `${opp.customer} — ${results ? 'POV results' : 'POV work in progress'}`;
   const templated = Boolean(template);
+  // In the team's template, everything Kendra writes takes the template's own fonts (its theme's body font), so the
+  // deck reads as one; Kendra's own designs keep theirs.
+  FONT = templated ? '+mn-lt' : 'Arial';
   // Which of the template's own slides this deck can use (filled with the POV's data, or with its items boxed).
   const tinfo = template ? await readTemplate(await JSZip.loadAsync(template)) : null;
   const use = { cover: Boolean(tinfo?.cover), plan: Boolean(tinfo?.plan), env: Boolean(tinfo?.env), test: Boolean(tinfo?.test) };
@@ -93,7 +97,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const sCover = () => {
   // 1 — Cover
   {
-    const s = add(use.cover ? { kind: 'cover', reuse: 'cover', fill: { customer: C, results, people: [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean), date: longDay(today()) } } : 'cover');
+    const coverFill = { customer: C, results, people: [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean), date: longDay(today()) };
+    const s = add(use.cover ? { kind: 'cover', reuse: 'cover', fill: coverFill } : tinfo?.coverT ? { kind: 'cover', reuse: 'coverT', fill: coverFill } : 'cover');
     s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: FONT, fontSize: 38, bold: true, color: WHITE, margin: 0 });
     s.addText(results ? 'CxOne Platform: Proof of Value Results' : 'CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
     const who = [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean);
@@ -153,6 +158,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
           `This document gives a structured view of that value: the business goals we identified together, the agreed success criteria${opp.apma ? ', maturity recommendations from the APMA framework' : ''}, and the current status of the POV.`,
           c.se ? `Your primary technical contact at Checkmarx is ${c.se.name}, available throughout the engagement to make sure every business need and success criterion is accounted for.` : '',
         ].filter(Boolean);
+    if (tinfo?.overview) kinds[kinds.length - 1] = { kind: 'content', reuse: 'overview', fill: { customer: C, letter: letter.map((p) => p.trim()), quote: opp.plan?.quote || texts.quote || '“From code to confidence: building security from the ground up with Checkmarx.”' } };
     s.addText(`Dear ${C} Team,`, { x: L, y: 1.55, w: 7.4, h: 0.4, fontFace: FONT, fontSize: 15, bold: true, color: WHITE, margin: 0 });
     s.addText(letter.map((p) => ({ text: p.trim(), options: { breakLine: true, paraSpaceAfter: 10 } })), { x: L, y: 2.0, w: 7.4, h: 3.95, fontFace: FONT, fontSize: 12.5, color: 'E6E0F2', valign: 'top', margin: 0, lineSpacingMultiple: 1.12, fit: 'shrink' });
     s.addShape(pptx.ShapeType.rect, { x: L, y: 6.15, w: 0.06, h: 0.55, fill: { color: ORANGE }, line: { color: ORANGE, width: 0 } });
@@ -203,6 +209,14 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   // so a highlight always fits: activated in orange, met with a tick.
   const sPlatform = () => {
     const s = add('content');
+    if (tinfo?.components) {
+      const ids = (opp.criteria ?? []).map((x) => x.capabilityId || x.capRef).filter(Boolean);
+      const marks = [...new Set(ids.flatMap((id) => COMPONENT_LABELS[id] ?? []))];
+      const integrations = TOOLCHAIN.some((t) => (opp.toolchain?.[t.key]?.tools ?? []).length);
+      if (integrations) marks.push('SDLC integrations');
+      kinds[kinds.length - 1] = { kind: 'content', reuse: 'components', marks };
+      return;
+    }
     s.addText('CheckmarxOne', { x: L, y: 0.32, w: 9, h: 0.6, fontFace: FONT, fontSize: 30, bold: true, color: WHITE, margin: 0 });
     s.addText([{ text: 'Components of the platform ', options: { color: WHITE } }, { text: 'activated in this POV', options: { color: ORANGE } }], { x: L, y: 0.92, w: 10, h: 0.36, fontFace: FONT, fontSize: 16, margin: 0 });
     const inPov = new Map((opp.criteria ?? []).map((x) => [x.capabilityId || x.capRef, x]).filter(([k]) => k));
@@ -323,8 +337,8 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   // 5 — APMA, when the customer has an assessment
   const apma = opp.apma;
   if (apma?.dimensions?.some((d) => d.current != null)) {
-    const s = add('content');
-    head(s, 'APMA Assessment', 'Current status and future plan for', 'AppSec process maturity');
+    const s = add(tinfo?.apma ? { kind: 'content', reuse: 'apma', overlay: true } : 'content');
+    if (!tinfo?.apma) head(s, 'APMA Assessment', 'Current status and future plan for', 'AppSec process maturity');
     const dims = apma.dimensions.filter((d) => d.current != null);
     const name = (n) => n.replace('Security Testing - Infrastructure', 'Security Testing - Architecture & Scale');
     card(s, L, 1.5, 6.2, 5.3);
@@ -386,7 +400,13 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     const champion = (opp.stakeholders ?? []).find((p) => p.side === 'customer' && /champion|admin|sponsor/i.test(p.povRole ?? ''))?.name ?? '';
     const pl = opp.plan ?? {};
     const fill = { customer: C, scope: (pl.scope?.length ? pl.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title)).slice(0, 3), support: (pl.support?.length ? pl.support : (texts.support?.length ? texts.support : PLAN_DEFAULTS.support)).slice(0, 3), success: (pl.success?.length ? pl.success : (texts.success?.length ? texts.success : PLAN_DEFAULTS.success)).slice(0, 3), launch, checkin, wrapup, champion };
-    const s = add(viaTemplate && use.plan ? { kind: 'content', reuse: 'plan', fill } : 'content');
+    const scopeT = (pl.scope?.length ? pl.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title)).slice(0, 5);
+    const milestones = ms.map((m) => {
+      const d = new Date(`${m.date}T12:00:00Z`);
+      return { month: d.getUTCMonth(), day: d.getUTCDate(), label: m.title || SESSION_TYPES[m.type] || 'Meeting', state: statusOf(m) === 'done' ? 'done' : 'planned' };
+    });
+    const planT = { customer: C, scope: scopeT, support: (pl.support?.length ? pl.support : texts.support?.length ? texts.support : PLAN_DEFAULTS.support).slice(0, 5), success: (pl.success?.length ? pl.success : texts.success?.length ? texts.success : PLAN_DEFAULTS.success).slice(0, 5), milestones };
+    const s = add(viaTemplate && use.plan ? { kind: 'content', reuse: 'plan', fill } : viaTemplate && tinfo?.planT ? { kind: 'content', reuse: 'planT', fill: planT } : 'content');
     head(s, 'POV Plan & Timeline', 'Focus on', `${C}’s goals`);
     const plan = opp.plan ?? {};
     const scope = plan.scope?.length ? plan.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title).slice(0, 5);
@@ -473,6 +493,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
 
   const sTests = (viaTemplate = true) => {
     const tpl = viaTemplate && use.test;
+    const tplT = viaTemplate && !tpl && Boolean(tinfo?.testT);
   // 8… — The test plan, one business goal at a time
   {
     const crit = Object.fromEntries((story?.criteria ?? []).map((x) => [x.id, x]));
@@ -487,7 +508,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
       let h = 0;
       for (const id of ids) {
         const rh = rowH(crit[id]);
-        if (cur.length && (tpl ? cur.length >= 6 : h + rh > 4.3)) {
+        if (cur.length && (tpl ? cur.length >= 6 : tplT ? cur.length >= 3 : h + rh > 4.3)) {
           pages.push(cur);
           cur = [];
           h = 0;
@@ -504,7 +525,12 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
           const [label, color] = STATE[x.state] ?? ['Planned', MUTED];
           return { title: x.title, result: label, color, test: x.test, benefit: x.benefit || x.statement };
         });
-        const s = add(tpl ? { kind: 'content', reuse: 'test', fill: { number: gi + 1, title: `${g.title}${pages.length > 1 ? ` (${pi + 1} of ${pages.length})` : ''}`, statement: g.statement, rows: fillRows } } : 'content');
+        const before = ids.indexOf(page[0]);
+        const rowsT = page.map((id, i) => {
+          const x = crit[id];
+          return { code: `SC${before + i + 1}`, name: x.title, description: x.benefit || x.statement || '', measure: x.test || '', state: x.state };
+        });
+        const s = add(tpl ? { kind: 'content', reuse: 'test', fill: { number: gi + 1, title: `${g.title}${pages.length > 1 ? ` (${pi + 1} of ${pages.length})` : ''}`, statement: g.statement, rows: fillRows } } : tplT ? { kind: 'content', reuse: 'testT', fill: { number: gi + 1, title: `${g.title}${pages.length > 1 ? ` (${pi + 1} of ${pages.length})` : ''}`, statement: g.statement, rows: rowsT } } : 'content');
         s.addText('Test Plan Overview', { x: L, y: 0.3, w: 9, h: 0.55, fontFace: FONT, fontSize: 26, bold: true, color: WHITE, margin: 0 });
         s.addText([{ text: 'Business Goals', options: { color: ORANGE } }, { text: ' and ', options: { color: WHITE } }, { text: 'Success Criteria', options: { color: ORANGE } }], { x: L, y: 0.85, w: 9, h: 0.3, fontFace: FONT, fontSize: 13, margin: 0 });
         if (pages.length > 1) s.addText(`${pi + 1} of ${pages.length}`, { x: L + W - 2, y: 0.4, w: 2, h: 0.3, fontFace: FONT, fontSize: 10, color: MUTED, align: 'right', margin: 0 });
@@ -733,6 +759,10 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   if (held.length) {
     for (const m of held) {
       const n = add('notes');
+      if (tinfo?.notes) {
+        const L2 = (x) => lines(x);
+        kinds[kinds.length - 1] = { kind: 'notes', reuse: 'notes', fill: { date: longDay(m.date), sections: [{ heading: 'What we did today', items: L2(m.did || m.notes) }, { heading: `Next steps from ${C}`, items: L2(m.theirNext) }, { heading: 'From the Checkmarx side', items: L2(m.ourNext || m.followUps) }] } };
+      }
       n.addText([{ text: 'Meeting Notes', options: { bold: true, color: WHITE, fontSize: 26 } }, { text: `   ${longDay(m.date)}`, options: { color: ORANGE, fontSize: 15 } }], { x: 0.5, y: 0.3, w: 12.3, h: 0.6, fontFace: FONT, margin: 0, valign: 'middle' });
       n.addText(m.title || SESSION_TYPES[m.type] || '', { x: 0.5, y: 0.88, w: 12.3, h: 0.3, fontFace: FONT, fontSize: 12, color: MUTED, margin: 0 });
       if (!templated) n.addShape(pptx.ShapeType.roundRect, { x: 0.63, y: 1.37, w: 12.03, h: 5.58, rectRadius: 0.08, fill: { color: PANEL }, line: { color: LINE, width: 0.75 } });
@@ -939,10 +969,11 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   // ——— POV screenshots: a divider, then each picture the SE added, titled and fitted below its title ———
   const sScreenshots = () => {
     if (!screenshots.length) return;
-    const d = add('section');
+    const d = add(tinfo?.shotsSection ? { kind: 'section', reuse: 'shotsSection' } : 'section');
     d.addText('POV Screenshots', { x: 0.8, y: 3.1, w: 11, h: 1, fontFace: FONT, fontSize: 44, bold: true, color: WHITE, margin: 0 });
     for (const shot of screenshots) {
-      const s = add('content');
+      const m = /^(?:data:)?image\/(png|jpe?g);base64,(.+)$/.exec(shot.data ?? '');
+      const s = add(tinfo?.shot && m ? { kind: 'content', reuse: 'shot', fill: { caption: shot.caption, width: shot.w, height: shot.h }, image: { ext: m[1] === 'png' ? 'png' : 'jpeg', data: Buffer.from(m[2], 'base64') } } : 'content');
       s.addText([{ text: 'Checkmarx ONE – ', options: { color: WHITE } }, { text: shot.caption, options: { color: ORANGE } }], { x: L, y: 0.3, w: W, h: 0.6, fontFace: FONT, fontSize: 24, bold: true, margin: 0, fit: 'shrink' });
       // As large as fits in the space under the title, never stretched.
       const box = { x: L, y: 1.15, w: W, h: 5.75 };
@@ -955,7 +986,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   };
 
   const sAppendix = () => {
-    const s = add('section');
+    const s = add(tinfo?.appendix ? { kind: 'section', reuse: 'appendix' } : 'section');
     s.addText('Appendix', { x: 0.8, y: 3.1, w: 11, h: 1, fontFace: FONT, fontSize: 44, bold: true, color: WHITE, margin: 0 });
   };
 
@@ -963,7 +994,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const heldNotes = (opp.sessions ?? []).some((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext));
   // The order comes from the presentation template: its main deck, then its appendix. A Kendra variant that would
   // repeat its template version exactly (no team design for it) is left out.
-  const plan = layout?.[results ? 'results' : 'wip'] ?? DEFAULT_LAYOUT[results ? 'results' : 'wip'];
+  const plan = layout?.[results ? 'results' : 'wip'] ?? (templated ? TEAM_LAYOUT : DEFAULT_LAYOUT)[results ? 'results' : 'wip'];
   const usedKeys = new Set([...plan.main, ...plan.appendix]);
   const same = { devsecopsFull: ['devsecops', !tinfo?.devsecops], planFull: ['plan', !use.plan], envFull: ['env', !use.env], testsFull: ['tests', !use.test] };
   const MAKE = {
@@ -979,6 +1010,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     tests: () => sTests(true),
     testsFull: () => sTests(false),
     closing: sClosing,
+    closingEnd: sClosing,
     overview: sOverview,
     challenges: sChallenges,
     glance: sGlance,
@@ -1066,6 +1098,26 @@ async function readTemplate(zip) {
       const sl = find(/Environment\s+Details/i);
       return sl && (sl.xml.match(/<a:tbl>/g) ?? []).length >= 2 ? sl : null;
     })(),
+    // The same slides in the shape a filled example of the template has them (src/template-slides.js reads them).
+    coverT: slides[0] && /Proof\s+of\s+Value/i.test(slides[0].text) && !/customer\s*name/i.test(slides[0].text) ? slides[0] : null,
+    overview: slides.find((s) => /Executive\s+Overview/i.test(s.text) && /\bDear\b/.test(s.text)) ?? null,
+    apma: slides.find((s) => /APMA\s+Assessment/i.test(s.text) && !/\bDear\b/.test(s.text)) ?? null,
+    planT: (() => {
+      const sl = find(/POV\s+Plan/i);
+      return sl && MONTH_NAMES.some((m) => new RegExp(`<a:t>${m}</a:t>`).test(sl.xml)) ? sl : null;
+    })(),
+    testT: (() => {
+      const sl = find(/Test\s+Plan\s+Overview/i);
+      const tr = sl && /<a:tr\b[^>]*>[\s\S]*?<\/a:tr>/.exec(sl.xml)?.[0];
+      return sl && tr && (tr.match(/<a:tc\b/g) ?? []).length >= 4 ? sl : null;
+    })(),
+    notes: slides.find((s) => /Meeting\s+Notes/i.test(s.text) && (s.xml.match(/<a:p>/g) ?? []).length >= 4) ?? null,
+    appendix: slides.find((s) => /^\s*Appendix\s*$/i.test(s.text)) ?? null,
+    shotsSection: slides.find((s) => /^\s*Screenshots\b/i.test(s.text) && !/<p:pic>/.test(s.xml)) ?? null,
+    shot: (() => {
+      const i = slides.findIndex((s) => /^\s*Screenshots\b/i.test(s.text) && !/<p:pic>/.test(s.xml));
+      return i >= 0 ? slides.slice(i + 1).find((s) => (s.xml.match(/<p:pic>/g) ?? []).length === 1 && s.text.trim().length < 60) ?? null : null;
+    })(),
     test: (() => {
       const sl = find(/Test\s+Plan\s+Overview/i);
       const tr = sl && /<a:tr\b[^>]*>[\s\S]*?<\/a:tr>/.exec(sl.xml)?.[0];
@@ -1123,12 +1175,55 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
       // The template's slide as designed, with orange boxes around what this POV uses.
       const layoutXml = (await zip.file(`ppt/slideLayouts/${reuse.layout}`)?.async('string')) ?? '';
       const boxes = k.marks ? markShapes([...textShapes(layoutXml), ...textShapes(reuse.xml)], k.marks) : '';
-      const FILL = { cover: fillCover, plan: fillPlan, env: fillEnvironment, test: fillTestPlan };
+      const FILL = { cover: fillCover, plan: fillPlan, env: fillEnvironment, test: fillTestPlan, coverT: fillCoverSlide, overview: fillOverviewSlide, planT: fillPlanSlide, testT: fillTestSlide, notes: fillNotesSlide, shot: fillShotSlide };
       const source = k.fill ? FILL[k.reuse](reuse.xml, k.fill) : reuse.xml;
       // The template's example highlights (outlined boxes with no text) go: Kendra draws this POV's own.
       const clean = source.replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<\/p:sp>/g, (sp) => (!/<a:t>/.test(sp) && /prst="roundRect"/.test(sp) && /<a:ln\b/.test(sp) && !/<a:solidFill>(?:(?!<\/a:solidFill>)[\s\S])*<\/a:solidFill>\s*<a:ln/.test(sp) ? '' : sp));
       xml = clean.replace('</p:spTree>', `${boxes}</p:spTree>`);
       rels = reuse.rels.replace(/<Relationship\b[^>]*(notesSlide|comments|commentAuthors|tags)[^>]*\/>/g, '');
+      // A screenshot slide: its picture is this POV's screenshot.
+      if (k.image) {
+        const rid = picRelOf(xml);
+        if (rid) {
+          const to = `kshot${++media}.${k.image.ext}`;
+          zip.file(`ppt/media/${to}`, k.image.data);
+          rels = rels.replace(new RegExp(`(<Relationship\\b[^>]*Id="${rid}"[^>]*Target=")[^"]+(")`), `$1../media/${to}$2`).replace(new RegExp(`(<Relationship\\b[^>]*Target=")[^"]+("[^>]*Id="${rid}")`), `$1../media/${to}$2`);
+        }
+      }
+      // Kendra's drawing on the template's slide (the APMA chart): the template's pictures and example text go, its
+      // title stays; Kendra's shapes below the title band come in, with their pictures and charts.
+      if (k.overlay) {
+        const title = /<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<p:ph\b[^>]*type="title"[\s\S]*?<\/p:sp>/.exec(xml)?.[0] ?? '';
+        xml = xml.replace(/<p:pic>[\s\S]*?<\/p:pic>/g, '');
+        const genXml = scaleXml((await gen.file(genOrder[i]).async('string')).replace(/<p:bg>[\s\S]*?<\/p:bg>/, ''), f);
+        let genRels = (await gen.file(genOrder[i].replace('slides/', 'slides/_rels/') + '.rels')?.async('string')) ?? '';
+        const tree = /<p:spTree>[\s\S]*?<p:grpSpPr\b[\s\S]*?<\/p:grpSpPr>|<p:spTree>[\s\S]*?<p:grpSpPr\/>/.exec(genXml)?.[0] ?? '';
+        let body = genXml.slice(genXml.indexOf(tree) + tree.length, genXml.lastIndexOf('</p:spTree>'));
+        // Kendra's ids and relationship ids are renamed so they never clash with the template slide's.
+        body = body.replace(/\bid="(\d+)"/g, (a, n) => `id="${7000 + Number(n)}"`).replace(/r:(embed|id)="rId(\d+)"/g, 'r:$1="rIdK$2"');
+        genRels = genRels.replace(/Id="rId(\d+)"/g, 'Id="rIdK$1"');
+        for (const m of [...genRels.matchAll(/<Relationship\b[^>]*Target="((?:\.\.|\/ppt)\/(media|charts)\/([^"]+))"[^>]*\/>/g)]) {
+          const [whole, target, dir, file] = m;
+          const to = `wip${++media}-${file}`;
+          zip.file(`ppt/${dir}/${to}`, await gen.file(`ppt/${dir}/${file}`).async('nodebuffer'));
+          if (dir === 'charts') {
+            overrides.push(`<Override PartName="/ppt/charts/${to}" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`);
+            const cRels = await gen.file(`ppt/charts/_rels/${file}.rels`)?.async('string');
+            if (cRels) {
+              let r = cRels;
+              for (const e of [...cRels.matchAll(/Target="((?:\.\.|\/ppt)\/embeddings\/([^"]+))"/g)]) {
+                const eTo = `wip${media}-${e[2]}`;
+                zip.file(`ppt/embeddings/${eTo}`, await gen.file(`ppt/embeddings/${e[2]}`).async('nodebuffer'));
+                r = r.replace(`"${e[1]}"`, `"../embeddings/${eTo}"`);
+              }
+              zip.file(`ppt/charts/_rels/${to}.rels`, r);
+            }
+          }
+          rels = rels.replace('</Relationships>', `${whole.replace(`"${target}"`, `"../${dir}/${to}"`)}</Relationships>`);
+        }
+        void title;
+        xml = xml.replace('</p:spTree>', `${body}</p:spTree>`);
+      }
     } else {
       // Left to right whatever the template's master says, and no background of its own: the layout's shows.
       xml = scaleXml((await gen.file(genOrder[i]).async('string')).replace(/<p:bg>[\s\S]*?<\/p:bg>/, ''), f)

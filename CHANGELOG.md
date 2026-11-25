@@ -2,6 +2,26 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.83 · 2026-11-25
+
+**The team template's deck as the template is: its order, its slides, its graphics and fonts**
+
+- The WIP and results decks in the team's template follow the template's own order (cover,
+  executive overview, Checkmarx One, DevSecOps, APMA, plan, environment, a test plan per
+  goal, closing; then the appendix with the meeting notes and the screenshots, and the
+  closing again). A team design still on Kendra's default order takes it; a chosen order
+  stays.
+- The template's own slides are filled with the POV's words and nothing else changes: every
+  picture, icon, shape, colour and font stays (src/template-slides.js reads each slide's
+  text boxes by what they say and where they sit):
+  cover (people, date, Guide or Results, the customer's name in place of the example's logo),
+  executive overview letter, Checkmarx One with this POV's components boxed, the plan and its
+  timeline (one milestone per meeting; planned in yellow, done in green), the test plan per
+  goal (BG badge, goal, one row per criterion, three a page), meeting notes, the screenshots
+  divider and screenshot slides (each screenshot fitted to the template's picture).
+- APMA: Kendra's chart and first steps on the template's APMA slide.
+- Everything Kendra writes in a templated deck takes the template's own theme font.
+
 ## 1.0.82 · 2026-11-25
 
 **Settings like the FTR command center: Single sign-on (SAML 2.0)**

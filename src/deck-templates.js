@@ -43,12 +43,19 @@ export const SLIDES = {
   goals: 'Business goals at a glance (Version Kendra)',
   goalsPlan: 'Business goals and success criteria: numbered, with milestones and tracker references (Version Kendra)',
   notes: 'Meeting notes',
+  closingEnd: 'Closing (again, at the very end)',
 };
 
 const MAIN = ['cover', 'age', 'devsecops', 'components', 'plan', 'env', 'tests', 'closing'];
 export const DEFAULT_LAYOUT = {
   wip: { main: MAIN, appendix: ['overview', 'apma', 'devsecopsFull', 'planFull', 'envFull', 'notes'] },
   results: { main: [...MAIN.slice(0, -1), 'impact', 'closing'], appendix: ['challenges', 'glance', 'expansion', 'next', 'apma', 'tenant', 'analyticsDetail', 'tenantEvidence', 'devsecopsFull', 'planFull', 'envFull', 'testsFull', 'evidence', 'notes'] },
+};
+
+/** The team's own template, in its own order: the guide, then the appendix with the notes and the screenshots. */
+export const TEAM_LAYOUT = {
+  wip: { main: ['cover', 'overview', 'components', 'devsecops', 'apma', 'plan', 'env', 'tests', 'closing'], appendix: ['notes', 'screenshots', 'closingEnd'] },
+  results: { main: ['cover', 'glance', 'components', 'devsecops', 'apma', 'plan', 'env', 'tests', 'impact', 'next', 'closing'], appendix: ['expansion', 'notes', 'tenantEvidence', 'evidence', 'screenshots', 'closingEnd'] },
 };
 
 /** Version Kendra: Kendra's own slides, every engine and touch point, and the guide's business goals and criteria. */
@@ -96,7 +103,10 @@ export class DeckTemplates {
   }
 
   #own() {
-    return this.#db.read('deckTemplates', []);
+    // A team design still on Kendra's default order takes the template's own order (TEAM_LAYOUT): an order someone
+    // chose is kept as it is.
+    const same = (x) => JSON.stringify(x) === JSON.stringify(DEFAULT_LAYOUT);
+    return this.#db.read('deckTemplates', []).map((t) => (t.design && same(t.layout) ? { ...t, layout: TEAM_LAYOUT } : t));
   }
 
   #save(list) {
@@ -114,7 +124,7 @@ export class DeckTemplates {
   /** The template uploaded before templates existed becomes the first one, the organisation's default. */
   migrate(legacyFile, { by = 'Kendra' } = {}) {
     if (this.#own().length || !fs.existsSync(legacyFile)) return null;
-    const tpl = { id: randomUUID(), name: 'Team template', description: 'The team’s PowerPoint design.', scope: 'everyone', ownerId: null, ownerName: by, layout: DEFAULT_LAYOUT, texts: {}, design: { name: 'Team template.pptx', at: new Date().toISOString() }, createdAt: new Date().toISOString() };
+    const tpl = { id: randomUUID(), name: 'Team template', description: 'The team’s PowerPoint design.', scope: 'everyone', ownerId: null, ownerName: by, layout: TEAM_LAYOUT, texts: {}, design: { name: 'Team template.pptx', at: new Date().toISOString() }, createdAt: new Date().toISOString() };
     fs.mkdirSync(this.#dir, { recursive: true });
     fs.copyFileSync(legacyFile, this.fileOf(tpl.id));
     this.#save([tpl]);
