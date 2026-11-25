@@ -213,24 +213,45 @@ async function system(body) {
 }
 
 // ——— Linked apps: one sign-in for Kendra and the FTR Credits Command Center ———
+const syncLine = (x) => (!x ? 'Not synced yet.' : x.ok ? `${ago(x.at)}: ${x.people} people in ${x.teams} teams · ${x.added} added, ${x.updated} changed${x.off ? `, ${x.off} turned off` : ''}` : `${ago(x.at)}: ${x.error}`);
 async function linked(body) {
   const l = await api('/settings/link');
   const here = l.here || location.origin;
   body.innerHTML = `<div class="grid2">
     <section class="panel"><div class="head"><h3>FTR Credits Command Center</h3>${l.ready ? '<span class="badge ok">Linked</span>' : '<span class="badge">Not linked</span>'}</div>
       <form id="linkForm" class="body stack" style="gap:12px">
-        <p class="small muted" style="margin:0">Someone signed in to one opens the other already signed in, as the same person (their email): from the menu, or by opening it directly. They need an account, turned on, in both; nobody is created this way.</p>
+        <p class="small muted" style="margin:0">Someone signed in to one opens the other already signed in, as the same person (their email): from the menu, or by opening it directly. They need an account in both, or an email of the domains under Teams and people (then they are added).</p>
         <label class="field">Its address<input name="ftrUrl" value="${esc(l.ftrUrl)}" placeholder="https://ftr.company.com" required></label>
         <label class="field">Shared key <span class="small muted">${l.hasKey ? 'set (paste a new one to replace it)' : 'paste the key the FTR command center made, or make one here'}</span><input name="key" autocomplete="off" spellcheck="false" placeholder="${l.hasKey ? '••••••••••••••••' : '43 letters and digits'}"></label>
         <div id="newKey"></div>
         <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" data-act="new-key">Make a new key</button>${l.ready ? '<a class="btn ghost" href="/link/ftr?to=%2F" target="_blank" rel="noopener">Try it ↗</a><button type="button" class="btn ghost danger" data-act="unlink">Unlink</button>' : ''}</div>
         ${l.at ? `<p class="small muted" style="margin:0">Set ${esc(ago(l.at))}${l.by ? ` by ${esc(l.by)}` : ''}.</p>` : ''}
       </form></section>
+    <div class="stack"><section class="panel"><div class="head"><h3>Teams and people</h3>${l.lastSync ? `<span class="badge ${l.lastSync.ok ? 'ok' : 'bad'}">${l.lastSync.ok ? 'In step' : 'Failed'}</span>` : ''}</div><form id="teamForm" class="body stack" style="gap:12px">
+        <label class="check"><input type="checkbox" name="teams" ${l.teams ? 'checked' : ''} ${l.ready ? '' : 'disabled'}> Take the team structure from the FTR command center <span class="small muted">every hour: who reports to whom, roles and regions</span></label>
+        <label class="field">Anyone with these email domains is signed in automatically <span class="small muted">added as an Associate on their first visit from the FTR command center</span><input name="domains" value="${esc((l.domains ?? []).join(', '))}" placeholder="checkmarx.com"></label>
+        <div class="row center"><button class="btn primary">Save</button><button type="button" class="btn" data-act="sync" ${l.ready ? '' : 'disabled'}>Sync now</button><span class="small muted" id="syncState">${syncLine(l.lastSync)}</span></div>
+      </form></section>
     <section class="panel"><div class="head"><h3>On the FTR command center</h3></div><div class="body"><ol class="facts-list">
       <li>Settings → Linked apps: give it Kendra’s address, <span class="mono">${esc(here)}</span>.</li>
       <li>Paste the same shared key on both sides (make it on one, copy it to the other).</li>
       <li>Try it: the menu of each shows the other; opening one while signed in to the other signs you in.</li></ol>
-      <p class="small muted">Each sign-in travels as a pass signed with the key, for one app, good for a minute and used once; both audit trails record it. Unlink here or there to stop it.</p></div></section></div>`;
+      <p class="small muted">Each sign-in travels as a pass signed with the key, for one app, good for a minute and used once; both audit trails record it. Unlink here or there to stop it.</p></div></section></div></div>`;
+  const tf = $('#teamForm', body);
+  tf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = formData(tf);
+    if (await attempt(() => api('/settings/link', { method: 'PUT', body: { teams: Boolean(b.teams), domains: b.domains ?? '' } }), 'Saved')) linked(body);
+  });
+  $('[data-act="sync"]', body).addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    $('#syncState', body).textContent = 'Reading the FTR command center…';
+    const r = await attempt(() => api('/settings/link/sync', { method: 'POST' }));
+    if (r) {
+      toast(r.lastSync.ok ? 'Teams in step' : r.lastSync.error);
+      linked(body);
+    } else e.target.disabled = false;
+  });
   const form = $('#linkForm', body);
   const save = async (extra = {}) => {
     const b = formData(form);
@@ -344,7 +365,7 @@ async function updates(body) {
       <div style="flex:1;min-width:240px"><h3 style="margin:0">Running <span class="mono">${esc(u.current)}</span>${u.updateAvailable ? ` · <span class="accent-t">${esc(u.available[0].version)} available</span>` : u.checkError ? ' · <span class="warn-t">could not check</span>' : ' · up to date'}</h3>
         <div class="small muted">${u.lastCheck ? `Last checked ${esc(ago(u.lastCheck))}` : 'Not checked yet'}${u.checkError ? ` · ${esc(u.checkError)}` : ''}${u.signed ? ' · releases must be signed' : ''}</div></div>
       <button class="btn" data-act="check">Check now</button>${u.updateAvailable && u.launched ? `<button class="btn primary" data-install="${esc(u.available[0].version)}">Install ${esc(u.available[0].version)}</button>` : ''}</div></section>
-    ${u.lastFailure ? `<section class="panel notice bad"><div class="body"><b>${esc(u.lastFailure.version)} did not start</b> and the server went back by itself; it is never installed by itself again.<div class="small muted">${esc(u.lastFailure.message ?? '')}</div></div></section>` : ''}
+    ${u.lastFailure ? `<section class="panel notice bad" style="display:flex;align-items:center"><div class="body"><b>${esc(u.lastFailure.version)} did not start</b> and the server went back by itself; it is never installed by itself again.<div class="small muted">${esc(u.lastFailure.message ?? '')}</div></div><button class="btn sm ghost" data-act="dismiss-failure" style="margin:0 16px 0 auto">Dismiss</button></section>` : ''}
     <div class="grid2">
       <section class="panel"><div class="head"><h3>Keep up to date</h3></div><div class="body stack" style="gap:10px">
         <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''}> Install new versions by itself, checking every <select id="autoEvery">${[5, 10, 15, 30, 60, 240, 1440].map((m) => `<option value="${m}" ${u.auto.everyMinutes === m ? 'selected' : ''}>${m < 60 ? `${m} minutes` : m === 60 ? 'hour' : m === 1440 ? 'day' : `${m / 60} hours`}</option>`).join('')}</select></label>
@@ -368,6 +389,7 @@ async function updates(body) {
     </tbody></table></div></section></div>`;
   const again = () => updates(body);
   const reloadSoon = () => setTimeout(() => location.reload(), 8000);
+  $('[data-act="dismiss-failure"]', body)?.addEventListener('click', async () => (await attempt(() => api('/updates/dismiss-failure', { method: 'POST', body: {} }))) && again());
   $('[data-act="check"]', body).addEventListener('click', async () => (await attempt(() => api('/updates/check', { method: 'POST', body: {} }))) && again());
   $('[data-act="integrity"]', body).addEventListener('click', async () => {
     const r = await attempt(() => api('/system/integrity?now=1'));

@@ -103,13 +103,43 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   // Linked apps: the FTR Credits Command Center, one sign-in for both (src/link.js).
   const linkSettings = () => {
     const l = db.read('settings', {}).link ?? {};
-    return { ftrUrl: l.ftrUrl ?? '', key: l.key ? db.open(l.key) : '', at: l.at ?? null, by: l.by ?? '' };
+    return { ftrUrl: l.ftrUrl ?? '', key: l.key ? db.open(l.key) : '', at: l.at ?? null, by: l.by ?? '', teams: l.teams !== false, domains: Array.isArray(l.domains) ? l.domains : ['checkmarx.com'], lastSync: l.lastSync ?? null };
   };
   const linkReady = () => {
     const l = linkSettings();
     return Boolean(l.ftrUrl && l.key);
   };
   const usedPasses = new Map();
+  /** The FTR command center's team structure, read with a pass made for this alone, made into Kendra's reporting tree. */
+  let syncing = null;
+  async function syncTeams(by = null) {
+    if (syncing) return syncing;
+    syncing = (async () => {
+      const l = linkSettings();
+      const save = (lastSync) => {
+        const all = db.read('settings', {});
+        if (all.link) all.link.lastSync = lastSync;
+        db.write('settings', all);
+        return lastSync;
+      };
+      try {
+        if (!linkReady()) throw new Error('Not linked to the FTR command center.');
+        const pass = makePass({ key: l.key, from: 'kendra', to: 'ftr', purpose: 'directory' });
+        const r = await fetch(`${l.ftrUrl}/link/kendra/directory`, { headers: { 'X-Link-Pass': pass, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body.error || `The FTR command center answered ${r.status}.`);
+        const counts = users.syncDirectory(body);
+        audit.record(by, 'people', `Teams from the FTR command center: ${counts.added} added, ${counts.updated} changed, ${counts.off} turned off`);
+        return save({ at: new Date().toISOString(), ok: true, teams: (body.teams ?? []).length, people: (body.people ?? []).length, ...counts });
+      } catch (error) {
+        audit.record(by, 'people', `Teams from the FTR command center failed: ${error.message}`);
+        return save({ at: new Date().toISOString(), ok: false, error: String(error.message).slice(0, 300) });
+      } finally {
+        syncing = null;
+      }
+    })();
+    return syncing;
+  }
   // Insights: one reading of every POV a day (score, critical gaps, amount), 120 days kept, to show what moved.
   const recordReading = () => {
     const day = new Date().toISOString().slice(0, 10);
@@ -133,6 +163,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   };
   checkIntegrity();
   if (startBackground) setInterval(checkIntegrity, 6 * 3_600_000).unref();
+  // Teams from the FTR command center: a minute after start, then every hour (when linked and turned on).
+  if (startBackground) {
+    const teamSync = () => linkReady() && linkSettings().teams && syncTeams(null).catch(() => {});
+    setTimeout(teamSync, 60_000).unref();
+    setInterval(teamSync, 3_600_000).unref();
+  }
   if (startBackground) setInterval(() => { try { recordReading(); } catch {} }, 3_600_000).unref();
   const firstAdmin = users.ensureAdmin();
   // The audit trail: every change (kept for good) and every request (kept CC_ACCESS_DAYS days), chained and encrypted.
@@ -822,7 +858,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (route === 'GET /settings/link') {
       need(user, 'settings.manage');
       const l = linkSettings();
-      return send(res, 200, { ftrUrl: l.ftrUrl, hasKey: Boolean(l.key), at: l.at, by: l.by, ready: linkReady(), here: process.env.CC_PUBLIC_URL || '' });
+      return send(res, 200, { ftrUrl: l.ftrUrl, hasKey: Boolean(l.key), at: l.at, by: l.by, ready: linkReady(), here: process.env.CC_PUBLIC_URL || '', teams: l.teams, domains: l.domains, lastSync: l.lastSync });
+    }
+    if (route === 'POST /settings/link/sync') {
+      need(user, 'settings.manage');
+      return send(res, 200, { lastSync: await syncTeams(user) });
     }
     if (route === 'PUT /settings/link') {
       need(user, 'settings.manage');
@@ -841,7 +881,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         if (!/^[A-Za-z0-9_-]{32,128}$/.test(k)) throw fail(400, 'The shared key is the 43 letters and digits the other app shows when it makes one.');
         key = db.seal(k);
       }
-      all.link = b.remove ? null : { ftrUrl, key, at: new Date().toISOString(), by: user.name };
+      const domains = 'domains' in b ? [...new Set(String(Array.isArray(b.domains) ? b.domains.join(',') : b.domains ?? '').split(/[\s,;]+/).map((x) => x.trim().toLowerCase().replace(/^@/, '')).filter((x) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(x)))].slice(0, 10) : prev.domains;
+      all.link = b.remove ? null : { ...prev, ftrUrl, key, at: new Date().toISOString(), by: user.name, teams: 'teams' in b ? Boolean(b.teams) : prev.teams !== false, domains };
       db.write('settings', all);
       audit.record(user, 'settings', b.remove ? 'Unlinked the FTR Credits Command Center' : `Linked the FTR Credits Command Center at ${ftrUrl}${shown ? ' (new shared key)' : b.key ? ' (key pasted)' : ''}`);
       return send(res, 200, { ftrUrl, hasKey: Boolean(key), ready: Boolean(ftrUrl && key), key: shown });
@@ -957,6 +998,12 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const r = await updater.install(text(b.version, 40) || undefined, { by: user.name });
       audit.record(user, 'system', `Installed version ${r.version}; restarting into it`);
       return send(res, 202, r);
+    }
+    if (route === 'POST /updates/dismiss-failure') {
+      need(user, 'settings.manage');
+      const v = updater.dismissFailure();
+      audit.record(user, 'system', `Dismissed the notice that ${v ?? 'a version'} did not start`);
+      return send(res, 200, updater.status());
     }
     if (route === 'POST /updates/rollback') {
       need(user, 'settings.manage');
@@ -1982,7 +2029,11 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     if (step === '/in') {
       try {
         const who = readPass(url.searchParams.get('pass'), { key: l.key, me: 'kendra', from: 'ftr', used: usedPasses });
-        const { token, user } = users.signInLinked(who.email);
+        const { token, user, added } = users.signInLinked(who.email, { name: who.name, domains: l.domains });
+        if (added) {
+          audit.record(user, 'people', `Added ${user.email} on their first sign-in through the FTR Credits Command Center`);
+          if (l.teams) syncTeams(null).catch(() => {});
+        }
         audit.record(user, 'auth', 'Signed in through the FTR Credits Command Center');
         return html(res, movePage(to === '/' ? '/#/' : to, 'Signed in'), { 'Set-Cookie': sessionCookie(token, 30 * 86400) });
       } catch (error) {

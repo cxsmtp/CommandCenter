@@ -299,17 +299,119 @@ export class Users {
     return { token, user: publicUser(user) };
   }
 
-  /** A session for an active person the linked app vouched for (a checked pass), by email. Nobody is created. */
-  signInLinked(address) {
-    const user = this.#all().find((u) => u.email === cleanEmail(address));
+  /**
+   * A session for someone the linked app vouched for (a checked pass), by email. Someone new with an address of an
+   * allowed domain (checkmarx.com by default) is added as an Associate; their manager and region follow from the
+   * linked app's team structure at the next sync. Anyone else needs an account first.
+   */
+  signInLinked(address, { name = '', domains = [] } = {}) {
+    const all = this.#all();
+    const email = cleanEmail(address);
+    let user = all.find((u) => u.email === email);
+    let added = false;
+    if (!user && email && domains.includes(email.split('@')[1])) {
+      user = { id: randomUUID(), email, name: text(name, 120) || email.split('@')[0], role: 'associate', managerId: null, title: '', region: '', active: true, password: hashPassword(randomBytes(24).toString('base64url')), mustChangePassword: false, prefs: {}, createdAt: new Date().toISOString(), source: 'linked' };
+      all.push(user);
+      this.#save(all);
+      added = true;
+    }
     if (!user || user.active === false) throw fail(403, user ? 'Your Kendra account is turned off.' : 'You have no Kendra account yet: ask an Admin to add you with the same email.');
     // Signed in by the linked app, as with single sign-on: a password of their own is not needed for this.
-    if (user.mustChangePassword) user.mustChangePassword = false;
+    if (user.mustChangePassword) {
+      user.mustChangePassword = false;
+      this.#save(all);
+    }
     const token = randomBytes(32).toString('base64url');
     this.#sessions.set(hashToken(token), { userId: user.id, exp: Date.now() + this.sessionMs, created: Date.now(), via: 'linked' });
     this.#dirty = true;
     this.flush();
-    return { token, user: publicUser(user) };
+    return { token, user: publicUser(user), added };
+  }
+
+  /**
+   * Kendra's reporting tree from the FTR command center's team structure (teams with leaders, people in teams):
+   *   role     executive, or leader of the top team → VP; leader of a region (a team under the top) → Leader; leader
+   *            of a team below → Team lead; Sales Engineers and Customer Success → Associate. Sales and Viewers are
+   *            not added. An Admin here stays an Admin.
+   *   manager  the leader of their team (for a leader, of the team above), going up until the role allows it.
+   *   region   the nearest team's region, else the name of the region team it sits in.
+   * People added here who left the FTR command center (or were turned off there) are turned off; nobody else is.
+   */
+  syncDirectory(dir, { now = Date.now() } = {}) {
+    const teams = new Map((dir?.teams ?? []).map((t) => [t.id, t]));
+    const people = (dir?.people ?? []).filter((p) => p?.email);
+    if (!teams.size && !people.length) throw fail(502, 'The FTR command center sent no teams or people.');
+    const byFtrId = new Map(people.filter((p) => p.id).map((p) => [p.id, p]));
+    const depth = (id, seen = new Set()) => { const t = teams.get(id); if (!t || !t.parentId || seen.has(id)) return 0; seen.add(id); return 1 + depth(t.parentId, seen); };
+    const up = (id) => { const out = []; let t = teams.get(id); const seen = new Set(); while (t && !seen.has(t.id)) { seen.add(t.id); out.push(t); t = teams.get(t.parentId); } return out; };
+    const leads = (p) => [...teams.values()].filter((t) => (t.leaderIds ?? []).includes(p.id));
+    const roleOf = (p) => {
+      const led = leads(p).map((t) => depth(t.id));
+      if (p.role === 'executive' || led.includes(0)) return 'vp';
+      if (led.includes(1)) return 'leader';
+      if (led.length) return 'team_lead';
+      if (['se', 'cs'].includes(p.role)) return 'associate';
+      if (p.role === 'admin' || p.role === 'leader') return 'leader';
+      return null;
+    };
+    const regionOf = (p) => {
+      const chain = up(p.teamId);
+      const below = chain.filter((t) => depth(t.id) >= 1);
+      return below.find((t) => t.region)?.region || below.find((t) => depth(t.id) === 1)?.name || chain.find((t) => t.region)?.region || '';
+    };
+    const all = this.#all();
+    const counts = { added: 0, updated: 0, off: 0, skipped: 0 };
+    const at = new Date(now).toISOString();
+    const want = new Map();
+    const off = [];
+    for (const p of people) {
+      const role = roleOf(p);
+      const email = cleanEmail(p.email);
+      if (!role || !email) {
+        counts.skipped += 1;
+        continue;
+      }
+      want.set(email, { p, role });
+      let u = all.find((x) => x.email === email);
+      if (!u) {
+        u = { id: randomUUID(), email, name: text(p.name, 120) || email, role, managerId: null, title: text(p.title, 120), region: '', active: true, password: hashPassword(randomBytes(24).toString('base64url')), mustChangePassword: false, prefs: {}, createdAt: at, source: 'ftr' };
+        all.push(u);
+        counts.added += 1;
+      }
+    }
+    const kendraOf = (ftrId) => { const p = byFtrId.get(ftrId); return p ? all.find((x) => x.email === cleanEmail(p.email)) : null; };
+    for (const [email, { p, role }] of want) {
+      const u = all.find((x) => x.email === email);
+      const before = JSON.stringify([u.role, u.managerId, u.region, u.active, u.name, u.title]);
+      if (u.role !== 'admin') u.role = role;
+      // The manager: up the teams from theirs (a leader starts at the team above the one they lead), to the first
+      // leader whose role is above theirs.
+      const start = leads(p).length ? leads(p).sort((a, b) => depth(a.id) - depth(b.id))[0].parentId : p.teamId;
+      let manager = null;
+      for (const t of up(start)) {
+        manager = (t.leaderIds ?? []).map(kendraOf).find((m) => m && m.id !== u.id && m.active !== false && (m.role === 'admin' || ROLES[m.role].level < ROLES[u.role].level));
+        if (manager) break;
+      }
+      if (u.role !== 'admin') u.managerId = manager?.id ?? null;
+      const region = regionOf(p);
+      if (region) u.region = text(region, 60);
+      if (!u.name || u.name === u.email) u.name = text(p.name, 120) || u.email;
+      if (!u.title && p.title) u.title = text(p.title, 120);
+      if (u.source === 'ftr' && u.active === false) u.active = true;
+      u.ftrSyncedAt = at;
+      if (JSON.stringify([u.role, u.managerId, u.region, u.active, u.name, u.title]) !== before && u.createdAt !== at) counts.updated += 1;
+    }
+    // Added from the FTR command center and no longer there: turned off (their work stays, with their manager).
+    for (const u of all) {
+      if (u.source === 'ftr' && u.active !== false && !want.has(u.email)) {
+        u.active = false;
+        counts.off += 1;
+        off.push(u.id);
+      }
+    }
+    this.#save(all);
+    for (const id of off) this.endSessions(id);
+    return counts;
   }
 
   fromToken(token, { slide = true } = {}) {

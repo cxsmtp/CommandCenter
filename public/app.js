@@ -223,9 +223,27 @@ function connectStream() {
   es.onerror = () => {
     es.close();
     // Find out at once whether this was a restart (api() waits it out) or the end of the session (it asks to sign in).
-    setTimeout(() => state.session?.user && api('/session').then(() => connectStream()).catch(() => {}), 2000);
+    setTimeout(() => state.session?.user && api('/session').then((s) => (newVersion(s), connectStream())).catch(() => {}), 2000);
   };
 }
+
+// ——— A new version on the server: the open page moves to it (an open tab keeps running the code it loaded) ———
+let loadedVersion = null;
+let versionBar = null;
+function newVersion(s) {
+  const v = s?.version;
+  if (!v || !loadedVersion || v === loadedVersion) return;
+  const busy = document.querySelector('dialog[open]') || (document.activeElement?.matches?.('input, textarea, select, [contenteditable]') && document.activeElement.value);
+  if (!busy || document.hidden) return void location.reload();
+  if (versionBar) return;
+  versionBar = Object.assign(document.createElement('div'), { id: 'sessionWarn', role: 'status' });
+  versionBar.innerHTML = `Kendra ${esc(v)} is ready. <button class="btn sm primary" type="button">Reload</button>`;
+  versionBar.querySelector('button').addEventListener('click', () => location.reload());
+  document.body.append(versionBar);
+}
+// Every two minutes, and whenever the tab comes back into view.
+setInterval(() => state.session?.user && api('/session').then(newVersion).catch(() => {}), 120_000);
+document.addEventListener('visibilitychange', () => !document.hidden && state.session?.user && api('/session').then(newVersion).catch(() => {}));
 
 // ——— Clicks shared by every view ———
 document.addEventListener('click', async (e) => {
@@ -339,6 +357,7 @@ function mustChangePassword() {
 let streaming = false;
 async function start() {
   state.session = await api('/session');
+  loadedVersion = loadedVersion ?? state.session.version ?? null;
   applyLook(state.session.user?.prefs);
   if (!state.session.user) return showLogin();
   if (state.session.user.mustChangePassword) return mustChangePassword();

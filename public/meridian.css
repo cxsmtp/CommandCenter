@@ -532,3 +532,4 @@ details:not([open]) > :not(summary) { display: none; }
 .rin:first-child { border-top: 0; }
 .rin > div:first-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .rshots { padding: 0 16px 12px; }
+.pov .stage .dates { flex-basis: 100%; }

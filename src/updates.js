@@ -99,6 +99,13 @@ export class Updater {
     return readState(this.#dataDir);
   }
 
+  /** The notice of a version that did not start, put away (it stays in the history, and is never installed by itself). */
+  dismissFailure() {
+    const v = this.state.lastFailure?.version ?? null;
+    this.#save({ lastFailure: null });
+    return v;
+  }
+
   #save(patch) {
     const next = { ...this.state, ...patch };
     writeState(this.#dataDir, next);
@@ -132,7 +139,8 @@ export class Updater {
       heldBack: s.heldBack ?? null,
       token: Boolean(this.#token),
       pending: s.pending ?? null,
-      lastFailure: s.lastFailure ?? null,
+      // A version that failed is no news once a newer one runs, or once an Admin dismissed it.
+      lastFailure: s.lastFailure && compareVersions(s.lastFailure.version, this.#current) > 0 ? s.lastFailure : null,
       busy: Boolean(this.#busy),
       history: [...(s.history ?? [])].reverse().slice(0, 20),
       installed: this.#installed(),

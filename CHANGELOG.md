@@ -2,6 +2,24 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.76 · 2026-11-25
+
+**Teams from the FTR command center, Checkmarx people signed in on arrival, open tabs follow updates**
+
+- Every hour (and Sync now in Settings > Linked apps) Kendra reads the FTR command center's
+  teams, leaders and people with a pass made for that alone, and builds the reporting tree:
+  executives and the top team's leaders VPs, region leaders Leaders, leaders below Team
+  leads, Sales Engineers and Customer Success Associates; manager from the team above;
+  region from the team. Admins stay Admins; people added this way who leave are turned off.
+- Anyone with an email of the allowed domains (checkmarx.com by default) arriving from the
+  FTR command center is added and signed in.
+- The page between the apps is a small card with a spinner, light or dark as the device.
+- An open tab reloads into a new version by itself (or offers Reload while something is
+  being typed), so nobody keeps running an old page after an update.
+- Portfolio list: the tenant's licence end and the Salesforce close date under each POV.
+- Update & recovery: the notice of a version that did not start goes once a newer one runs,
+  and can be dismissed.
+
 ## 1.0.75 · 2026-11-25
 
 **Close dates, light by default, and a cleaner Results tab**

@@ -90,3 +90,36 @@ test('Kendra and the FTR command center: signed in to one, signed in to the othe
     app.server.close();
   }
 });
+
+test('teams from the FTR command center: roles, managers and regions; Checkmarx people signed in on arrival', async () => {
+  const { Db } = await import('../src/db.js');
+  const { Users } = await import('../src/users.js');
+  const users = new Users(new Db(fs.mkdtempSync(path.join(os.tmpdir(), 'kendra-dir-'))));
+  users.ensureAdmin();
+  const T = (id, name, parentId, leaderIds, region = '') => ({ id, name, parentId, leaderIds, region });
+  const P = (id, email, role, teamId) => ({ id, email, name: email.split('@')[0], role, teamId, title: '' });
+  const dir = {
+    teams: [T('g', 'Global', null, ['vp']), T('emea', 'EMEA', 'g', ['lead']), T('dach', 'DACH', 'emea', ['tl'], 'DACH'), T('apac', 'APAC', 'g', [])],
+    people: [P('vp', 'vp@checkmarx.com', 'executive', 'g'), P('lead', 'lead@checkmarx.com', 'leader', 'emea'), P('tl', 'tl@checkmarx.com', 'leader', 'dach'), P('se', 'se@checkmarx.com', 'se', 'dach'), P('se2', 'se2@checkmarx.com', 'se', 'apac'), P('ae', 'ae@checkmarx.com', 'sales', 'emea')],
+  };
+  const c = users.syncDirectory(dir);
+  assert.deepEqual([c.added, c.skipped], [5, 1], 'Sales are not added');
+  const u = (e) => users.list().find((x) => x.email === e);
+  assert.deepEqual(['vp', 'lead', 'tl', 'se'].map((x) => u(`${x}@checkmarx.com`).role), ['vp', 'leader', 'team_lead', 'associate']);
+  assert.equal(u('se@checkmarx.com').managerId, u('tl@checkmarx.com').id);
+  assert.equal(u('tl@checkmarx.com').managerId, u('lead@checkmarx.com').id);
+  assert.equal(u('lead@checkmarx.com').managerId, u('vp@checkmarx.com').id);
+  assert.equal(u('se2@checkmarx.com').managerId, u('vp@checkmarx.com').id, 'no APAC leader: the next one up');
+  assert.deepEqual([u('se@checkmarx.com').region, u('lead@checkmarx.com').region], ['DACH', 'EMEA']);
+  // Someone leaves the FTR command center: turned off; nobody added by hand is touched.
+  const again = users.syncDirectory({ ...dir, people: dir.people.filter((p) => p.id !== 'se2') });
+  assert.equal(again.off, 1);
+  assert.equal(u('se2@checkmarx.com').active, false);
+  assert.equal(u('admin@meridian.local').active, true);
+  // A Checkmarx address new to Kendra is added on arrival; another domain is not.
+  const { added } = users.signInLinked('new.se@checkmarx.com', { name: 'New SE', domains: ['checkmarx.com'] });
+  assert.equal(added, true);
+  assert.equal(u('new.se@checkmarx.com').role, 'associate');
+  assert.throws(() => users.signInLinked('x@other.example', { domains: ['checkmarx.com'] }), /no Kendra account/);
+  users.stop?.();
+});

@@ -98,6 +98,15 @@ function why(r) {
 }
 
 const wide = () => matchMedia('(min-width: 1100px)').matches;
+/** The dates that matter beside a POV in the list: the tenant's licence end and the Salesforce close date. */
+const shortDay = (d) => { const t = new Date(`${String(d).slice(0, 10)}T12:00:00Z`); return t.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(t.getUTCFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) }); };
+function datesLine(r) {
+  const lic = r.live?.summary?.license;
+  const bits = [];
+  if (lic?.end) bits.push(`<span title="Tenant licence ${lic.start ? `${day(lic.start)} – ` : 'until '}${day(lic.end)}" class="${r.endDate && lic.end < String(r.endDate).slice(0, 10) ? 'warn-t' : ''}">tenant to ${shortDay(lic.end)}</span>`);
+  if (r.closeDate) bits.push(`<span title="${r.closeFrom === 'report' ? 'Salesforce close date, from the report' : 'Salesforce close date, as typed'}" class="${r.stage === 'pov' && r.endDate && r.closeDate < r.endDate ? 'warn-t' : ''}">closes ${shortDay(r.closeDate)}</span>`);
+  return bits.length ? `<span class="small muted dates">${bits.join(' · ')}</span>` : '';
+}
 function rowsHtml(rows) {
   return `<div class="povs">${rows
     .map((r) => {
@@ -108,7 +117,7 @@ function rowsHtml(rows) {
       return `<a class="pov${ui.open === r.id ? ' selected' : ''}" href="${wide() ? `#/dashboard?open=${esc(r.id)}` : `#/opp/${esc(r.id)}`}">
         <span class="bar ${tone || (scoreTone === 'ok' ? 'ok' : '')}"></span>
         <span class="who"><b>${esc(r.customer)}</b><span>${esc([r.owner.name, r.tenant ? r.tenant.tenant : r.stage === 'pov' ? 'no tenant yet' : ''].filter(Boolean).join(' · '))}</span></span>
-        <span class="stage">${stageBadge(r.stage)}${daysBadge(r)}${p.total ? `<span class="small muted">${p.met}/${p.total} criteria</span>` : ''}</span>
+        <span class="stage">${stageBadge(r.stage)}${daysBadge(r)}${p.total ? `<span class="small muted">${p.met}/${p.total} criteria</span>` : ''}${datesLine(r)}</span>
         <span class="why ${tone}">${esc(text)}</span>
         ${score === null || score === undefined ? '<span></span>' : `<span class="score ${scoreTone}" title="Outlook: ${esc(r.prediction?.label ?? '')}">${score}</span>`}
       </a>`;
