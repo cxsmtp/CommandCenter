@@ -12,6 +12,11 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      promote:
+        description: 'Promote a candidate to a full release (its tag, e.g. v1.0.80): production installations then take it'
+        required: false
+        default: ''
 permissions:
   contents: write
   packages: write
@@ -22,13 +27,38 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Promotion only: a candidate that ran well on staging becomes a full release (and the image's "latest"); nothing is built.
+      - name: Promote a candidate
+        if: github.event_name == 'workflow_dispatch' && inputs.promote != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.promote }}
+        run: |
+          gh release edit "$TAG" --prerelease=false --latest
+          echo "PROMOTED=yes" >> "$GITHUB_ENV"
+      - if: env.PROMOTED == 'yes'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: The promoted version's image becomes latest
+        if: env.PROMOTED == 'yes'
+        run: |
+          IMAGE=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:${INPUT_TAG#v}"
+        env:
+          INPUT_TAG: ${{ inputs.promote }}
+      - if: env.PROMOTED != 'yes'
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: The version, and whether it is released already
+        if: env.PROMOTED != 'yes'
         id: v
         env:
           GH_TOKEN: ${{ github.token }}
@@ -63,8 +93,11 @@ jobs:
         run: |
           # The notes are the change itself: the commit message (Settings -> Update & recovery shows them).
           git log -1 --format=%B "$GITHUB_SHA" | grep -v -E '^(Co-Authored-By|Claude-Session):' > dist/NOTES.md
+          # "releaseChannel": "candidate" in package.json: a pre-release, taken by Staging installations only until promoted
+          # (Actions → release → Run workflow → the tag). Otherwise a full release, taken by every installation.
+          if [ "$(node -p "require('./package.json').releaseChannel || ''")" = "candidate" ]; then CH="--prerelease"; echo "CANDIDATE=yes" >> "$GITHUB_ENV"; else CH="--latest"; fi
           gh release create "v${{ steps.v.outputs.version }}" dist/meridian-*.tar.gz dist/SHA256SUMS $(ls dist/SHA256SUMS.sig 2>/dev/null) \
-            --target "$GITHUB_SHA" --title "Kendra ${{ steps.v.outputs.version }}" --notes-file dist/NOTES.md --latest
+            --target "$GITHUB_SHA" --title "Kendra ${{ steps.v.outputs.version }}" --notes-file dist/NOTES.md $CH
       - if: steps.v.outputs.exists == 'no'
         uses: docker/setup-buildx-action@v3
       - if: steps.v.outputs.exists == 'no'
@@ -77,4 +110,5 @@ jobs:
         if: steps.v.outputs.exists == 'no'
         run: |
           IMAGE=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          docker buildx build --platform linux/amd64,linux/arm64 --push -t "$IMAGE:${{ steps.v.outputs.version }}" -t "$IMAGE:latest" .
+          LATEST=""; if [ "$CANDIDATE" != "yes" ]; then LATEST="-t $IMAGE:latest"; fi
+          docker buildx build --platform linux/amd64,linux/arm64 --push -t "$IMAGE:${{ steps.v.outputs.version }}" $LATEST .

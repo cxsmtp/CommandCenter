@@ -34,11 +34,11 @@ function makeBundle(version, { broken = false } = {}) {
 
 function publish(releases) {
   files.clear();
-  const list = releases.map(({ version, bundle, sums, sig }) => {
+  const list = releases.map(({ version, bundle, sums, sig, prerelease = false }) => {
     files.set(`/dl/${bundle.name}`, bundle.buf);
     files.set(`/dl/${version}/SHA256SUMS`, Buffer.from(sums ?? bundle.sums));
     if (sig) files.set(`/dl/${version}/SHA256SUMS.sig`, Buffer.from(sig));
-    return { tag_name: `v${version}`, name: `v${version}`, body: `Release ${version}`, published_at: new Date().toISOString(), html_url: `${base}/r/${version}`, draft: false, prerelease: false, assets: [{ name: bundle.name, browser_download_url: `${base}/dl/${bundle.name}` }, { name: 'SHA256SUMS', browser_download_url: `${base}/dl/${version}/SHA256SUMS` }, ...(sig ? [{ name: 'SHA256SUMS.sig', browser_download_url: `${base}/dl/${version}/SHA256SUMS.sig` }] : [])] };
+    return { tag_name: `v${version}`, name: `v${version}`, body: `Release ${version}`, published_at: new Date().toISOString(), html_url: `${base}/r/${version}`, draft: false, prerelease, assets: [{ name: bundle.name, browser_download_url: `${base}/dl/${bundle.name}` }, { name: 'SHA256SUMS', browser_download_url: `${base}/dl/${version}/SHA256SUMS` }, ...(sig ? [{ name: 'SHA256SUMS.sig', browser_download_url: `${base}/dl/${version}/SHA256SUMS.sig` }] : [])] };
   });
   files.set('/repos/acme/cc/releases', Buffer.from(JSON.stringify(list)));
 }
@@ -156,7 +156,7 @@ test('auto-update: on by default, installs a new release as soon as it is found,
   publish([{ version: '1.0.5', bundle: makeBundle('1.0.5') }]);
   let restarts = 0;
   const u = new Updater({ dataDir, currentVersion: '1.0.0', repo: 'acme/cc', api: base, launched: true, token: '', restart: () => (restarts += 1) });
-  assert.deepEqual(u.status().auto, { enabled: true, everyMinutes: 15 });
+  assert.deepEqual(u.status().auto, { enabled: true, everyMinutes: 15, stage: '' });
   const r = await u.tick();
   assert.equal(r.version, '1.0.5');
   assert.equal(restarts, 1);
@@ -172,7 +172,7 @@ test('auto-update: on by default, installs a new release as soon as it is found,
   assert.equal(await u.tick(), null);
   // An older choice made by the hour becomes on, every 15 minutes.
   writeState(dataDir, { ...readState(dataDir), auto: { enabled: false, hour: 3 } });
-  assert.deepEqual(u.status().auto, { enabled: true, everyMinutes: 15 });
+  assert.deepEqual(u.status().auto, { enabled: true, everyMinutes: 15, stage: '' });
 });
 
 test('a private repository: the token goes to the API only, never to the download host', async () => {
@@ -199,4 +199,22 @@ test('a private repository: the token goes to the API only, never to the downloa
   } finally {
     requireToken = '';
   }
+});
+
+test('staging and production: a candidate goes to Staging only, until it is promoted', async () => {
+  const b = makeBundle('1.0.1');
+  publish([{ version: '1.0.2', bundle: makeBundle('1.0.2'), prerelease: true }, { version: '1.0.1', bundle: b }]);
+  const mk = () => new Updater({ dataDir: fs.mkdtempSync(path.join(tmp, 'data-')), currentVersion: '1.0.0', repo: 'acme/cc', api: base, launched: true, restart: () => {} });
+  const prod = mk();
+  prod.setAuto({ stage: 'production' });
+  const p = await prod.check();
+  assert.deepEqual([p.available.map((r) => r.version), p.candidates, p.stage], [['1.0.1'], ['1.0.2'], 'production']);
+  const unmarked = await mk().check();
+  assert.equal(unmarked.available[0].version, '1.0.1', 'not marked: as before, released versions only');
+  const staging = mk();
+  staging.setAuto({ stage: 'staging' });
+  const s = await staging.check();
+  assert.equal(s.available[0].version, '1.0.2');
+  assert.equal(s.updateAvailable, true);
+  assert.throws(() => staging.setAuto({ stage: 'beta' }), /Staging or Production/);
 });

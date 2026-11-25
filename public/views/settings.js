@@ -369,6 +369,8 @@ async function updates(body) {
     <div class="grid2">
       <section class="panel"><div class="head"><h3>Keep up to date</h3></div><div class="body stack" style="gap:10px">
         <label class="check"><input type="checkbox" id="autoOn" ${u.auto.enabled ? 'checked' : ''}> Install new versions by itself, checking every <select id="autoEvery">${[5, 10, 15, 30, 60, 240, 1440].map((m) => `<option value="${m}" ${u.auto.everyMinutes === m ? 'selected' : ''}>${m < 60 ? `${m} minutes` : m === 60 ? 'hour' : m === 1440 ? 'day' : `${m / 60} hours`}</option>`).join('')}</select></label>
+        <label class="field" style="max-width:460px">This installation is<select id="autoStage"><option value="" ${!u.stage ? 'selected' : ''}>Not marked (takes released versions)</option><option value="staging" ${u.stage === 'staging' ? 'selected' : ''}>Staging: also takes candidates, to try them first</option><option value="production" ${u.stage === 'production' ? 'selected' : ''}>Production: only promoted releases</option></select></label>
+        ${u.candidates?.length ? `<p class="small muted" style="margin:0">Candidate${u.candidates.length === 1 ? '' : 's'} ${u.candidates.map(esc).join(', ')} wait${u.candidates.length === 1 ? 's' : ''} for promotion (they run on Staging first).</p>` : ''}
         <p class="small muted" style="margin:0">A checked backup is taken first; people see a pause of a few seconds. A version that does not start is rolled back by itself and never tried again.${u.heldBack ? ` Held back: ${esc(u.heldBack)} and older (you went back from it).` : ''}</p>
         ${u.launched ? '' : '<p class="small warn-t" style="margin:0">This server was not started by the launcher (the container image or npm start), so it cannot update itself.</p>'}
         <div class="row">${u.previous && u.launched ? `<button class="btn ghost" data-act="rollback">Go back to ${esc(u.previous)}</button>` : ''}${u.launched ? '<button class="btn ghost" data-act="restart">Restart the server</button>' : ''}<a class="btn ghost" href="/api/system/report" download>Troubleshooting report</a></div>
@@ -397,9 +399,10 @@ async function updates(body) {
     again();
   });
   $('[data-act="more"]', body)?.addEventListener('click', () => ((body.dataset.more = String(shown + 10)), again()));
-  const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, everyMinutes: Number($('#autoEvery').value) } }), 'Saved');
+  const saveAuto = () => attempt(() => api('/updates/auto', { method: 'PUT', body: { enabled: $('#autoOn').checked, everyMinutes: Number($('#autoEvery').value), stage: $('#autoStage').value } }), 'Saved');
   $('#autoOn', body).addEventListener('change', saveAuto);
   $('#autoEvery', body).addEventListener('change', saveAuto);
+  $('#autoStage', body).addEventListener('change', async () => (await saveAuto()) && again());
   for (const b of $$('[data-install]', body))
     b.addEventListener('click', async (e) => {
       e.preventDefault();

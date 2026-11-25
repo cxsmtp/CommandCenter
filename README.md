@@ -91,6 +91,16 @@ Backups are taken and checked by Kendra itself (Settings → System & backups). 
 
 Like the FTR command center: every push to `main` is tested and published as a release (`.github/workflows/release.yml`; the version is made from the commit count, `1.0.<n>`, so nobody bumps it by hand). Each server started by the launcher (the container image or `npm start`) checks every 15 minutes and installs a new release as soon as it finds it: the download is checked against its SHA-256 (and signature, with `CC_UPDATE_PUBKEY`), a checked backup is taken, and the server restarts into it in a few seconds. A version that does not start is rolled back by itself and never tried again; going back by hand holds that version back until a newer one comes. Auto-update is on by default; Settings → System & backups turns it off or changes how often it checks.
 
+### Staging and production
+
+As in the FTR command center, each installation can be marked in Settings → Update & recovery:
+
+- **Staging** takes every release, including candidates (GitHub pre-releases), to try them first.
+- **Production** takes only full releases: a candidate reaches it once promoted.
+- **Not marked** behaves as before: full releases only.
+
+A push to `main` is a full release unless `package.json` has `"releaseChannel": "candidate"`; then it is a candidate. Promote one after it ran well on staging: Actions → release → Run workflow → `promote`: its tag (e.g. `v1.0.80`). That makes it the latest release and the image's `latest`, and production installs it within 15 minutes.
+
 ## Checkmarx One calls (all read-only)
 
 The IAM token is obtained with the API key (refresh-token grant, client `ast-app`). After that the calls are: `GET /api/projects`, `/api/scans` (last 7 days, and queued/running), `/api/projects/last-scan`, `/api/scan-summary`, `/api/credits/info`, `/api/credits/consumption`, `/api/configuration/tenant`, the IAM users and login events (`{iam}/auth/admin/realms/{tenant}/users` and `/events`, which need IAM read access), and `/api/logs/{scanId}/{engine}` (on request). The authentication and API client come from CxMissionZero (`src/cxone/`).

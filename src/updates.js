@@ -30,7 +30,7 @@ import { fail } from './db.js';
 const run = promisify(execFile);
 export const RESTART_CODE = 75; // the launcher restarts the server on this exit code
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-const AUTO_DEFAULT = { enabled: true, everyMinutes: 15 };
+const AUTO_DEFAULT = { enabled: true, everyMinutes: 15, stage: '' };
 const KEEP_VERSIONS = 3;
 const HOSTS = new Set(['api.github.com', 'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'codeload.github.com']);
 
@@ -121,7 +121,9 @@ export class Updater {
   /** What Settings → Updates shows. */
   status() {
     const s = this.state;
-    const newest = (s.available ?? [])[0] ?? null;
+    // What this installation takes: promoted releases; a staging one candidates (pre-releases) as well.
+    const taken = (s.available ?? []).filter((r) => this.takes(r));
+    const newest = taken[0] ?? null;
     return {
       current: this.#current,
       launched: this.launched,
@@ -132,7 +134,9 @@ export class Updater {
       previous: s.previous ?? null,
       lastCheck: s.lastCheck ?? null,
       checkError: s.checkError ?? null,
-      available: (s.available ?? []).map((r) => ({ ...r, newer: compareVersions(r.version, this.#current) > 0 })),
+      available: taken.map((r) => ({ ...r, newer: compareVersions(r.version, this.#current) > 0 })),
+      candidates: (s.available ?? []).filter((r) => r.prerelease && !this.takes(r) && compareVersions(r.version, this.#current) > 0).map((r) => r.version),
+      stage: this.stage,
       updateAvailable: Boolean(newest && compareVersions(newest.version, this.#current) > 0),
       auto: autoOf(s),
       failed: s.failed ?? [],
@@ -155,10 +159,24 @@ export class Updater {
     }
   }
 
-  setAuto({ enabled, everyMinutes }) {
+  /**
+   * What this installation is marked as: '' (not marked: as before), 'staging' or 'production'. A staging one also
+   * takes candidate releases (GitHub pre-releases) to try them before they are promoted; the others only promoted ones.
+   */
+  get stage() {
+    const s = this.state.auto?.stage;
+    return s === 'staging' || s === 'production' ? s : '';
+  }
+  /** A release this installation takes: a promoted one, or (when marked staging) a candidate as well. */
+  takes(r) {
+    return Boolean(r) && (!r.prerelease || this.stage === 'staging');
+  }
+
+  setAuto({ enabled, everyMinutes, stage }) {
     const before = autoOf(this.state);
     const m = Math.trunc(Number(everyMinutes));
-    return this.#save({ auto: { enabled: enabled === undefined ? before.enabled : Boolean(enabled), everyMinutes: m >= 5 && m <= 1440 ? m : before.everyMinutes } }).auto;
+    if (stage !== undefined && !['', 'staging', 'production'].includes(stage)) throw fail(400, 'Mark it Staging or Production, or leave it unmarked.');
+    return this.#save({ auto: { enabled: enabled === undefined ? before.enabled : Boolean(enabled), everyMinutes: m >= 5 && m <= 1440 ? m : before.everyMinutes, stage: stage === undefined ? this.stage : stage } }).auto;
   }
 
   /** Only the release service's own hosts (or this machine, outside production, for tests). */
@@ -197,7 +215,7 @@ export class Updater {
     try {
       const list = await this.#get(`${this.#api}/repos/${this.#repo}/releases?per_page=20`, { json: true });
       const available = (Array.isArray(list) ? list : [])
-        .filter((r) => !r.draft && !r.prerelease)
+        .filter((r) => !r.draft)
         .map((r) => {
           const version = String(r.tag_name ?? '').replace(/^v/, '');
           // With a token, assets come through the API (the only way for a private repository); without, the public link.
@@ -206,7 +224,7 @@ export class Updater {
             const a = found(re);
             return a ? (this.#token && a.url ? a.url : a.browser_download_url) : null;
           };
-          return { version, name: String(r.name ?? r.tag_name ?? '').slice(0, 120), notes: String(r.body ?? '').slice(0, 4000), publishedAt: r.published_at ?? null, url: r.html_url ?? null, bundle: asset(/^(meridian|commandcenter)-.*\.tar\.gz$/), bundleName: found(/^(meridian|commandcenter)-.*\.tar\.gz$/)?.name ?? '', sums: asset(/^SHA256SUMS$/), sig: asset(/^SHA256SUMS\.sig$/) };
+          return { prerelease: Boolean(r.prerelease), version, name: String(r.name ?? r.tag_name ?? '').slice(0, 120), notes: String(r.body ?? '').slice(0, 4000), publishedAt: r.published_at ?? null, url: r.html_url ?? null, bundle: asset(/^(meridian|commandcenter)-.*\.tar\.gz$/), bundleName: found(/^(meridian|commandcenter)-.*\.tar\.gz$/)?.name ?? '', sums: asset(/^SHA256SUMS$/), sig: asset(/^SHA256SUMS\.sig$/) };
         })
         .filter((r) => VERSION_RE.test(r.version) && r.bundle && r.sums)
         .sort((a, b) => compareVersions(b.version, a.version));
@@ -230,7 +248,8 @@ export class Updater {
 
   async #install(version, by) {
     const s = this.state;
-    const release = version ? (s.available ?? []).find((r) => r.version === version) : (s.available ?? [])[0];
+    // A named version (by hand: a candidate may be tried anywhere); otherwise the newest this installation takes.
+    const release = version ? (s.available ?? []).find((r) => r.version === version) : (s.available ?? []).find((r) => this.takes(r));
     if (!release) throw fail(404, 'That version is not among the published releases. Check for updates first.');
     if (release.version === this.#current) throw fail(409, `${release.version} is already running.`);
     const dir = path.join(this.#dataDir, 'app', 'versions', release.version);
@@ -348,7 +367,7 @@ export class Updater {
 function autoOf(state) {
   const a = state.auto ?? {};
   if (!a.everyMinutes) return { ...AUTO_DEFAULT };
-  return { enabled: a.enabled !== false, everyMinutes: a.everyMinutes };
+  return { enabled: a.enabled !== false, everyMinutes: a.everyMinutes, stage: a.stage === 'staging' || a.stage === 'production' ? a.stage : '' };
 }
 
 /** The GitHub token: given, or CC_UPDATE_TOKEN / UPDATE_GITHUB_TOKEN, or a file (CC_UPDATE_TOKEN_FILE). */

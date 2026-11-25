@@ -114,7 +114,7 @@ function shell() {
       ${state.session.linked?.ftr ? `<div class="nav-group">Linked</div><a href="/link/ftr?to=%2F" target="_blank" rel="noopener" title="The FTR Credits Command Center, signed in as you"><span class="ico">${ICON.ftr}</span>FTR command center<span class="ext">↗</span></a>` : ''}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
-      <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button>${state.session.version ? `<a class="nav-version" href="#/settings/${can('settings.manage') ? 'updates' : 'about'}" title="${can('settings.manage') ? 'Update & recovery' : 'About Kendra'}">Kendra ${esc(state.session.version)}</a>` : ''}</div>
+      <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button>${state.session.version ? `<a class="nav-version" href="#/settings/${can('settings.manage') ? 'updates' : 'about'}" title="${can('settings.manage') ? 'Update & recovery' : 'About Kendra'}">Kendra ${esc(state.session.version)}</a>` : ''}${state.session.stage === 'staging' ? '<span class="stage-pill" title="This installation is marked Staging: new versions are tried here first">Staging</span>' : ''}</div>
     </nav>
     <div>
       <header class="topbar">

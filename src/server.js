@@ -643,7 +643,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const user = users.fromToken(cookie(req, 'cc_session'), { slide: req.headers['x-peek'] !== '1' });
     if (route === 'GET /session') {
       const linked = linkReady() ? { ftr: linkSettings().ftrUrl } : null;
-      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours, linked } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode, lookForAll: settings().lookForAll }, version: VERSION, linked });
+      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours, linked, stage: updater.stage } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode, lookForAll: settings().lookForAll }, version: VERSION, linked });
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
@@ -1015,6 +1015,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       need(user, 'settings.manage');
       const a = updater.setAuto(await readBody(req));
       audit.record(user, 'system', a.enabled ? `Auto-update on: checks every ${a.everyMinutes} minutes, installs as soon as a release is found` : 'Turned off auto-update');
+      if (a.stage !== undefined) audit.record(user, 'system', `This installation is marked ${a.stage || 'unmarked'}`);
       return send(res, 200, updater.status());
     }
     if (route === 'POST /system/restart') {

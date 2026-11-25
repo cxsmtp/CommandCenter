@@ -2,6 +2,17 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.77 · 2026-11-25
+
+**Staging and production, as in the FTR command center**
+
+- Settings > Update & recovery: mark the installation Staging (takes candidate releases too,
+  to try them first) or Production (only promoted releases); unmarked behaves as before. A
+  Staging installation shows it in the menu.
+- release.yml: with "releaseChannel": "candidate" in package.json a push to main publishes
+  a pre-release (no image latest); Run workflow with promote: <tag> makes it the full release
+  and the image's latest.
+
 ## 1.0.76 · 2026-11-25
 
 **Teams from the FTR command center, Checkmarx people signed in on arrival, open tabs follow updates**
