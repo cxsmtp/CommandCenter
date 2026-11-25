@@ -20,6 +20,7 @@ import { Templates } from './templates.js';
 import { Bank } from './bank.js';
 import { rwReport } from './guide.js';
 import { makePass, readPass, newLinkKey, safePath, cleanPartnerUrl, movePage } from './link.js';
+import { Links, Help, imageFrom, maskEmail } from './self-service.js';
 import { tenantEvidence } from './tenant-evidence.js';
 import { Library } from './library.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
@@ -83,12 +84,30 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const bank = new Bank(db, { catalog, library });
   const opps = new Opportunities(db, { users, catalog, bank });
   const mailer = new Mailer(db);
+  const links = new Links(db);
+  const help = new Help(db);
+  // Sign-in rules (Settings → Sign-in): who may reset a forgotten password by email; who may join by themselves.
+  const signinRules = () => {
+    const v = db.read('settings', {}).signin ?? {};
+    return { reset: ['everyone', 'not-admins', 'nobody'].includes(v.reset) ? v.reset : 'everyone', join: { enabled: v.join?.enabled === true, domains: Array.isArray(v.join?.domains) && v.join.domains.length ? v.join.domains : ['checkmarx.com'] } };
+  };
+  const publicUrl = () => String(process.env.CC_PUBLIC_URL || '').replace(/\/$/, '');
+  const mailReady = () => {
+    const missing = [];
+    if (!mailer.configured) missing.push('The email server is not set up (Settings → Email).');
+    if (!publicUrl()) missing.push('CC_PUBLIC_URL is not set to the https address people use.');
+    return missing;
+  };
+  const brand = () => {
+    const b = db.read('brand', {});
+    return { tagline: b.tagline ?? 'One line of sight', logoAt: b.logo?.at ?? null, iconAt: b.icon?.at ?? null };
+  };
   // What the page may see of the settings: never the email server's or the proxy's secrets.
   const settings = () => {
     const { smtp, network, lastWeeklyDrafts, salesforce, sharepoint: _sp, ...rest } = { ...DEFAULT_SETTINGS, ...db.read('settings', {}) };
     // The product's old names, saved as the organisation's name before it was renamed Kendra, read as Kendra.
     if (['Meridian', 'CommandCenter', 'Command Center'].includes(rest.orgName)) rest.orgName = 'Kendra';
-    return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) } };
+    return { ...rest, security: { sessionHours: 12, maxAttempts: 10, ...(rest.security ?? {}) }, brand: brand() };
   };
   const fullSettings = () => db.read('settings', {});
   // Light became the default look (2026-11): once, an organisation still on the old dark default moves to light.
@@ -639,11 +658,83 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const { token, user } = users.signIn(body.email, body.password);
       return send(res, 200, { user, expiresAt: users.expiresAt(token) }, { 'Set-Cookie': sessionCookie(token, 30 * 86400) });
     }
+    // ——— Self-service, before signing in: forgotten passwords and joining with a work address ———
+    if (m === 'GET' && (route === 'GET /brand/logo' || route === 'GET /brand/icon')) {
+      const img = db.read('brand', {})[parts[1]];
+      if (!img) return send(res, 404, { error: 'Not set.' });
+      return send(res, 200, Buffer.from(img.b64, 'base64'), { 'Content-Type': img.type, 'Cache-Control': 'no-cache', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", 'X-Content-Type-Options': 'nosniff' });
+    }
+    if (route === 'GET /auth/options') {
+      const r = signinRules();
+      const ready = !mailReady().length;
+      return send(res, 200, { reset: ready && r.reset !== 'nobody', join: ready && r.join.enabled ? { domains: r.join.domains } : null });
+    }
+    if (route.startsWith('POST /auth/')) {
+      if (!['Kendra', 'Meridian', 'CommandCenter'].includes(req.headers['x-requested-with'])) return send(res, 403, { error: 'Missing request header.' });
+      const b = await readBody(req);
+      const ip = req.socket.remoteAddress;
+      const ASKED = 'Check your inbox. If the address may do this, an email is on its way with a link. It works once, for 30 minutes.';
+      const DEAD = 'This link no longer works: it was used, a newer one was sent, or it is more than 30 minutes old. Ask for a new one.';
+      const mayReset = (u) => u && u.active !== false && signinRules().reset !== 'nobody' && !(signinRules().reset === 'not-admins' && u.role === 'admin');
+      const mailLink = async (to, subject, lines, link) => mailer.send({ to: [to], subject, body: `${lines.join('\n\n')}\n\n${link}\n\nIt works once, for 30 minutes. Did not ask for this? Ignore this email: nothing changes.` });
+      if (route === 'POST /auth/forgot' || route === 'POST /auth/join') {
+        const email = text(b.email, 254).toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw fail(400, 'Enter your work email address.');
+        throttle(`${ip}|self|${email}`);
+        // The same answer, and the work after it, whether or not the address has an account.
+        setImmediate(async () => {
+          try {
+            if (mailReady().length) return;
+            const existing = users.list().find((u) => u.email === email);
+            const domain = email.split('@')[1];
+            if (existing && mayReset(existing) && links.maySend('reset', email)) {
+              const { token } = links.issue('reset', email, { userId: existing.id });
+              await mailLink(email, `Reset your ${settings().orgName} password`, [`Someone, hopefully you, asked to choose a new password for ${email} on ${settings().orgName}.`], `${publicUrl()}/#/reset?token=${token}`);
+              audit.record(null, 'auth', `Sent a password reset link to ${email}`);
+            } else if (!existing && route === 'POST /auth/join' && signinRules().join.enabled && signinRules().join.domains.includes(domain) && links.maySend('join', email)) {
+              const { token } = links.issue('join', email);
+              await mailLink(email, `Join ${settings().orgName}`, [`Someone, hopefully you, asked to join ${settings().orgName} with ${email}.`, 'Open the link to give your name, who you report to and a password.'], `${publicUrl()}/#/join?token=${token}`);
+              audit.record(null, 'auth', `Sent a link to join to ${email}`);
+            }
+          } catch (error) {
+            audit.record(null, 'auth', `A self-service email to ${email} failed: ${error.message}`);
+          }
+        });
+        return send(res, 200, { message: ASKED });
+      }
+      if (route === 'POST /auth/reset/check' || route === 'POST /auth/reset') {
+        const l = links.check('reset', b.token);
+        if (!l) {
+          throttle(`${ip}|badlink`);
+          throw fail(400, DEAD);
+        }
+        if (route === 'POST /auth/reset/check') return send(res, 200, { email: maskEmail(l.email) });
+        const u = users.setPasswordByLink(l.userId, b.password);
+        links.consume(b.token);
+        audit.record(u, 'auth', 'Chose a new password with an emailed link (every sign-in ended)');
+        return send(res, 200, { email: u.email });
+      }
+      if (route === 'POST /auth/join/check' || route === 'POST /auth/join/finish') {
+        const l = links.check('join', b.token);
+        if (!l) {
+          throttle(`${ip}|badlink`);
+          throw fail(400, DEAD);
+        }
+        const managers = users.list().filter((u) => u.active !== false && ['vp', 'leader', 'team_lead'].includes(u.role)).map((u) => ({ id: u.id, name: u.name, role: u.roleLabel, region: u.region ?? '' }));
+        if (route === 'POST /auth/join/check') return send(res, 200, { email: l.email, managers });
+        const added = users.addJoined({ email: l.email, name: b.name, title: b.title, region: b.region, managerId: b.managerId, password: b.password });
+        links.consume(b.token);
+        audit.record(added, 'people', `Joined by themselves (${added.email}), to be reviewed`);
+        const { token } = users.signIn(added.email, b.password);
+        return send(res, 200, { user: added }, { 'Set-Cookie': sessionCookie(token, 30 * 86400) });
+      }
+      return send(res, 404, { error: 'Not found.' });
+    }
     // A look at the session that does not renew it (the browser's expiry warning).
     const user = users.fromToken(cookie(req, 'cc_session'), { slide: req.headers['x-peek'] !== '1' });
     if (route === 'GET /session') {
       const linked = linkReady() ? { ftr: linkSettings().ftrUrl } : null;
-      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours, linked, stage: updater.stage } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode, lookForAll: settings().lookForAll }, version: VERSION, linked });
+      return send(res, 200, user ? { user, permissions: users.permissionsOf(user, fullSettings()), settings: settings(), version: VERSION, expiresAt: users.expiresAt(cookie(req, 'cc_session')), sessionHours: settings().security.sessionHours, linked, stage: updater.stage } : { user: null, settings: { orgName: settings().orgName, defaultTheme: settings().defaultTheme, defaultMode: settings().defaultMode, lookForAll: settings().lookForAll, brand: brand() }, version: VERSION, linked });
     }
     if (!user) return send(res, 401, { error: 'Sign in first.' });
     // State-changing calls only from this page (with SameSite=Strict, no cross-site requests).
@@ -854,6 +945,79 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         throw fail(400, smtpHint(error));
       }
       return send(res, 200, { ok: true, smtp: mailer.settings });
+    }
+    if (route === 'GET /settings/signin') {
+      need(user, 'settings.manage');
+      return send(res, 200, { ...signinRules(), missing: mailReady(), publicUrl: publicUrl(), security: settings().security, joined: users.list().filter((u) => u.joined && !u.joined.reviewedAt && u.active !== false).length });
+    }
+    if (route === 'PUT /settings/signin') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = fullSettings();
+      const prev = signinRules();
+      const domains = 'domains' in b ? [...new Set(String(b.domains ?? '').split(/[\s,;]+/).map((x) => x.trim().toLowerCase().replace(/^@/, '')).filter((x) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(x)))].slice(0, 10) : prev.join.domains;
+      if ('domains' in b && !domains.length) throw fail(400, 'Give at least one email domain, such as checkmarx.com.');
+      all.signin = { reset: ['everyone', 'not-admins', 'nobody'].includes(b.reset) ? b.reset : prev.reset, join: { enabled: 'joinEnabled' in b ? Boolean(b.joinEnabled) : prev.join.enabled, domains } };
+      db.write('settings', all);
+      audit.record(user, 'settings', `Sign-in: forgotten passwords by email for ${all.signin.reset}; joining by themselves ${all.signin.join.enabled ? `on (${domains.join(', ')})` : 'off'}`);
+      return send(res, 200, signinRules());
+    }
+    if (route === 'GET /help') {
+      const admin = users.can(user, 'settings.manage', fullSettings());
+      return send(res, 200, { email: admin ? fullSettings().help?.email ?? '' : undefined, ready: Boolean(fullSettings().help?.email) && mailer.configured, requests: help.list({ userId: admin ? null : user.id }) });
+    }
+    if (route === 'PUT /settings/help') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const email = text(b.email, 254).toLowerCase();
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw fail(400, 'Give a valid email address, or leave it empty.');
+      const all = fullSettings();
+      all.help = { email };
+      db.write('settings', all);
+      audit.record(user, 'settings', email ? `Get help requests go to ${email}` : 'Get help requests are only kept (no address)');
+      return send(res, 200, { email });
+    }
+    if (route === 'POST /help') {
+      const row = help.add(user, await readBody(req));
+      audit.record(user, 'help', `${row.kind === 'idea' ? 'Asked for an enhancement' : 'Raised a support case'}: ${row.subject}`);
+      const to = fullSettings().help?.email;
+      if (to && mailer.configured) {
+        try {
+          await mailer.send({ to: [to], subject: `[Kendra ${row.kind === 'idea' ? 'enhancement' : 'support'}] ${row.subject}`, body: `${row.details}\n\n— ${user.name} <${user.email}>, ${row.at}\nKendra ${VERSION}` }, { replyTo: user.email });
+          help.mark(row.id, { mailed: new Date().toISOString() });
+          return send(res, 200, { ...row, mailed: true });
+        } catch (error) {
+          help.mark(row.id, { error: String(error.message).slice(0, 200) });
+          return send(res, 200, { ...row, mailed: false, error: 'It is kept here, but the email did not go: an Admin can see it on Get help.' });
+        }
+      }
+      return send(res, 200, { ...row, mailed: false, error: to ? 'It is kept here; the email server is not set up yet.' : 'It is kept here: no address is set for requests yet (Settings → Get help).' });
+    }
+    if (route === 'PUT /settings/brand') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const cur = db.read('brand', {});
+      const all = fullSettings();
+      if ('orgName' in b) all.orgName = text(b.orgName, 80) || DEFAULT_SETTINGS.orgName;
+      if ('tagline' in b) cur.tagline = text(b.tagline, 60);
+      for (const k of ['logo', 'icon']) {
+        if (b[k] === null) delete cur[k];
+        else if (b[k]) cur[k] = imageFrom(b[k]);
+      }
+      if (['auto', 'light', 'dark'].includes(b.defaultMode)) all.defaultMode = b.defaultMode;
+      if (THEMES.includes(b.defaultTheme)) all.defaultTheme = b.defaultTheme;
+      if ('lookForAll' in b) all.lookForAll = Boolean(b.lookForAll);
+      db.write('brand', cur);
+      db.write('settings', all);
+      audit.record(user, 'settings', `Branding: ${Object.keys(b).join(', ')}`);
+      return send(res, 200, { settings: settings() });
+    }
+    if (m === 'POST' && parts[0] === 'users' && parts[2] === 'approve') {
+      need(user, 'users.manage');
+      if (!users.isBelow(user, parts[1])) throw fail(403, 'You can only approve people in your team.');
+      const u = users.approveJoined(parts[1], user.name);
+      audit.record(user, 'people', `Approved ${u.name}, who joined by themselves`);
+      return send(res, 200, { user: u });
     }
     if (route === 'GET /settings/link') {
       need(user, 'settings.manage');

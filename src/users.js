@@ -269,6 +269,48 @@ export class Users {
     return publicUser(user);
   }
 
+  /** A new password from a one-time email link (the address proved it is theirs): every sign-in ends. */
+  setPasswordByLink(id, next) {
+    const problem = passwordProblem(next);
+    if (problem) throw fail(400, problem);
+    const all = this.#all();
+    const u = all.find((x) => x.id === id);
+    if (!u || u.active === false) throw fail(400, 'This link no longer works.');
+    u.password = hashPassword(next);
+    u.mustChangePassword = false;
+    u.passwordChangedAt = new Date().toISOString();
+    this.#save(all);
+    this.endSessions(id);
+    return publicUser(u);
+  }
+
+  /** Someone who proved their work address joins: an Associate, under the manager they chose, to be reviewed. */
+  addJoined({ email, name, title, region, managerId, password }) {
+    const all = this.#all();
+    const address = cleanEmail(email);
+    if (!address) throw fail(400, 'Give a valid email address.');
+    if (all.some((u) => u.email === address)) throw fail(409, 'This address has joined already: sign in, or use "Forgot your password?".');
+    const problem = passwordProblem(password);
+    if (problem) throw fail(400, problem);
+    const manager = managerId ? all.find((u) => u.id === managerId && u.active !== false) : null;
+    if (managerId && !manager) throw fail(400, 'Choose who you report to from the list.');
+    const at = new Date().toISOString();
+    const user = { id: randomUUID(), email: address, name: text(name, 120) || address, role: 'associate', managerId: manager?.id ?? null, title: text(title, 120), region: text(region, 60) || manager?.region || '', active: true, password: hashPassword(password), mustChangePassword: false, prefs: {}, createdAt: at, joined: { at, reviewedAt: null } };
+    all.push(user);
+    this.#save(all);
+    return publicUser(user);
+  }
+
+  /** Whoever manages people approves someone who joined by themselves. */
+  approveJoined(id, by) {
+    const all = this.#all();
+    const u = all.find((x) => x.id === id);
+    if (!u?.joined) throw fail(400, 'Only someone who joined by themselves is approved.');
+    u.joined = { ...u.joined, reviewedAt: new Date().toISOString(), reviewedBy: by };
+    this.#save(all);
+    return publicUser(u);
+  }
+
   changePassword(id, current, next, keepToken = null) {
     const all = this.#all();
     const user = all.find((u) => u.id === id);

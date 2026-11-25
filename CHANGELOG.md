@@ -2,6 +2,22 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.80 · 2026-11-25
+
+**Settings like the FTR command center: General, Branding, Email, Sign-in, Get help**
+
+- General: how Kendra works for everyone, saved as you change it.
+- Branding (new): the app name, the line under it, the logo and the browser icon (PNG, JPEG,
+  SVG or WebP up to 200 KB, no script), the look and mode, and whether people may choose
+  their own; shown on the sign-in page too.
+- Email (SMTP): saved as you type and tested with the mail server at once.
+- Sign-in (new): Forgot your password? (a one-time emailed link, 30 minutes, kept only as a
+  hash; who may use it) and joining by themselves with a work address of chosen domains (an
+  Associate under the leader they pick, listed on People with Approve); sessions.
+- Get help (new): everyone raises a support case or an enhancement request; kept, and
+  emailed to the address the Admin sets, replying to the person who asked.
+- Older panels in Settings take the same headings; Get help in the menu.
+
 ## 1.0.79 · 2026-11-25
 
 **Settings like the FTR command center: one menu, People, Teams, Roles, Audit log**

@@ -29,7 +29,7 @@ const TABS = [
   ['People', [['people', 'People', ALL], ['teams', 'Teams', ALL], ['roles', 'Roles & permissions', () => can('roles.manage')], ['signin', 'Sign-in', MANAGE]]],
   ['POVs', [['capabilities', 'Capabilities & criteria', ALL], ['salesforce', 'Salesforce', MANAGE]]],
   ['Records', [['audit', 'Audit log', () => can('audit.view')]]],
-  ['System', [['general', 'General', MANAGE], ['email', 'Email (SMTP)', MANAGE], ['linked', 'Linked apps', MANAGE], ['https', 'HTTPS & network', MANAGE], ['updates', 'Updates', MANAGE], ['backups', 'Backups & health', MANAGE], ['about', 'About', ALL]]],
+  ['System', [['general', 'General', MANAGE], ['branding', 'Branding', MANAGE], ['email', 'Email (SMTP)', MANAGE], ['linked', 'Linked apps', MANAGE], ['https', 'HTTPS & network', MANAGE], ['updates', 'Updates', MANAGE], ['backups', 'Backups & health', MANAGE], ['help', 'Get help', ALL], ['about', 'About', ALL]]],
 ];
 // Old addresses of pages that were renamed.
 const ALIAS = { organisation: 'general', network: 'https', system: 'backups', security: 'signin' };
@@ -51,6 +51,8 @@ const META = {
   updates: [ADMINS, true],
   backups: [ADMINS, true],
   about: ['the version, what changed, and the licence', true],
+  branding: [ADMINS, true],
+  help: ['a support case or an idea, to the team that runs Kendra', true],
 };
 /** A settings form that saves as it is changed (after a pause while typing), as in the FTR command center. */
 export function autosave(form, save, status, { delay = 700 } = {}) {
@@ -96,13 +98,166 @@ export async function renderSettings(main, tab, { crumbs, applyLook }) {
   const body = $('#sBody');
   const linked = state.session.linked ?? null;
   const pages = {
-    profile, general: organisation, email, roles, salesforce, backups: system, signin: security, https: network, updates, about, linked: linkedPage,
+    profile, general: organisation, branding, email, roles, salesforce, backups: system, signin: security, https: network, updates, about, linked: linkedPage, help: helpPage,
     people: () => renderPeople(body, { linked }),
     teams: () => renderTeams(body, { linked }),
     audit: () => renderAudit(body, { crumbs: () => {} }),
     capabilities: () => renderCatalog(body, { crumbs: () => {} }),
   };
   await pages[active](body, data, applyLook);
+}
+
+// ——— General: how Kendra works for everyone ———
+function organisation(body, data) {
+  const s = data.settings;
+  body.innerHTML = `${SAVES}<div class="grid2 org-cols"><div class="stack" id="orgLeft"><section class="panel st-panel"><div class="st-ph"><h2>Kendra</h2><span class="st-aside">The name, logo and look are under Branding</span></div>
+    <form id="orgForm" class="st-form">
+      <label class="field">Read each running POV tenant every <span class="small muted">minutes, 1 to 1,440</span><input type="number" name="refreshMinutes" min="1" max="1440" value="${esc(s.refreshMinutes)}"></label>
+      <label class="field">Results presentation<select name="reportStyle"><option value="classic" ${s.reportStyle !== 'team' ? 'selected' : ''}>Classic (Kendra’s own design)</option><option value="team" ${s.reportStyle === 'team' ? 'selected' : ''}>Team template (the WIP design, in the uploaded template)</option></select></label>
+      <label class="opt"><input type="checkbox" name="weeklyDrafts" ${s.weeklyDrafts ? 'checked' : ''}><span><b>Weekly status drafts</b><small>Every Monday, a draft for each running POV waits in its Email tab. It is never sent by itself.</small></span></label>
+    </form><div class="st-foot" id="orgSaved">Saved as you change it.</div></section></div><div class="stack" id="orgRight"></div></div>`;
+  wipTemplate($('#orgLeft', body));
+  sharePointPanel($('#orgRight', body));
+  autosave($('#orgForm', body), async (f) => {
+    const b = formData(f);
+    const r = await api('/settings', { method: 'PUT', body: { refreshMinutes: Number(b.refreshMinutes), reportStyle: b.reportStyle, weeklyDrafts: b.weeklyDrafts } });
+    state.session.settings = r.settings;
+  }, $('#orgSaved', body));
+}
+
+// ——— Branding: the name line, logo, browser icon and the look ———
+async function branding(body, data, applyLook) {
+  const s = data.settings;
+  const br = s.brand ?? {};
+  const img = (k, at) => (at ? `<img src="/api/brand/${k}?v=${encodeURIComponent(at)}" alt="">` : `<img src="${k === 'logo' ? '/logo.png' : '/favicon-64.png'}" alt="">`);
+  body.innerHTML = `${SAVES}<section class="panel st-panel"><div class="st-ph"><h2>Branding</h2></div><form id="brForm" class="st-form">
+    <div class="st-cols3"><label class="field">App name<input name="orgName" maxlength="80" value="${esc(s.orgName)}"></label>
+      <label class="field">Under the name<input name="tagline" maxlength="60" value="${esc(br.tagline ?? '')}" placeholder="One line of sight"></label><span></span></div>
+    <div class="st-cols2">
+      <div class="field">Logo <span class="small muted">PNG, JPEG, SVG or WebP, up to 200 KB; square works best</span><div class="img-pick"><span class="img-prev">${img('logo', br.logoAt)}</span><label class="btn sm">Upload<input type="file" data-img="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden></label>${br.logoAt ? '<button type="button" class="btn sm ghost" data-rm="logo">Use Kendra’s</button>' : ''}</div></div>
+      <div class="field">Browser icon<div class="img-pick"><span class="img-prev">${img('icon', br.iconAt)}</span><label class="btn sm">Upload<input type="file" data-img="icon" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden></label>${br.iconAt ? '<button type="button" class="btn sm ghost" data-rm="icon">Use Kendra’s</button>' : ''}</div></div></div>
+    <div class="field">Look of the app <span class="small muted">everyone’s, unless they choose their own under Your profile &amp; look</span>
+      <div class="seg st-seg">${[['light', 'Light'], ['dark', 'Dark'], ['auto', 'As the device']].map(([m, l]) => `<label><input type="radio" name="defaultMode" value="${m}" ${s.defaultMode === m ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></div>
+    <div class="looks">${Object.entries(LOOKS).map(([k, [label, sw]]) => `<label class="look"><input type="radio" name="defaultTheme" value="${k}" ${s.defaultTheme === k ? 'checked' : ''} hidden><div class="sw">${sw.map((c) => `<span style="background:${c}"></span>`).join('')}</div><div class="nm">${esc(label)}</div></label>`).join('')}</div>
+    <label class="opt"><input type="checkbox" name="lookFree" ${s.lookForAll ? '' : 'checked'}><span><b>Let people choose their own look</b><small>Off: everyone sees the look chosen here.</small></span></label>
+  </form><div class="st-foot" id="brSaved">All changes are saved.</div></section>`;
+  const f = $('#brForm', body);
+  const put = async (extra) => {
+    const r = await api('/settings/brand', { method: 'PUT', body: extra });
+    state.session.settings = { ...state.session.settings, ...r.settings };
+    applyLook(state.session.user.prefs);
+    return r;
+  };
+  autosave(f, async () => {
+    const b = formData(f);
+    const theme = f.querySelector('input[name="defaultTheme"]:checked')?.value;
+    const mode = f.querySelector('input[name="defaultMode"]:checked')?.value;
+    await put({ orgName: b.orgName, tagline: b.tagline, defaultTheme: theme, defaultMode: mode, lookForAll: !b.lookFree });
+    for (const l of body.querySelectorAll('.look')) l.classList.toggle('on', l.querySelector('input').checked);
+  }, $('#brSaved', body));
+  for (const l of body.querySelectorAll('.look')) l.classList.toggle('on', l.querySelector('input').checked);
+  for (const inp of body.querySelectorAll('[data-img]'))
+    inp.addEventListener('change', async () => {
+      const file = inp.files[0];
+      if (!file) return;
+      if (file.size > 200 * 1024) return toast('The image is larger than 200 KB.', { bad: true });
+      const url = await new Promise((ok, no) => {
+        const r = new FileReader();
+        r.onload = () => ok(r.result);
+        r.onerror = () => no(new Error('The file could not be read.'));
+        r.readAsDataURL(file);
+      });
+      if (await attempt(() => put({ [inp.dataset.img]: url }), 'Saved')) location.reload();
+    });
+  for (const b of body.querySelectorAll('[data-rm]')) b.addEventListener('click', async () => (await attempt(() => put({ [b.dataset.rm]: null }), 'Saved')) && location.reload());
+}
+
+// ——— Email (SMTP) ———
+function email(body, data) {
+  const s = data.smtp;
+  body.innerHTML = `${SAVES}<section class="panel st-panel"><div class="st-ph"><h2>Email server (SMTP)</h2><span class="st-aside"><span class="status ${s.host ? 'on' : 'off'}"><i></i>${s.host ? 'Set up' : 'Not set up'}</span></span></div>
+    <p class="st-note">Kendra sends the SEs’ emails through this account, with the SE as Reply-To, and the “Forgot your password?”, joining and Get help emails. Saved as you type and tested with the mail server at once; settings that fail give way to the last ones that worked. The password is kept encrypted and never shown again.</p>
+    <form id="smtpForm" class="st-form">
+      <div class="st-cols2"><label class="field">Mail server<input name="host" value="${esc(s.host)}" placeholder="smtp.office365.com"></label><label class="field">Port<input type="number" name="port" value="${esc(s.port)}"></label></div>
+      <label class="opt"><input type="checkbox" name="secure" ${s.secure ? 'checked' : ''}><span><b>Implicit TLS</b><small>On for port 465. Off for 587 and 25, where STARTTLS is used.</small></span></label>
+      <div class="st-cols2"><label class="field">User name<input name="user" value="${esc(s.user)}" autocomplete="off"></label><label class="field">Password<input type="password" name="pass" autocomplete="new-password" placeholder="${s.hasPassword ? 'kept: type to replace' : ''}"></label></div>
+      <label class="field">From<input name="from" value="${esc(s.from)}" placeholder="Kendra &lt;pov@company.com&gt;"></label>
+    </form>
+    <div class="st-form row center" style="padding-top:0"><button type="button" class="btn primary" id="smtpTest">Send me a test email</button></div>
+    <div class="st-foot" id="smtpSaved">All changes are saved.</div></section>`;
+  autosave($('#smtpForm', body), async (f) => {
+    const b = formData(f);
+    if (!b.pass) delete b.pass;
+    const r = await api('/settings/smtp', { method: 'PUT', body: b });
+    if (r.restored) throw new Error(`These settings did not work (${r.error}); the last working ones were put back.`);
+    if (r.verified === false && r.error) throw new Error(`Saved, but the email server did not accept them: ${r.error}.`);
+    f.pass.value = '';
+  }, $('#smtpSaved', body), { delay: 1200 });
+  $('#smtpTest', body).addEventListener('click', async () => {
+    const r = await attempt(() => api('/settings/smtp/test', { method: 'POST', body: {} }));
+    if (r) toast(`Test email sent to ${r.to}`);
+  });
+}
+
+// ——— Sign-in: sessions, forgotten passwords, joining by themselves ———
+async function security(body) {
+  const d = await api('/settings/signin');
+  const sec = d.security ?? { sessionHours: 12, maxAttempts: 10 };
+  const missing = d.missing.length ? `<div class="st-warn">Not available yet: ${d.missing.map(esc).join(' ')}</div>` : '';
+  body.innerHTML = `<div class="stack">
+    <section class="panel st-panel"><div class="st-ph"><h2>Joining by themselves</h2><span class="st-aside">from the sign-in page${d.joined ? ` · <a href="#/settings/people">${d.joined} to review on People</a>` : ''}</span></div>
+      <p class="st-note">Someone with a work address of these domains asks from the sign-in page. Already with an account: they get a link to choose a new password. New: a link (it proves the address is theirs) to give their name, who they report to and a password. They join as an Associate and are listed on People for review. Arriving from the FTR command center needs no link (Linked apps).</p>
+      <form id="joinForm" class="st-form">
+        <label class="opt"><input type="checkbox" name="joinEnabled" ${d.join.enabled ? 'checked' : ''}><span><b>People may join by themselves</b></span></label>
+        <label class="field">Email domains <span class="small muted">one or more, such as checkmarx.com</span><input name="domains" value="${esc(d.join.domains.join(', '))}"></label>
+        ${missing}</form><div class="st-foot" id="joinSaved">Changes save as you choose.</div></section>
+    <div class="grid2">
+      <section class="panel st-panel"><div class="st-ph"><h2>Forgotten passwords</h2></div>
+        <p class="st-note">“Forgot your password?” sends a one-time link to the account’s own email. It works once, for 30 minutes, and signs the account out everywhere when used. The answer never says whether an address has an account.</p>
+        <form id="resetForm" class="st-form"><label class="field">Who may reset a forgotten password by email<select name="reset">${[['everyone', 'Everyone with a password'], ['not-admins', 'Everyone but Admins'], ['nobody', 'Nobody (an Admin sets a new one)']].map(([v, l]) => `<option value="${v}" ${d.reset === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>${missing}</form>
+        <div class="st-foot" id="resetSaved">Changes save as you choose.</div></section>
+      <section class="panel st-panel"><div class="st-ph"><h2>Sessions</h2></div><form id="secForm" class="st-form">
+        <div class="st-cols2"><label class="field">A sign-in lasts, while in use <span class="small muted">hours, 1 to 168</span><input type="number" name="sessionHours" min="1" max="168" value="${esc(sec.sessionHours)}"></label>
+          <label class="field">Attempts before a pause <span class="small muted">per 15 minutes</span><input type="number" name="maxAttempts" min="3" max="100" value="${esc(sec.maxAttempts)}"></label></div>
+        <p class="small muted" style="margin:0">Each use extends the sign-in; after 30 days it ends in any case. Passwords of 10 characters or more, kept as salted scrypt hashes; changing one ends every other sign-in. Locked out on the server: <span class="mono">node src/reset-password.js you@company.com</span>.</p>
+      </form><div class="st-foot" id="secSaved">Saved as you change it.</div></section></div></div>`;
+  autosave($('#joinForm', body), async (f) => {
+    const b = formData(f);
+    await api('/settings/signin', { method: 'PUT', body: { joinEnabled: b.joinEnabled, domains: b.domains } });
+  }, $('#joinSaved', body));
+  autosave($('#resetForm', body), async (f) => api('/settings/signin', { method: 'PUT', body: { reset: f.reset.value } }), $('#resetSaved', body));
+  autosave($('#secForm', body), async (f) => {
+    const b = formData(f);
+    await api('/settings/security', { method: 'PUT', body: { sessionHours: Number(b.sessionHours), maxAttempts: Number(b.maxAttempts) } });
+  }, $('#secSaved', body));
+}
+
+// ——— Get help: a support case or an enhancement request (everyone); where they go (Admins) ———
+async function helpPage(body) {
+  const d = await api('/help');
+  const admin = can('settings.manage');
+  body.innerHTML = `<div class="grid2 help-cols"><div class="stack">
+    <section class="panel st-panel"><div class="st-ph"><h2>Ask for help</h2><span class="st-aside">${d.ready ? 'emailed to the team that runs Kendra' : 'kept here for the Admins'}</span></div>
+      <form id="helpForm" class="st-form">
+        <div class="seg st-seg"><label><input type="radio" name="kind" value="case" checked><span>Something is wrong</span></label><label><input type="radio" name="kind" value="idea"><span>An idea or enhancement</span></label></div>
+        <label class="field">In a line<input name="subject" maxlength="160" required placeholder="e.g. The WIP deck has no toolchain slide"></label>
+        <label class="field">Details<textarea name="details" rows="6" required placeholder="What you did, what you expected, what happened (and which POV)"></textarea></label>
+        <div><button class="btn primary">Send</button></div></form></section>
+    ${admin ? `<section class="panel st-panel"><div class="st-ph"><h2>Where requests go</h2><span class="st-aside">Admins only</span></div><form id="helpTo" class="st-form">
+      <label class="field">Send requests to<input type="email" name="email" value="${esc(d.email ?? '')}" placeholder="support@company.com"></label>
+      <p class="small muted" style="margin:0">Each request is emailed here through the email server (Settings → Email); replying answers the person who asked. Until the email server is set up, requests are kept here.</p></form><div class="st-foot" id="helpSaved">All changes are saved.</div></section>` : ''}</div>
+    <section class="panel st-panel"><div class="st-ph"><h2>${admin ? 'Requests' : 'Your requests'}</h2><span class="st-aside">${d.requests.length}</span></div>
+      <ul class="feed">${d.requests.map((r) => `<li><span class="icon">${r.kind === 'idea' ? '✦' : '!'}</span><div><div class="t">${esc(r.subject)}</div><div class="m">${admin ? `${esc(r.byName)} · ` : ''}${r.kind === 'idea' ? 'Enhancement' : 'Support case'} · ${r.mailed ? 'emailed' : r.error ? `<span class="warn-t">${esc(r.error)}</span>` : 'kept here'}</div></div><span class="when">${ago(r.at)}</span></li>`).join('') || '<li class="empty" style="display:block">Nothing yet.</li>'}</ul></section></div>`;
+  $('#helpForm', body).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = formData(e.target);
+    const kind = e.target.querySelector('input[name="kind"]:checked').value;
+    const r = await attempt(() => api('/help', { method: 'POST', body: { kind, subject: b.subject, details: b.details } }));
+    if (!r) return;
+    toast(r.mailed ? 'Sent: you will get the answer by email' : r.error, { bad: !r.mailed });
+    helpPage(body);
+  });
+  if (admin) autosave($('#helpTo', body), async (f) => api('/settings/help', { method: 'PUT', body: { email: f.email.value } }), $('#helpSaved', body));
 }
 
 function profile(body, data, applyLook) {
@@ -158,54 +313,7 @@ function profile(body, data, applyLook) {
   });
 }
 
-function organisation(body, data, applyLook) {
-  const s = data.settings;
-  body.innerHTML = `<div class="grid2 org-cols"><div class="stack" id="orgLeft"><form id="orgForm" class="panel body stack" style="padding:16px">
-    <label class="field">Name shown in the menu and on reports<input name="orgName" value="${esc(s.orgName)}"></label>
-    <label class="field">Read each running POV tenant every (minutes)<input type="number" name="refreshMinutes" min="1" max="1440" value="${esc(s.refreshMinutes)}"></label>
-    <div class="row"><label class="field">Default look<select name="defaultTheme">${Object.entries(LOOKS).map(([k, [l]]) => `<option value="${k}" ${s.defaultTheme === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    <label class="field">Default mode<select name="defaultMode">${[['light', 'Light'], ['dark', 'Dark'], ['auto', 'As the device']].map(([m, l]) => `<option value="${m}" ${s.defaultMode === m ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-    <label class="check"><input type="checkbox" name="lookForAll" ${s.lookForAll ? 'checked' : ''}> Use this look and mode for everyone (people cannot choose their own)</label>
-    <label class="field">Results presentation<select name="reportStyle"><option value="classic" ${s.reportStyle !== 'team' ? 'selected' : ''}>Classic (Kendra’s own design)</option><option value="team" ${s.reportStyle === 'team' ? 'selected' : ''}>Team template (the WIP design, in the uploaded template)</option></select></label>
-    <label class="check"><input type="checkbox" name="weeklyDrafts" ${s.weeklyDrafts ? 'checked' : ''}> Every Monday, write a weekly status draft for each running POV (waiting in its Email tab, never sent by itself)</label>
-    <div><button class="btn primary">Save</button></div>
-  </form></div><div class="stack" id="orgRight"></div></div>`;
-  wipTemplate($('#orgLeft', body));
-  sharePointPanel($('#orgRight', body));
-  $('#orgForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const r = await attempt(() => api('/settings', { method: 'PUT', body: formData(e.target) }), 'Saved');
-    if (r) {
-      state.session.settings = r.settings;
-      applyLook(state.session.user.prefs);
-    }
-  });
-}
 
-function email(body, data) {
-  const s = data.smtp;
-  body.innerHTML = `<form id="smtpForm" class="panel body stack" style="max-width:720px">
-    <p class="muted" style="margin:0">Kendra sends the SE's emails through this account, with the SE as Reply-To. Without it, SEs download .eml files or copy the text into their own mail.</p>
-    <div class="row"><label class="field">SMTP host<input name="host" value="${esc(s.host)}" placeholder="smtp.office365.com"></label><label class="field" style="max-width:120px">Port<input type="number" name="port" value="${esc(s.port)}"></label><label class="check"><input type="checkbox" name="secure" ${s.secure ? 'checked' : ''}> TLS from the start (port 465)</label></div>
-    <div class="row"><label class="field">User<input name="user" value="${esc(s.user)}" autocomplete="off"></label><label class="field">Password${s.hasPassword ? ' (kept; type to replace)' : ''}<input type="password" name="pass" autocomplete="new-password"></label></div>
-    <label class="field">From<input name="from" value="${esc(s.from)}" placeholder="Kendra &lt;pov@company.com&gt;"></label>
-    <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="smtpTest">Send me a test</button></div>
-  </form>`;
-  $('#smtpForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const b = formData(e.target);
-    if (!b.pass) delete b.pass;
-    const r = await attempt(() => api('/settings/smtp', { method: 'PUT', body: b }));
-    if (!r) return;
-    if (r.verified) toast('Saved, and the email server accepted the sign-in');
-    else if (r.restored) toast(`These settings did not work (${r.error}). The last working ones were put back, so email keeps going.`, { bad: true });
-    else toast(`Saved, but the email server did not accept them: ${r.error}`, { bad: true });
-  });
-  $('#smtpTest').addEventListener('click', async () => {
-    const r = await attempt(() => api('/settings/smtp/test', { method: 'POST', body: {} }));
-    if (r) toast(`Test email sent to ${r.to}`);
-  });
-}
 
 function roles(body, data) {
   const { matrix, permissions, labels } = data.roles;
@@ -363,26 +471,6 @@ async function linkedPage(body) {
 }
 
 // ——— Security & sign-in ———
-function security(body, data) {
-  const sec = data.settings.security ?? { sessionHours: 12, maxAttempts: 10 };
-  body.innerHTML = `<div class="stack">
-    <section class="panel"><div class="head"><h3>Sessions</h3></div><form id="secForm" class="body stack" style="gap:12px;max-width:720px">
-      <div class="row"><label class="field">A sign-in lasts, while in use <span class="small muted">hours, 1 to 168</span><input type="number" name="sessionHours" min="1" max="168" value="${esc(sec.sessionHours)}" required></label>
-        <label class="field">Attempts before a pause <span class="small muted">per person and address, per 15 minutes</span><input type="number" name="maxAttempts" min="3" max="100" value="${esc(sec.maxAttempts)}" required></label></div>
-      <p class="small muted" style="margin:0">Each use extends the sign-in; it ends after this long without use, and after 30 days in any case. Five minutes before it ends, people are offered to stay signed in. Sign-ins survive restarts and updates.</p>
-      <div class="row"><button class="btn primary">Save</button></div></form></section>
-    <section class="panel"><div class="head"><h3>How sign-in is protected</h3></div><div class="body"><ul class="facts-list">
-      <li><b>Passwords</b> of at least 10 characters, stored as salted scrypt hashes; a first password must be changed at the first sign-in.</li>
-      <li><b>Changing a password</b> ends every other sign-in of that person.</li>
-      <li><b>Cookies</b> are HTTP-only and SameSite=Strict; every change also needs Kendra’s own request header, so another site cannot act for you.</li>
-      <li><b>Locked out?</b> On the server: <span class="mono">node src/reset-password.js you@company.com</span> sets a new temporary password.</li>
-      <li><b>Every request</b> is in the audit trail (Audit), chained so a change to it shows.</li></ul></div></section></div>`;
-  $('#secForm', body).addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const b = formData(e.target);
-    await attempt(() => api('/settings/security', { method: 'PUT', body: { sessionHours: Number(b.sessionHours), maxAttempts: Number(b.maxAttempts) } }), 'Saved');
-  });
-}
 
 // ——— Network & certificates ———
 async function network(body) {

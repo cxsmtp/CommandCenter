@@ -100,19 +100,28 @@ const NAV = [['Work', [['dashboard', ICON.dashboard, 'Portfolio'], ['insights', 
 
 // The Kendra mark; its tooltip says what the name means.
 const KENDRA_MEANING = 'Kendra (केन्द्र, Sanskrit for “centre”): the centre for the best solution engineers to manage the growth.';
-const MARK = `<img class="brand-logo" src="/logo.png" alt="Kendra" title="${KENDRA_MEANING}" width="40" height="40">`;
+const logoSrc = () => (state.session?.settings?.brand?.logoAt ? `/api/brand/logo?v=${encodeURIComponent(state.session.settings.brand.logoAt)}` : '/logo.png');
+const markHtml = () => `<img class="brand-logo" src="${logoSrc()}" alt="${esc(state.session?.settings?.orgName || 'Kendra')}" title="${KENDRA_MEANING}" width="40" height="40">`;
+/** The browser tab's icon: the Admin's (Settings → Branding), else Kendra's. */
+function applyIcon() {
+  const at = state.session?.settings?.brand?.iconAt;
+  for (const l of document.querySelectorAll('link[rel="icon"]')) {
+    if (!l.dataset.orig) l.dataset.orig = l.getAttribute('href');
+    l.setAttribute('href', at ? `/api/brand/icon?v=${encodeURIComponent(at)}` : l.dataset.orig);
+  }
+}
 function shell() {
   const u = state.session.user;
   const r = route();
   const attention = state.overview?.totals?.needsAttention ?? 0;
   root.innerHTML = `<div class="shell">
     <nav class="nav" id="nav" aria-label="Main">
-      <div class="brand" title="${KENDRA_MEANING}">${MARK}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Kendra')}</span><span class="brand-tag">One line of sight</span></span></div>
+      <div class="brand" title="${KENDRA_MEANING}">${markHtml()}<span><span class="brand-name">${esc(state.session.settings.orgName || 'Kendra')}</span><span class="brand-tag">${esc(state.session.settings.brand?.tagline ?? 'One line of sight')}</span></span></div>
       ${NAV.map(([group, items]) => `<div class="nav-group">${group}</div>${items.filter(([, , , need]) => !need || can(need)).map(([id, ico, label]) => `<a href="#/${id}" ${r.view === id || (id === 'dashboard' && r.view === 'opp') ? 'aria-current="page"' : ''}><span class="ico">${ico}</span>${label}${id === 'dashboard' && attention ? `<span class="badge-n" title="Need attention">${attention}</span>` : ''}</a>`).join('')}`).join('')}
       ${state.session.linked?.ftr ? `<div class="nav-group">Linked</div><a href="/link/ftr?to=%2F" target="_blank" rel="noopener" title="The FTR Credits Command Center, signed in as you"><span class="ico">${ICON.ftr}</span>FTR command center<span class="ext">↗</span></a>` : ''}
       <div class="nav-group">Act</div>
       ${can('opps.create') ? `<a href="#" data-action="new-opp"><span class="ico">${ICON.plus}</span>New opportunity</a>` : ''}
-      <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<br><button data-action="signout">Sign out</button>${state.session.version ? `<a class="nav-version" href="#/settings/${can('settings.manage') ? 'updates' : 'about'}" title="${can('settings.manage') ? 'Update & recovery' : 'About Kendra'}">Kendra ${esc(state.session.version)}</a>` : ''}${state.session.stage === 'staging' ? '<span class="stage-pill" title="This installation is marked Staging: new versions are tried here first">Staging</span>' : ''}</div>
+      <div class="nav-foot"><b>${esc(u.name)}</b>${esc(u.roleLabel)}<span class="nav-links"><a class="nav-help" href="#/settings/help">Get help</a><button data-action="signout">Sign out</button></span>${state.session.version ? `<a class="nav-version" href="#/settings/${can('settings.manage') ? 'updates' : 'about'}" title="${can('settings.manage') ? 'Update & recovery' : 'About Kendra'}">Kendra ${esc(state.session.version)}</a>` : ''}${state.session.stage === 'staging' ? '<span class="stage-pill" title="This installation is marked Staging: new versions are tried here first">Staging</span>' : ''}</div>
     </nav>
     <div>
       <header class="topbar">
@@ -293,7 +302,73 @@ document.addEventListener('cc:signed-out', () => {
 setInterval(() => document.visibilityState === 'visible' && !$('#dialog').open && !document.activeElement?.matches('input, textarea, select') && render(), 60_000);
 
 // ——— Sign-in ———
+// ——— Before signing in: "Forgot your password?", a new password from the emailed link, joining with a work address ———
+function authCard(inner) {
+  root.innerHTML = `<div class="login"><div class="panel stack" style="gap:12px">${inner}</div></div>`;
+}
+const hashParams = () => new URLSearchParams(location.hash.split('?')[1] ?? '');
+function selfService() {
+  const path = location.hash.split('?')[0];
+  if (path === '#/forgot' || (path === '#/join' && !hashParams().get('token'))) {
+    const join = path === '#/join';
+    authCard(`<div class="brand" style="padding:0">${markHtml()}<h1 style="font-size:20px">${join ? `Join ${esc(state.session?.settings?.orgName || 'Kendra')}` : 'Forgot your password?'}</h1></div>
+      <p class="muted" style="margin:0">${join ? 'Enter your work email. If it may join, a link is emailed to you: open it to give your name, who you report to and a password.' : 'Enter the email you sign in with. If it has an account, a link to choose a new password is emailed to it.'}</p>
+      <form id="ssForm" class="stack" style="gap:10px"><label class="field">Work email<input name="email" type="email" autocomplete="username" required autofocus></label>
+      <p class="form-error" id="ssErr" role="alert"></p><button class="btn primary">${join ? 'Email me a link to join' : 'Email me a link'}</button></form>
+      <p class="small" style="margin:0"><a href="#/login?linked=none">Back to sign in</a></p>`);
+    $('#ssForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api(join ? '/auth/join' : '/auth/forgot', { method: 'POST', body: { email: e.target.email.value } });
+        authCard(`<h1 style="font-size:20px">Check your inbox</h1><p class="muted" style="margin:0">${esc(r.message)}</p><p class="small" style="margin:0"><a href="#/login?linked=none">Back to sign in</a></p>`);
+      } catch (error) {
+        $('#ssErr').textContent = error.message;
+      }
+    });
+    return true;
+  }
+  if (path === '#/reset' || path === '#/join') {
+    const token = hashParams().get('token') ?? '';
+    const join = path === '#/join';
+    (async () => {
+      let info;
+      try {
+        info = await api(join ? '/auth/join/check' : '/auth/reset/check', { method: 'POST', body: { token } });
+      } catch (error) {
+        return authCard(`<h1 style="font-size:20px">This link no longer works</h1><p class="muted" style="margin:0">${esc(error.message)}</p><p class="small" style="margin:0"><a href="#/${join ? 'join' : 'forgot'}">Ask for a new one</a> · <a href="#/login?linked=none">Sign in</a></p>`);
+      }
+      authCard(`<div class="brand" style="padding:0">${markHtml()}<h1 style="font-size:20px">${join ? 'Join' : 'Choose a new password'}</h1></div>
+        <p class="muted" style="margin:0">${join ? `As <b>${esc(info.email)}</b>.` : `For ${esc(info.email)}. Every place it is signed in is signed out.`}</p>
+        <form id="ssForm" class="stack" style="gap:10px">
+          ${join ? `<label class="field">Your name<input name="name" required autofocus></label><label class="field">Title<input name="title" placeholder="e.g. Solution Engineer"></label>
+            <label class="field">Who you report to<select name="managerId"><option value="">Choose…</option>${info.managers.map((m) => `<option value="${esc(m.id)}">${esc(m.name)} · ${esc(m.role)}${m.region ? ` · ${esc(m.region)}` : ''}</option>`).join('')}</select></label>` : ''}
+          <label class="field">${join ? 'Password' : 'New password'} <span class="small muted">10 characters or more</span><input name="password" type="password" autocomplete="new-password" minlength="10" required ${join ? '' : 'autofocus'}></label>
+          <p class="form-error" id="ssErr" role="alert"></p><button class="btn primary">${join ? 'Join and sign in' : 'Save the new password'}</button></form>`);
+      $('#ssForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try {
+          if (join) {
+            await api('/auth/join/finish', { method: 'POST', body: { token, name: f.name.value, title: f.title.value, managerId: f.managerId.value, password: f.password.value } });
+            location.hash = '#/';
+            await start();
+          } else {
+            await api('/auth/reset', { method: 'POST', body: { token, password: f.password.value } });
+            authCard('<h1 style="font-size:20px">Your password is changed</h1><p class="muted" style="margin:0">Sign in with it now.</p><p style="margin:0"><a class="btn primary" href="#/login?linked=none">Sign in</a></p>');
+          }
+        } catch (error) {
+          $('#ssErr').textContent = error.message;
+        }
+      });
+    })();
+    return true;
+  }
+  return false;
+}
+addEventListener('hashchange', () => !state.session?.user && (selfService() || (/^#\/login/.test(location.hash) && showLogin())));
+
 function showLogin(message = '') {
+  if (selfService()) return;
   const ftr = state.session?.linked?.ftr;
   let tried = false;
   try {
@@ -310,14 +385,20 @@ function showLogin(message = '') {
   }
 
   root.innerHTML = `<div class="login"><form class="panel" id="loginForm">
-    <div class="brand" style="padding:0">${MARK}<h1 style="font-size:20px">${esc(state.session?.settings?.orgName || 'Kendra')}</h1></div>
+    <div class="brand" style="padding:0">${markHtml()}<h1 style="font-size:20px">${esc(state.session?.settings?.orgName || 'Kendra')}</h1></div>
     <p class="muted" style="margin:0">Every POV, the technical value it proves and the revenue it moves — in one line of sight.</p>
     <label class="field">Email<input name="email" type="email" autocomplete="username" required autofocus></label>
     <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
     <p class="form-error" id="loginError" role="alert">${esc(message)}</p>
     <button class="btn primary">Sign in</button>
+    <p class="small" style="margin:0" id="ssLinks"></p>
     <p class="muted small" style="margin:0">First start? The Admin's password is in the server log.</p>
   </form></div>`;
+  api('/auth/options').then((o) => {
+    const bits = [o.reset ? '<a href="#/forgot">Forgot your password?</a>' : '', o.join ? `<a href="#/join">New here? Join with your ${o.join.domains.map((d) => `@${esc(d)}`).join(' or ')} email</a>` : ''].filter(Boolean);
+    const el = document.getElementById('ssLinks');
+    if (el) el.innerHTML = bits.join(' · ');
+  }).catch(() => {});
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -355,6 +436,7 @@ async function start() {
   state.session = await api('/session');
   loadedVersion = loadedVersion ?? state.session.version ?? null;
   applyLook(state.session.user?.prefs);
+  applyIcon();
   if (!state.session.user) return showLogin();
   if (state.session.user.mustChangePassword) return mustChangePassword();
   const [meta, people] = await Promise.all([api('/meta'), api('/users')]);

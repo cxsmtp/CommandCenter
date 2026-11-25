@@ -1,6 +1,6 @@
 // People and Teams, as in the FTR command center: who can sign in (a table to sort and filter, each person's role,
 // manager, region, status and last sign-in) and the teams (the reporting tree, leader by leader).
-import { esc, api, state, can, avatar, ago, local, reloadPeople, table } from '../core.js';
+import { esc, api, state, can, avatar, ago, local, reloadPeople, table, toast } from '../core.js';
 import { editUser } from './team.js';
 
 const ui = local.get('cc.people', {});
@@ -38,7 +38,7 @@ export async function renderPeople(body, { linked = null } = {}) {
     { label: 'Reports to', key: (u) => byId.get(u.managerId)?.name ?? '', html: (u) => esc(byId.get(u.managerId)?.name ?? '—') },
     { label: 'Region', key: (u) => u.region ?? '', html: (u) => esc(u.region || '—') },
     { label: 'POVs', n: true, key: (u) => stats.get(u.id)?.povs ?? 0, html: (u) => String(stats.get(u.id)?.povs ?? 0) },
-    { label: 'Status', key: (u) => (u.active === false ? 1 : 0), html: (u) => (u.active === false ? '<span class="status off"><i></i>Off</span>' : '<span class="status on"><i></i>Active</span>') },
+    { label: 'Status', key: (u) => (u.active === false ? 1 : 0), html: (u) => (u.active === false ? '<span class="status off"><i></i>Off</span>' : u.joined && !u.joined.reviewedAt ? `<span class="status warn"><i></i>Joined · to review</span>${can('users.manage') ? ` <button class="btn sm" data-approve="${esc(u.id)}">Approve</button>` : ''}` : '<span class="status on"><i></i>Active</span>') },
     { label: 'Last sign-in', key: (u) => u.lastSignInAt ?? '', html: (u) => (u.lastSignInAt ? `<span title="${esc(u.lastSignInMethod === 'linked' ? 'through the FTR command center' : 'with a password')}">${esc(ago(u.lastSignInAt))}</span>` : '<span class="muted">—</span>') },
     { label: '', html: (u) => `<span class="row-actions"><button class="btn sm link" data-work="${esc(u.id)}">Portfolio</button>${edit(u) ? `<button class="btn sm" data-manage="${esc(u.id)}">Manage</button>` : ''}</span>` },
   ];
@@ -56,6 +56,17 @@ export async function renderPeople(body, { linked = null } = {}) {
   body.querySelector('[data-act="add"]')?.addEventListener('click', () => editUser(null));
   for (const b of body.querySelectorAll('[data-manage]')) b.addEventListener('click', () => editUser(state.users.find((u) => u.id === b.dataset.manage)));
   for (const b of body.querySelectorAll('[data-work]')) b.addEventListener('click', () => viewWork(b.dataset.work));
+  for (const b of body.querySelectorAll('[data-approve]'))
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await api(`/users/${b.dataset.approve}/approve`, { method: 'POST', body: {} });
+        rerender();
+      } catch (error) {
+        b.disabled = false;
+        toast(error.message, { bad: true });
+      }
+    });
   let t;
   body.querySelector('#pQ').addEventListener('input', (e) => {
     clearTimeout(t);
