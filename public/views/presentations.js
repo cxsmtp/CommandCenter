@@ -68,7 +68,7 @@ async function designer(el, list, reload) {
     if (!d.canPreview) return;
     const get = async (extra) => {
       const req = { ...body(), ...extra };
-      const k = JSON.stringify([ui.id, t.design?.at, req]);
+      const k = JSON.stringify([ui.id, t.design?.at, d.borrowed?.at, req]);
       cache[k] ??= api(`/deck-templates/${encodeURIComponent(ui.id)}/preview`, { method: 'POST', body: req }).catch(() => ({ available: false }));
       return cache[k];
     };
@@ -86,7 +86,14 @@ async function designer(el, list, reload) {
   const card = (k, where) => {
     const imgs = imgsOf(previews.now, k);
     const variant = draft.variants[k] ?? 'kendra';
-    const thumb = imgs[0] ? `<img src="${esc(imgs[0])}" alt="" loading="lazy">` : `<div class="pd-schema">${esc(label(k))}</div>`;
+    const thumb = imgs[0] ? `<img src="${esc(imgs[0])}" alt="" loading="lazy" draggable="false">` : `<div class="pd-schema">${esc(label(k))}</div>`;
+    // Where the slide is in the deck (main deck, then the appendix), with arrows to move it one place either way.
+    const L = draft.layout[ui.deck];
+    const seq = [...L.main, ...L.appendix];
+    const pos = seq.indexOf(k);
+    const nav = edit && pos >= 0
+      ? `<div class="pd-nav"><button type="button" class="pd-arrow" data-move="-1" ${pos === 0 ? 'disabled' : ''} aria-label="Move ${esc(label(k))} earlier" title="Earlier">◀</button><span class="pd-pos">${pos + 1} of ${seq.length}</span><button type="button" class="pd-arrow" data-move="1" ${pos === seq.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(label(k))} later" title="Later">▶</button></div>`
+      : '';
     const choose = two(k)
       ? `<div class="pd-variants">${['template', 'kendra'].map((v) => {
           const im = imgsOf(previews[v], k)[0];
@@ -94,19 +101,20 @@ async function designer(el, list, reload) {
         }).join('')}</div>`
       : '';
     const kendraDrawn = !two(k) || variant === 'kendra';
-    return `<div class="pd-card" draggable="${edit && where !== 'off'}" data-key="${esc(k)}" data-where="${where}">
-      <div class="pd-thumb">${thumb}${imgs.length > 1 ? `<span class="pd-count">×${imgs.length}</span>` : ''}</div>
+    return `<div class="pd-card" data-key="${esc(k)}" data-where="${where}">
+      <div class="pd-thumb" draggable="${edit && where !== 'off' && where !== 'divider'}" title="${edit && where !== 'off' && where !== 'divider' ? 'Drag to move, or use the arrows below' : ''}">${thumb}${imgs.length > 1 ? `<span class="pd-count">×${imgs.length}</span>` : ''}</div>
+      ${nav}
       <div class="pd-meta"><b>${esc(label(k))}</b>
         ${edit && kendraDrawn && !['cover', 'closing', 'closingEnd', 'appendix'].includes(k) ? `<input class="pd-title" data-title="${esc(k)}" value="${esc(draft.titles[k] ?? '')}" placeholder="Title: as Kendra writes it" aria-label="Title of ${esc(label(k))}">` : ''}
         ${choose}
-        ${edit ? `<div class="pd-moves">${where === 'off' ? '<button type="button" class="btn sm" data-put="main">Add to the deck</button><button type="button" class="btn sm ghost" data-put="appendix">To the appendix</button>' : `<button type="button" class="btn sm ghost" data-move="-1" aria-label="Earlier">←</button><button type="button" class="btn sm ghost" data-move="1" aria-label="Later">→</button><button type="button" class="btn sm ghost" data-put="${where === 'main' ? 'appendix' : 'main'}">${where === 'main' ? 'To the appendix' : 'To the deck'}</button><button type="button" class="btn sm ghost danger" data-put="off" aria-label="Take out">✕</button>`}</div>` : ''}
+        ${edit ? `<div class="pd-moves">${where === 'off' ? '<button type="button" class="btn sm" data-put="main">Add to the deck</button><button type="button" class="btn sm ghost" data-put="appendix">To the appendix</button>' : where === 'divider' ? '' : `<button type="button" class="btn sm ghost" data-put="${where === 'main' ? 'appendix' : 'main'}">${where === 'main' ? 'To the appendix' : 'To the deck'}</button><button type="button" class="btn sm ghost danger" data-put="off" aria-label="Take out">✕</button>`}</div>` : ''}
       </div></div>`;
   };
   const drawStrip = () => {
     const L = draft.layout[ui.deck];
     const off = Object.keys(d.slides).filter((k) => !L.main.includes(k) && !L.appendix.includes(k));
     el.querySelector('#pdStrip').innerHTML = `
-      <div class="pd-sec"><div class="pd-sec-h"><b>Main deck</b><span class="small muted">${L.main.length} slide types · drag to change the order</span></div><div class="pd-row" data-drop="main">${L.main.map((k) => card(k, 'main')).join('')}</div></div>
+      <div class="pd-sec"><div class="pd-sec-h"><b>Main deck</b><span class="small muted">${L.main.length} slide types · ${edit ? 'move with ◀ ▶ under each slide, or drag its picture' : 'copy this template to change its order'}</span></div><div class="pd-row" data-drop="main">${L.main.map((k) => card(k, 'main')).join('')}</div></div>
       <div class="pd-sec"><div class="pd-sec-h"><b>Appendix</b><span class="small muted">after the Appendix divider</span></div><div class="pd-row" data-drop="appendix">${L.appendix.length ? `${card('appendix', 'divider')}${L.appendix.map((k) => card(k, 'appendix')).join('')}` : '<p class="small muted pd-empty">Drop slides here for the appendix.</p>'}</div></div>
       ${edit ? `<details class="pd-sec"><summary class="pd-sec-h"><b>Not used</b><span class="small muted">${off.length} more slides Kendra can make</span></summary><div class="pd-row" data-drop="off">${off.map((k) => card(k, 'off')).join('')}</div></details>` : ''}`;
     wireStrip();
@@ -126,6 +134,31 @@ async function designer(el, list, reload) {
     if (i >= 0) arr.splice(i, 0, k);
     else arr.push(k);
   };
+  let dragging = null;
+  // One place earlier or later in the deck: past the end of the main deck is the start of the appendix, and back.
+  const move = (k, step) => {
+    const L = draft.layout[ui.deck];
+    const inMain = L.main.includes(k);
+    const arr = inMain ? L.main : L.appendix;
+    const i = arr.indexOf(k);
+    if (i < 0) return false;
+    const j = i + step;
+    if (j >= 0 && j < arr.length) {
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      return true;
+    }
+    if (inMain && j >= arr.length) {
+      L.main.splice(i, 1);
+      L.appendix.unshift(k);
+      return true;
+    }
+    if (!inMain && j < 0) {
+      L.appendix.splice(i, 1);
+      L.main.push(k);
+      return true;
+    }
+    return false;
+  };
   const wireStrip = () => {
     const strip = el.querySelector('#pdStrip');
     strip.querySelectorAll('.pd-card').forEach((c) => {
@@ -133,15 +166,13 @@ async function designer(el, list, reload) {
       c.querySelectorAll('[data-put]').forEach((b) => b.addEventListener('click', () => (place(k, b.dataset.put), markDirty(), drawStrip())));
       c.querySelectorAll('[data-move]').forEach((b) =>
         b.addEventListener('click', () => {
-          const L = draft.layout[ui.deck];
-          const part = L.main.includes(k) ? 'main' : 'appendix';
-          const arr = L[part];
-          const i = arr.indexOf(k);
-          const j = i + Number(b.dataset.move);
-          if (i < 0 || j < 0 || j >= arr.length) return;
-          [arr[i], arr[j]] = [arr[j], arr[i]];
+          if (!move(k, Number(b.dataset.move))) return;
           markDirty();
           drawStrip();
+          // Keep the slide in view (and the arrow under the pointer focused) after the strip is redrawn.
+          const moved = el.querySelector(`.pd-card[data-key="${CSS.escape(k)}"]`);
+          moved?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          moved?.querySelector(`[data-move="${b.dataset.move}"]:not([disabled])`)?.focus({ preventScroll: true });
         }),
       );
       c.querySelectorAll('[data-variant]').forEach((b) => b.addEventListener('click', () => ((draft.variants[k] = b.dataset.variant), markDirty(), drawStrip(), loadPreviews())));
@@ -151,22 +182,34 @@ async function designer(el, list, reload) {
         else delete draft.titles[k];
         markDirty();
       });
-      c.addEventListener('dragstart', (e) => {
+      const handle = c.querySelector('.pd-thumb[draggable="true"]');
+      handle?.addEventListener('dragstart', (e) => {
+        e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', k);
+        e.dataTransfer.setDragImage?.(c, 20, 20);
+        dragging = k;
         c.classList.add('dragging');
       });
-      c.addEventListener('dragend', () => c.classList.remove('dragging'));
+      handle?.addEventListener('dragend', () => {
+        dragging = null;
+        c.classList.remove('dragging');
+        strip.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
+      });
     });
     strip.querySelectorAll('[data-drop]').forEach((row) => {
+      row.addEventListener('dragenter', (e) => dragging && e.preventDefault());
       row.addEventListener('dragover', (e) => {
+        if (!dragging) return;
         e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
         row.classList.add('over');
       });
-      row.addEventListener('dragleave', () => row.classList.remove('over'));
+      row.addEventListener('dragleave', (e) => !row.contains(e.relatedTarget) && row.classList.remove('over'));
       row.addEventListener('drop', (e) => {
         e.preventDefault();
         row.classList.remove('over');
-        const k = e.dataTransfer.getData('text/plain');
+        const k = dragging || e.dataTransfer.getData('text/plain');
+        dragging = null;
         if (!k || k === 'appendix') return;
         const target = e.target.closest('.pd-card');
         const before = target && target.dataset.key !== k && target.dataset.where === row.dataset.drop ? target.dataset.key : null;
@@ -181,7 +224,7 @@ async function designer(el, list, reload) {
     ? Object.entries(d.variants).map(([k, l]) => `<span class="pd-chip ${found[k] ? 'ok' : ''}" title="${found[k] ? 'Found: its own version can be used' : 'Not in this PowerPoint: Kendra’s design is used'}">${found[k] ? '✓' : '–'} ${esc(l)}</span>`).join('') + `<span class="pd-chip ${d.found.closing ? 'ok' : ''}">${d.found.closing ? '✓' : '–'} Closing slide</span>`
     : '';
   el.innerHTML = `
-    <section class="panel st-panel"><div class="st-ph"><h2>${esc(t.name)}</h2><span class="st-aside">${t.builtIn ? 'Built in: copy it to change it' : t.design ? `Design: ${esc(t.design.name)}` : 'Kendra’s own design'}</span></div>
+    <section class="panel st-panel"><div class="st-ph"><h2>${esc(t.name)}</h2><span class="st-aside">${t.builtIn ? (d.borrowed ? `Built in, drawn in the team’s design (${esc(d.borrowed.name)}): copy it to change it` : 'Built in: copy it to change it') : t.design ? `Design: ${esc(t.design.name)}` : 'Kendra’s own design'}</span></div>
       <div class="st-form">
         ${edit ? `<div class="st-cols3"><label class="field">Name<input id="pdName" maxlength="80" value="${esc(draft.name)}"></label><label class="field">Description<input id="pdDesc" maxlength="300" value="${esc(draft.description)}"></label><label class="field">For<select id="pdScope"><option value="team" ${draft.scope !== 'everyone' ? 'selected' : ''}>My team</option>${['admin', 'vp', 'leader'].includes(state.session.user.role) ? `<option value="everyone" ${draft.scope === 'everyone' ? 'selected' : ''}>Everyone</option>` : ''}</select></label></div>` : `<p class="small muted" style="margin:0">${esc(t.description ?? '')}</p>`}
         <div class="row" style="gap:8px;flex-wrap:wrap">

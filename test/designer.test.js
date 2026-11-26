@@ -42,3 +42,22 @@ test('a template keeps its designs and titles; the demo deck says which slide ea
     app.server.close();
   }
 });
+
+test('a built-in arrangement (Chakra, Version Kendra) is drawn in the team’s design; Kendra standard stays Kendra’s own', async () => {
+  const { DeckTemplates } = await import('../src/deck-templates.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kendra-borrow-'));
+  const store = { deckTemplates: [], deckDefaults: { org: null, teams: {} } };
+  const db = { read: (k, d) => store[k] ?? d, write: (k, v) => (store[k] = v) };
+  const users = { get: () => null, chain: () => [], isBelow: () => false };
+  const t = new DeckTemplates(db, { users, dataDir: dir });
+  assert.equal(t.designOf(t.get('builtin-chakra')), null, 'no team design yet: Kendra’s own');
+  const admin = { id: 'a', role: 'admin', name: 'Admin' };
+  const team = t.create(admin, { name: 'Team template', scope: 'everyone' });
+  fs.mkdirSync(path.join(dir, 'templates'), { recursive: true });
+  fs.writeFileSync(t.fileOf(team.id), 'pptx');
+  t.setDesign(admin, team.id, { name: 'team.pptx', at: new Date().toISOString() });
+  assert.equal(t.designOf(t.get('builtin-chakra'))?.id, team.id);
+  assert.equal(t.designOf(t.get('builtin-kendra'))?.id, team.id);
+  assert.equal(t.designOf(t.get('builtin-meridian')), null);
+  assert.equal(t.designOf(t.get(team.id))?.id, team.id);
+});

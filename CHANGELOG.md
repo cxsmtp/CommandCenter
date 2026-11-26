@@ -2,6 +2,18 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.88 · 2026-11-26
+
+**Presentation designer: arrows under each slide; covers keep the team's artwork**
+
+- Each slide in the designer has a clear ◀ position ▶ bar under its picture.
+  The arrows also move a slide between the main deck and the appendix.
+- Drag and drop works: the picture is the handle, with move effects set.
+- The built-in Chakra and Version Kendra templates are drawn in the team's
+  PowerPoint (the organisation's template, else the latest uploaded).
+  Their cover keeps its artwork instead of Kendra's plain dark design.
+- A template cover with no example logo still names the customer.
+
 ## 1.0.87 · 2026-11-26
 
 **Presentation designer: each template's slides as previews, their order, design and words**

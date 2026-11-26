@@ -55,3 +55,11 @@ test('a screenshot slide: its title, its picture fitted to the screenshot’s sh
   assert.equal(texts(out)[0], 'Analytics and Dashboard');
   assert.match(out, /<a:ext cx="6434309" cy="6434309"\/>/, 'square, as tall as the box');
 });
+
+test('a cover with no example logo: the example customer above the title, or a new line there, says this customer', () => {
+  const title = sp('Title', 100, 3000000, 7000000, 600000, p([['CxOne Platform: Proof of Value Guide']]));
+  const named = fillCoverSlide(slide(sp('Example', 100, 2200000, 7000000, 700000, p([['INITECH']])), title), { customer: 'Northwind Media', people: [], date: '' });
+  assert.ok(texts(named).includes('NORTHWIND MEDIA') && !texts(named).includes('INITECH'));
+  const bare = fillCoverSlide(slide(title), { customer: 'Northwind Media', people: [], date: '' });
+  assert.ok(texts(bare).includes('NORTHWIND MEDIA'));
+});

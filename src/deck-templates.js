@@ -104,8 +104,8 @@ export const CHAKRA_LAYOUT = {
 export const BUILT_IN = [
   { id: 'builtin-meridian', builtIn: true, scope: 'everyone', name: 'Kendra standard', description: 'Kendra’s own dark design, every slide.', layout: DEFAULT_LAYOUT, texts: {} },
   { id: 'builtin-classic', builtIn: true, classic: true, scope: 'everyone', name: 'Classic', description: 'The original results presentation (the WIP deck in Kendra’s design).', layout: DEFAULT_LAYOUT, texts: {} },
-  { id: 'builtin-chakra', builtIn: true, scope: 'everyone', name: 'Chakra', description: 'The team’s POV WIP order: cover, DevSecOps, components, APMA, plan, environment, the test plan per business goal, the POV screenshots; then the appendix with the meeting notes, and the closing slide last.', layout: CHAKRA_LAYOUT, texts: {} },
-  { id: 'builtin-kendra', builtIn: true, scope: 'everyone', name: 'Version Kendra', description: 'Kendra’s slides with every engine and touch point, and the POV guide’s business goals: each goal with its numbered success criteria, milestones and tracker references.', layout: KENDRA_LAYOUT, texts: {} },
+  { id: 'builtin-chakra', builtIn: true, borrowsDesign: true, scope: 'everyone', name: 'Chakra', description: 'The team’s POV WIP order: cover, DevSecOps, components, APMA, plan, environment, the test plan per business goal, the POV screenshots; then the appendix with the meeting notes, and the closing slide last.', layout: CHAKRA_LAYOUT, texts: {} },
+  { id: 'builtin-kendra', builtIn: true, borrowsDesign: true, scope: 'everyone', name: 'Version Kendra', description: 'Kendra’s slides with every engine and touch point, and the POV guide’s business goals: each goal with its numbered success criteria, milestones and tracker references.', layout: KENDRA_LAYOUT, texts: {} },
 ];
 
 const lines = (v, n = 6) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => text(x, 200)).filter(Boolean).slice(0, n);
@@ -171,6 +171,19 @@ export class DeckTemplates {
 
   canEdit(viewer, tpl) {
     return Boolean(tpl && !tpl.builtIn && (viewer.role === 'admin' || tpl.ownerId === viewer.id || (tpl.ownerId && this.#users.isBelow(viewer, tpl.ownerId))));
+  }
+
+  /**
+   * The PowerPoint a template's decks are drawn in: its own design; for a built-in arrangement (Chakra, Version
+   * Kendra), the team's design: the organisation's default template's, else the latest one uploaded. None: Kendra's own.
+   */
+  designOf(tpl) {
+    if (!tpl) return null;
+    if (tpl.design) return tpl;
+    if (!tpl.borrowsDesign) return null;
+    const own = this.#own().filter((t) => t.design && fs.existsSync(this.fileOf(t.id)));
+    const org = own.find((t) => t.id === this.#defaults().org);
+    return org ?? own.sort((a, b) => String(b.design.at ?? '').localeCompare(String(a.design.at ?? '')))[0] ?? null;
   }
 
   get(id) {

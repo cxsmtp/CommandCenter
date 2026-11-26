@@ -117,6 +117,23 @@ export function fillCoverSlide(xml, { customer, results, people = [], date = '' 
     const y = Math.max(logo.y, title.y - h - 60000);
     const box = `<p:sp><p:nvSpPr><p:cNvPr id="8801" name="Kendra: customer"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${title.x}" y="${y}"/><a:ext cx="${Math.max(title.w, logo.w)}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" anchor="b"><a:normAutofit/></a:bodyPr><a:lstStyle/><a:p><a:pPr algn="l" rtl="0"/><a:r>${r}<a:t>${esc(String(customer).toUpperCase())}</a:t></a:r></a:p></p:txBody></p:sp>`;
     out = out.replace(logo.xml, box);
+  } else if (title && customer) {
+    // No example logo: the example customer's name written above the title takes this one's, in its own style; with
+    // nothing there either, the name goes just above the title.
+    const above = shapes
+      .filter((x) => x.tag === 'p:sp' && x !== ppl && x !== dt && x.text.trim() && x.y + x.h <= title.y + 60000 && x.x < title.x + title.w && x.x + x.w > title.x && !/proof of value|checkmarx/i.test(x.text))
+      .sort((a, b) => b.y - a.y)[0];
+    if (above) {
+      const like = above.paras.find((p) => textOf(p).trim()) ?? above.paras[0];
+      out = replaceShape(out, above, withParas(above.xml, [para(like, [{ text: String(customer).toUpperCase() }])]));
+    } else {
+      const tRun = title.paras.map((p) => RPR.exec(p)?.[0]).find(Boolean) ?? '<a:rPr lang="en-US"/>';
+      let r = tRun.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/, '').replace(/\bsz="\d+"/, '').replace(/\bb="\d"/, '');
+      r = r.endsWith('/>') ? r.replace(/<a:rPr\b/, '<a:rPr sz="3600" b="1"').replace(/\/>$/, '><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr>') : r.replace(/<a:rPr\b([^>]*)>/, '<a:rPr$1 sz="3600" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>');
+      const h = 700000;
+      const box = `<p:sp><p:nvSpPr><p:cNvPr id="8801" name="Kendra: customer"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${title.x}" y="${Math.max(0, title.y - h - 60000)}"/><a:ext cx="${title.w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" anchor="b"><a:normAutofit/></a:bodyPr><a:lstStyle/><a:p><a:pPr algn="l" rtl="0"/><a:r>${r}<a:t>${esc(String(customer).toUpperCase())}</a:t></a:r></a:p></p:txBody></p:sp>`;
+      out = out.replace('</p:spTree>', `${box}</p:spTree>`);
+    }
   }
   return out;
 }

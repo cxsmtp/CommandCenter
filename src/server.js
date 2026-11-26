@@ -1476,9 +1476,10 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       need(user, 'templates.manage');
       const tpl = deckTemplates.get(parts[1]);
       if (!tpl) throw fail(404, 'No such template.');
-      const file = tpl.design && fs.existsSync(deckTemplates.fileOf(tpl.id)) ? db.vault.readFile(deckTemplates.fileOf(tpl.id)) : null;
+      const file = designFileOf(tpl);
       const found = file ? await analyzeTemplate(file) : null;
-      return send(res, 200, { template: { ...tpl, variants: cleanVariants(tpl.variants), canEdit: deckTemplates.canEdit(user, tpl) }, found, slides: SLIDES, variants: SLIDE_VARIANTS, defaultVariants: DEFAULT_VARIANTS, canPreview: await canPreview() });
+      const from = deckTemplates.designOf(tpl);
+      return send(res, 200, { template: { ...tpl, variants: cleanVariants(tpl.variants), canEdit: deckTemplates.canEdit(user, tpl) }, borrowed: from && from.id !== tpl.id ? { name: from.name, file: from.design.name, at: from.design.at } : null, found, slides: SLIDES, variants: SLIDE_VARIANTS, defaultVariants: DEFAULT_VARIANTS, canPreview: await canPreview() });
     }
     if (parts[0] === 'deck-templates' && parts[1] && (parts[2] === 'preview' || parts[2] === 'demo') && m === 'POST') {
       need(user, 'templates.manage');
@@ -1490,7 +1491,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       const layout = cleanLayout(b.layout ?? tpl.layout);
       const variants = b.allVariants === 'template' || b.allVariants === 'kendra' ? Object.fromEntries(Object.keys(SLIDE_VARIANTS).map((k) => [k, b.allVariants])) : cleanVariants(b.variants ?? tpl.variants);
       const texts = { ...(tpl.texts ?? {}), titles: cleanTitles(b.titles ?? tpl.texts?.titles) };
-      const designFile = tpl.design && fs.existsSync(deckTemplates.fileOf(tpl.id)) ? db.vault.readFile(deckTemplates.fileOf(tpl.id)) : null;
+      const designFile = designFileOf(tpl);
       const demo = demoOpportunity({ opps, actor: user, settings: fullSettings() });
       const shots = [demoScreenshot('Analytics and Dashboard'), demoScreenshot('Total scans by integration')];
       const make = () => wipDeck(placed(demo), { story: resultsData(demo), owner: user, catalog, screenshots: shots, template: designFile, mode: deck, layout, texts, variants });
@@ -1501,7 +1502,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
       if (!(await canPreview())) return send(res, 200, { available: false });
       // Drawn once for the same template file, order, designs, titles and Kendra version (the demo's dates aside).
-      const key = fingerprint(VERSION, tpl.id, tpl.design?.at ?? '', deck, layout, variants, texts.titles, new Date().toISOString().slice(0, 10));
+      const key = fingerprint(VERSION, tpl.id, deckTemplates.designOf(tpl)?.id ?? '', deckTemplates.designOf(tpl)?.design?.at ?? '', deck, layout, variants, texts.titles, new Date().toISOString().slice(0, 10));
       const buf = fs.existsSync(path.join(PREVIEWS, key, 'done.json')) ? null : await make();
       const keys = buf?.slideKeys ?? JSON.parse(fs.existsSync(path.join(PREVIEWS, key, 'keys.json')) ? fs.readFileSync(path.join(PREVIEWS, key, 'keys.json'), 'utf8') : '[]');
       const names = await previewDeck(buf, PREVIEWS, key);
@@ -2563,9 +2564,14 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     console.error(`[start] The earlier WIP template could not become a presentation template: ${error.message}`);
   }
   /** The presentation template a POV's decks use, with its design's file (or none for Kendra's own). */
+  /** The PowerPoint a presentation template is drawn in (its own, or the team's for a built-in arrangement), or null. */
+  const designFileOf = (tpl) => {
+    const d = deckTemplates.designOf(tpl);
+    return d && fs.existsSync(deckTemplates.fileOf(d.id)) ? db.vault.readFile(deckTemplates.fileOf(d.id)) : null;
+  };
   const deckFor = (opp, chosen = null) => {
     const tpl = (chosen && deckTemplates.get(chosen)) || deckTemplates.resolve(opp, { legacyStyle: settings().reportStyle });
-    const file = tpl?.design && fs.existsSync(deckTemplates.fileOf(tpl.id)) ? db.vault.readFile(deckTemplates.fileOf(tpl.id)) : null;
+    const file = designFileOf(tpl);
     return { tpl, file };
   };
   function certValidTo() {

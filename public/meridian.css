@@ -690,7 +690,15 @@ details.pd-sec > summary { cursor: pointer; list-style: none; }
 .pd-row.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .pd-empty { margin: 0; align-self: center; }
 .pd-card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; display: flex; flex-direction: column; }
-.pd-card[draggable="true"] { cursor: grab; }
+.pd-thumb[draggable="true"] { cursor: grab; }
+.pd-thumb[draggable="true"]:active { cursor: grabbing; }
+.pd-thumb img { -webkit-user-drag: none; user-select: none; }
+.pd-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.pd-arrow { flex: 0 0 auto; width: 44px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 15px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.pd-arrow:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pd-arrow:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pd-arrow:disabled { opacity: .35; cursor: default; }
+.pd-pos { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .pd-card.dragging { opacity: .45; }
 .pd-card[data-where="divider"] { opacity: .85; }
 .pd-thumb { position: relative; aspect-ratio: 16 / 9; background: #170b2b; display: grid; place-items: center; }
