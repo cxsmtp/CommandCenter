@@ -2,6 +2,14 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.89 · 2026-11-26
+
+**Slide previews: LibreOffice is looked for again when the first check fails**
+
+A fresh container's first LibreOffice start can be slow. A failed check is now
+retried after two minutes (with a longer wait), instead of being kept until the
+next restart.
+
 ## 1.0.88 · 2026-11-26
 
 **Presentation designer: arrows under each slide; covers keep the team's artwork**

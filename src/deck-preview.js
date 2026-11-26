@@ -13,12 +13,15 @@ const run = (cmd, args, opts = {}) => new Promise((ok, no) => execFile(cmd, args
 let available = null;
 let SOFFICE = process.env.CC_SOFFICE || 'soffice';
 /** Can this server draw previews? (Checked once.) */
+let checkedAt = 0;
 export async function canPreview() {
-  if (available !== null) return available;
+  // A "no" is checked again after two minutes: LibreOffice's first start in a fresh container can be slow.
+  if (available === true || (available === false && Date.now() - checkedAt < 120_000)) return available;
+  checkedAt = Date.now();
   try {
     for (const c of [SOFFICE, 'libreoffice', '/usr/lib/libreoffice/program/soffice']) {
       try {
-        await run(c, ['--version'], { timeout: 30_000 });
+        await run(c, ['--version'], { timeout: 90_000 });
         SOFFICE = c;
         break;
       } catch (e) {
