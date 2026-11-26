@@ -17,8 +17,8 @@ const BRASS = 'F25928';
 const MUTED = 'B9B0CC';
 const LINE = '3A2352';
 const STATUS_COLOR = { met: '3CCF8E', not_met: '8A8197', in_progress: 'F5A524', not_started: 'F5C518', na: '8A8197' };
-const HEAD = 'Arial';
-const BODY = 'Arial';
+const HEAD = 'Aptos Display';
+const BODY = 'Aptos';
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
 
 export async function finalDeck(opp, { owner, live, people, evidence = {}, categories = [], org = 'Kendra', catalog = null, flow = null, story = null }) {
@@ -183,7 +183,7 @@ const X = (px) => (px * 13.333) / W;
 const Y = (px) => (px * 7.5) / H;
 const BG = '140920';
 const VIOLET = '6B34FD';
-const FONT = 'Arial';
+const FONT = 'Aptos';
 const SYMBOL = 'Segoe UI Symbol';
 const DIM = 'B9B0CC';
 const MARK = {

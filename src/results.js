@@ -296,7 +296,7 @@ const CSS = `
 .next-list .new{font-size:${u(11)};color:#F25928;text-transform:uppercase;letter-spacing:.06em}
 :root { --bg:#140920; --panel:#1d1030; --line:#3a2352; --ink:#fff; --dim:#b9b0cc; --violet:#6b34fd; --orange:#f25928; --magenta:#b22bcb; }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: #0b0612; color: var(--ink); font: 15px/1.45 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+html, body { margin: 0; background: #0b0612; color: var(--ink); font: 15px/1.45 Aptos, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 .m { color: var(--dim); } .small { font-size: 12px; }
 .bar { position: sticky; top: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 24px; background: #0b0612ee; border-bottom: 1px solid var(--line); font-size: 14px; }
 .btn { font: inherit; font-weight: 700; background: var(--violet); color: #fff; border: 1px solid #a98bff; border-radius: 999px; padding: 8px 18px; cursor: pointer; }

@@ -24,7 +24,7 @@ export function successReport(opp, { owner, live, evidence = {}, org = 'Kendra',
 <title>${esc(opp.customer)} — POV success criteria</title>
 <style>
   :root { --ink:#1b1f24; --muted:#646b73; --line:#e2dfd6; --accent:#0e8a8a; }
-  body { font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); margin: 0; background: #fff; }
+  body { font: 14px/1.5 Aptos, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color: var(--ink); margin: 0; background: #fff; }
   .page { max-width: 900px; margin: 0 auto; padding: 40px 32px; }
   header { border-bottom: 3px solid var(--accent); padding-bottom: 16px; margin-bottom: 24px; }
   h1 { margin: 0 0 4px; font-size: 26px; } h2 { font-size: 17px; margin: 28px 0 10px; } h3 { font-size: 14px; margin: 18px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }

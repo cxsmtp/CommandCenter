@@ -24,7 +24,7 @@ const ORANGE = 'F25928';
 const VIOLET = '7A45FF';
 const WHITE = 'FFFFFF';
 const MUTED = 'B9B0CC';
-let FONT = 'Arial';
+let FONT = 'Aptos';
 // Status colours: completed green, in progress amber, planned yellow, not met grey (never red).
 const STATE = { done: ['Completed', '3CCF8E'], demo: ['Demonstrated', '3CCF8E'], progress: ['In progress', 'F5A524'], planned: ['Planned', 'F5C518'], missed: ['Not met', '8A8197'] };
 const PLATFORM_CATS = new Set(['code', 'supply', 'aisc', 'runtime', 'agents', 'aspm']);
@@ -59,7 +59,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const templated = Boolean(template);
   // In the team's template, everything Kendra writes takes the template's own fonts (its theme's body font), so the
   // deck reads as one; Kendra's own designs keep theirs.
-  FONT = templated ? '+mn-lt' : 'Arial';
+  FONT = templated ? '+mn-lt' : 'Aptos';
   // Which of the template's own slides this deck can use (filled with the POV's data, or with its items boxed).
   const tinfo = template ? await readTemplate(await JSZip.loadAsync(template)) : null;
   // The template gives the design: its masters and layouts, its cover, its dividers (Appendix, Screenshots), its

@@ -2,6 +2,15 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.86 · 2026-11-26
+
+**Aptos in every presentation and report**
+
+Kendra's own deck designs (Kendra standard, Classic, Version Kendra, Chakra) and the results
+page and success-criteria report use Aptos (Aptos Display for headings), the font of the
+team's template and of current Microsoft 365, instead of Arial. Decks in the team's template
+keep the template's own theme fonts.
+
 ## 1.0.85 · 2026-11-26
 
 **Team template: its design, Kendra's content**
