@@ -2,6 +2,14 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.91 · 2026-11-26
+
+**Presentation templates: Kendra standard and Classic built in; Chakra and Version Kendra go**
+
+They were only other slide orders of a team's own template, which the
+designer arranges as wanted. A POV or team that had one set takes the
+organisation's default. The built-ins no longer borrow a team's PowerPoint.
+
 ## 1.0.90 · 2026-11-26
 
 **Container image: LibreOffice starts (slide previews)**

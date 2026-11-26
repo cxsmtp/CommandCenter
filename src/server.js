@@ -1478,8 +1478,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (!tpl) throw fail(404, 'No such template.');
       const file = designFileOf(tpl);
       const found = file ? await analyzeTemplate(file) : null;
-      const from = deckTemplates.designOf(tpl);
-      return send(res, 200, { template: { ...tpl, variants: cleanVariants(tpl.variants), canEdit: deckTemplates.canEdit(user, tpl) }, borrowed: from && from.id !== tpl.id ? { name: from.name, file: from.design.name, at: from.design.at } : null, found, slides: SLIDES, variants: SLIDE_VARIANTS, defaultVariants: DEFAULT_VARIANTS, canPreview: await canPreview() });
+      return send(res, 200, { template: { ...tpl, variants: cleanVariants(tpl.variants), canEdit: deckTemplates.canEdit(user, tpl) }, found, slides: SLIDES, variants: SLIDE_VARIANTS, defaultVariants: DEFAULT_VARIANTS, canPreview: await canPreview() });
     }
     if (parts[0] === 'deck-templates' && parts[1] && (parts[2] === 'preview' || parts[2] === 'demo') && m === 'POST') {
       need(user, 'templates.manage');
@@ -1502,7 +1501,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       }
       if (!(await canPreview())) return send(res, 200, { available: false });
       // Drawn once for the same template file, order, designs, titles and Kendra version (the demo's dates aside).
-      const key = fingerprint(VERSION, tpl.id, deckTemplates.designOf(tpl)?.id ?? '', deckTemplates.designOf(tpl)?.design?.at ?? '', deck, layout, variants, texts.titles, new Date().toISOString().slice(0, 10));
+      const key = fingerprint(VERSION, tpl.id, tpl.design?.at ?? '', deck, layout, variants, texts.titles, new Date().toISOString().slice(0, 10));
       const buf = fs.existsSync(path.join(PREVIEWS, key, 'done.json')) ? null : await make();
       const keys = buf?.slideKeys ?? JSON.parse(fs.existsSync(path.join(PREVIEWS, key, 'keys.json')) ? fs.readFileSync(path.join(PREVIEWS, key, 'keys.json'), 'utf8') : '[]');
       const names = await previewDeck(buf, PREVIEWS, key);

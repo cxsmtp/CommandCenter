@@ -97,10 +97,6 @@ try {
     ['Northwind Media - POV WIP.pptx', `/opportunities/${id}/wip`],
     ['Northwind Media - POV results (team template).pptx', `/opportunities/${id}/deck?style=team`],
     ['Northwind Media - POV results (classic).pptx', `/opportunities/${id}/deck?style=classic`],
-    ['Northwind Media - POV WIP (Version Kendra).pptx', `/opportunities/${id}/wip?template=builtin-kendra`],
-    ['Northwind Media - POV results (Version Kendra).pptx', `/opportunities/${id}/deck?style=builtin-kendra`],
-    ['Northwind Media - POV WIP (Chakra).pptx', `/opportunities/${id}/wip?template=builtin-chakra`],
-    ['Northwind Media - POV results (Chakra).pptx', `/opportunities/${id}/deck?style=builtin-chakra`],
     ['Northwind Media - POV guide (RW report).html', `/opportunities/${id}/rw?download=1`],
   ];
   for (const [name, p] of out) {

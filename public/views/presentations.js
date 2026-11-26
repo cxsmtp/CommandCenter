@@ -68,7 +68,7 @@ async function designer(el, list, reload) {
     if (!d.canPreview) return;
     const get = async (extra) => {
       const req = { ...body(), ...extra };
-      const k = JSON.stringify([ui.id, t.design?.at, d.borrowed?.at, req]);
+      const k = JSON.stringify([ui.id, t.design?.at, req]);
       cache[k] ??= api(`/deck-templates/${encodeURIComponent(ui.id)}/preview`, { method: 'POST', body: req }).catch(() => ({ available: false }));
       return cache[k];
     };
@@ -224,7 +224,7 @@ async function designer(el, list, reload) {
     ? Object.entries(d.variants).map(([k, l]) => `<span class="pd-chip ${found[k] ? 'ok' : ''}" title="${found[k] ? 'Found: its own version can be used' : 'Not in this PowerPoint: Kendra’s design is used'}">${found[k] ? '✓' : '–'} ${esc(l)}</span>`).join('') + `<span class="pd-chip ${d.found.closing ? 'ok' : ''}">${d.found.closing ? '✓' : '–'} Closing slide</span>`
     : '';
   el.innerHTML = `
-    <section class="panel st-panel"><div class="st-ph"><h2>${esc(t.name)}</h2><span class="st-aside">${t.builtIn ? (d.borrowed ? `Built in, drawn in the team’s design (${esc(d.borrowed.name)}): copy it to change it` : 'Built in: copy it to change it') : t.design ? `Design: ${esc(t.design.name)}` : 'Kendra’s own design'}</span></div>
+    <section class="panel st-panel"><div class="st-ph"><h2>${esc(t.name)}</h2><span class="st-aside">${t.builtIn ? 'Built in: copy it to change it' : t.design ? `Design: ${esc(t.design.name)}` : 'Kendra’s own design'}</span></div>
       <div class="st-form">
         ${edit ? `<div class="st-cols3"><label class="field">Name<input id="pdName" maxlength="80" value="${esc(draft.name)}"></label><label class="field">Description<input id="pdDesc" maxlength="300" value="${esc(draft.description)}"></label><label class="field">For<select id="pdScope"><option value="team" ${draft.scope !== 'everyone' ? 'selected' : ''}>My team</option>${['admin', 'vp', 'leader'].includes(state.session.user.role) ? `<option value="everyone" ${draft.scope === 'everyone' ? 'selected' : ''}>Everyone</option>` : ''}</select></label></div>` : `<p class="small muted" style="margin:0">${esc(t.description ?? '')}</p>`}
         <div class="row" style="gap:8px;flex-wrap:wrap">

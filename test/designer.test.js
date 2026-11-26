@@ -43,21 +43,16 @@ test('a template keeps its designs and titles; the demo deck says which slide ea
   }
 });
 
-test('a built-in arrangement (Chakra, Version Kendra) is drawn in the team’s design; Kendra standard stays Kendra’s own', async () => {
-  const { DeckTemplates } = await import('../src/deck-templates.js');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kendra-borrow-'));
-  const store = { deckTemplates: [], deckDefaults: { org: null, teams: {} } };
+test('the built-in templates are Kendra standard and Classic; a template is drawn in its own PowerPoint or none', async () => {
+  const { DeckTemplates, BUILT_IN } = await import('../src/deck-templates.js');
+  assert.deepEqual(BUILT_IN.map((t) => t.name), ['Kendra standard', 'Classic']);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kendra-builtins-'));
+  const store = {};
   const db = { read: (k, d) => store[k] ?? d, write: (k, v) => (store[k] = v) };
-  const users = { get: () => null, chain: () => [], isBelow: () => false };
-  const t = new DeckTemplates(db, { users, dataDir: dir });
-  assert.equal(t.designOf(t.get('builtin-chakra')), null, 'no team design yet: Kendra’s own');
-  const admin = { id: 'a', role: 'admin', name: 'Admin' };
-  const team = t.create(admin, { name: 'Team template', scope: 'everyone' });
-  fs.mkdirSync(path.join(dir, 'templates'), { recursive: true });
-  fs.writeFileSync(t.fileOf(team.id), 'pptx');
-  t.setDesign(admin, team.id, { name: 'team.pptx', at: new Date().toISOString() });
-  assert.equal(t.designOf(t.get('builtin-chakra'))?.id, team.id);
-  assert.equal(t.designOf(t.get('builtin-kendra'))?.id, team.id);
+  const t = new DeckTemplates(db, { users: { get: () => null, chain: () => [], isBelow: () => false }, dataDir: dir });
+  assert.equal(t.get('builtin-chakra'), null);
   assert.equal(t.designOf(t.get('builtin-meridian')), null);
-  assert.equal(t.designOf(t.get(team.id))?.id, team.id);
+  // A POV whose team chose a template that is gone takes the organisation's default.
+  store.deckDefaults = { org: 'builtin-classic', teams: { se: 'builtin-kendra' } };
+  assert.equal(t.resolve({ ownerId: 'se' }).id, 'builtin-classic');
 });

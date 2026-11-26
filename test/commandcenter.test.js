@@ -669,11 +669,12 @@ test('the SEAL library: business goals become the bank, the first call fills the
   assert.match(rwHtml, /class="tbd">tenant URL/);
   assert.ok(!/<\/script>[\s\S]*<\/script>[\s\S]*<\/script>/.test(rwHtml.replace(/<script[^>]*>[\s\S]*?<\/script>/, '')), 'one script');
   assert.ok(!/KLA|kla\.com/.test(rwHtml), 'nothing from the sample guide');
-  // Version Kendra: a built-in template with the guide's goals and criteria slides.
-  const kendra = (await call('se1', '/api/deck-templates')).body.templates.find((t) => t.id === 'builtin-kendra');
-  assert.equal(kendra.name, 'Version Kendra');
-  assert.ok(kendra.layout.wip.main.includes('goalsPlan') && kendra.layout.results.main.includes('goals'));
-  for (const p of [`/api/opportunities/${opp.id}/wip?template=builtin-kendra`, `/api/opportunities/${opp.id}/deck?style=builtin-kendra`]) {
+  // A template with the guide's goals and criteria slides (as Version Kendra had them).
+  const ids = (await call('se1', '/api/deck-templates')).body.templates.map((t) => t.id);
+  assert.ok(ids.includes('builtin-meridian') && ids.includes('builtin-classic') && !ids.includes('builtin-kendra') && !ids.includes('builtin-chakra'), 'Chakra and Version Kendra are gone');
+  const goalsLayout = { wip: { main: ['cover', 'goals', 'goalsPlan', 'closing'], appendix: [] }, results: { main: ['cover', 'glance', 'goals', 'goalsPlan', 'closing'], appendix: [] } };
+  const gt = (await call('admin', '/api/deck-templates', { method: 'POST', body: { name: 'Goals first', scope: 'everyone', layout: goalsLayout } })).body.template;
+  for (const p of [`/api/opportunities/${opp.id}/wip?template=${gt.id}`, `/api/opportunities/${opp.id}/deck?style=${gt.id}`]) {
     const r = await fetch(`${base}${p}`, { headers: { Cookie: jar.get('se1') } });
     assert.equal(r.status, 200, p);
     const JSZip = (await import('jszip')).default;
@@ -1109,8 +1110,9 @@ test('POV screenshots: added, ordered and named by the SE; Chakra puts them befo
   const img = await fetch(`${base}/api/opportunities/${o.id}/screenshots/${shots[0].id}`, { headers: { Cookie: jar.get('se1') } });
   assert.equal(img.headers.get('content-type'), 'image/png');
   assert.ok(!fs.readdirSync(path.join(dataDir, 'screenshots'), { recursive: true }).some((f) => String(f).endsWith('.img') && fs.readFileSync(path.join(dataDir, 'screenshots', String(f))).subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))), 'not kept as a plain picture');
-  // Chakra: the order of the team's WIP deck.
-  const r = await fetch(`${base}/api/opportunities/${o.id}/wip?template=builtin-chakra`, { headers: { Cookie: jar.get('se1') } });
+  // The order of the team's WIP deck (as Chakra had it): screenshots before the appendix, the closing slide last.
+  const chakra = (await call('admin', '/api/deck-templates', { method: 'POST', body: { name: 'Team order', scope: 'everyone', layout: { wip: { main: ['cover', 'devsecops', 'components', 'apma', 'plan', 'env', 'tests', 'screenshots'], appendix: ['tenantEvidence', 'notes', 'closing'] } } } })).body.template;
+  const r = await fetch(`${base}/api/opportunities/${o.id}/wip?template=${chakra.id}`, { headers: { Cookie: jar.get('se1') } });
   assert.equal(r.status, 200);
   const JSZip = (await import('jszip')).default;
   const z = await JSZip.loadAsync(Buffer.from(await r.arrayBuffer()));
