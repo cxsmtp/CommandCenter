@@ -23,11 +23,13 @@ RUN --mount=type=secret,id=ca,required=false \
 
 # ---- Runtime: Node.js without a package manager, as an unprivileged user ----
 FROM docker.io/library/alpine:3.22
+# (libreoffice-writer too: without it Alpine's LibreOffice will not start at all; the build checks it starts.)
 # PREVIEWS=0 leaves out LibreOffice (about 300 MB): the presentation designer then offers the demo deck to download
 # instead of drawing each slide.
 ARG PREVIEWS=1
 RUN apk upgrade --no-cache && apk add --no-cache nodejs tini tar && \
-    if [ "$PREVIEWS" = "1" ]; then apk add --no-cache libreoffice-impress poppler-utils font-noto font-liberation; fi && \
+    if [ "$PREVIEWS" = "1" ]; then apk add --no-cache libreoffice-impress libreoffice-writer poppler-utils font-noto font-liberation && \
+      soffice --headless --version && pdftoppm -v; fi && \
     addgroup -g 1000 -S node && adduser -u 1000 -S -G node -h /home/node node && \
     mkdir -p /data && chown node:node /data
 WORKDIR /app

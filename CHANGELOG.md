@@ -2,6 +2,16 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.90 · 2026-11-26
+
+**Container image: LibreOffice starts (slide previews)**
+
+Alpine's LibreOffice Impress will not start at all without libreoffice-writer:
+it aborts with a RuntimeException, so the designer said "Previews need
+LibreOffice". The image now installs libreoffice-writer too. The build also
+runs soffice and pdftoppm once, so an image whose LibreOffice cannot start is
+never published.
+
 ## 1.0.89 · 2026-11-26
 
 **Slide previews: LibreOffice is looked for again when the first check fails**
