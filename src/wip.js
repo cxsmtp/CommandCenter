@@ -15,7 +15,7 @@ import { platformSlide } from './deck.js';
 import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS } from './toolchain.js';
 import { fillCover, fillPlan, fillEnvironment, fillTestPlan } from './template-fill.js';
 import { fillCoverSlide, fillOverviewSlide, fillPlanSlide, fillTestSlide, fillNotesSlide, fillShotSlide, picRelOf, MONTH_NAMES } from './template-slides.js';
-import { DEFAULT_LAYOUT, TEAM_LAYOUT } from './deck-templates.js';
+import { DEFAULT_LAYOUT } from './deck-templates.js';
 
 const BG = '170B2B';
 const PANEL = '1F1235';
@@ -62,6 +62,9 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   FONT = templated ? '+mn-lt' : 'Arial';
   // Which of the template's own slides this deck can use (filled with the POV's data, or with its items boxed).
   const tinfo = template ? await readTemplate(await JSZip.loadAsync(template)) : null;
+  // The template gives the design: its masters and layouts, its cover, its dividers (Appendix, Screenshots), its
+  // screenshot and closing slides, its logo and branding. The content slides are Kendra's own, drawn on its layouts.
+  if (tinfo) Object.assign(tinfo, { overview: null, components: null, planT: null, testT: null, notes: null });
   const use = { cover: Boolean(tinfo?.cover), plan: Boolean(tinfo?.plan), env: Boolean(tinfo?.env), test: Boolean(tinfo?.test) };
   const kinds = [];
   const c = contentOf(opp, story, { owner, catalog });
@@ -1022,7 +1025,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const heldNotes = (opp.sessions ?? []).some((m) => statusOf(m) === 'done' && (m.did || m.notes || m.theirNext || m.ourNext));
   // The order comes from the presentation template: its main deck, then its appendix. A Kendra variant that would
   // repeat its template version exactly (no team design for it) is left out.
-  const plan = layout?.[results ? 'results' : 'wip'] ?? (templated ? TEAM_LAYOUT : DEFAULT_LAYOUT)[results ? 'results' : 'wip'];
+  const plan = layout?.[results ? 'results' : 'wip'] ?? DEFAULT_LAYOUT[results ? 'results' : 'wip'];
   const usedKeys = new Set([...plan.main, ...plan.appendix]);
   const same = { devsecopsFull: ['devsecops', !tinfo?.devsecops], planFull: ['plan', !use.plan], envFull: ['env', !use.env], testsFull: ['tests', !use.test] };
   const MAKE = {

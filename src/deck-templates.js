@@ -103,10 +103,10 @@ export class DeckTemplates {
   }
 
   #own() {
-    // A team design still on Kendra's default order takes the template's own order (TEAM_LAYOUT): an order someone
-    // chose is kept as it is.
-    const same = (x) => JSON.stringify(x) === JSON.stringify(DEFAULT_LAYOUT);
-    return this.#db.read('deckTemplates', []).map((t) => (t.design && same(t.layout) ? { ...t, layout: TEAM_LAYOUT } : t));
+    // A team design given the template's own order for a day (TEAM_LAYOUT, 1.0.83-1.0.84) goes back to Kendra's
+    // order: the template gives the design, Kendra the content. An order someone chose is kept as it is.
+    const same = (x) => JSON.stringify(x) === JSON.stringify(TEAM_LAYOUT);
+    return this.#db.read('deckTemplates', []).map((t) => (t.design && same(t.layout) ? { ...t, layout: DEFAULT_LAYOUT } : t));
   }
 
   #save(list) {
@@ -124,7 +124,7 @@ export class DeckTemplates {
   /** The template uploaded before templates existed becomes the first one, the organisation's default. */
   migrate(legacyFile, { by = 'Kendra' } = {}) {
     if (this.#own().length || !fs.existsSync(legacyFile)) return null;
-    const tpl = { id: randomUUID(), name: 'Team template', description: 'The team’s PowerPoint design.', scope: 'everyone', ownerId: null, ownerName: by, layout: TEAM_LAYOUT, texts: {}, design: { name: 'Team template.pptx', at: new Date().toISOString() }, createdAt: new Date().toISOString() };
+    const tpl = { id: randomUUID(), name: 'Team template', description: 'The team’s PowerPoint design.', scope: 'everyone', ownerId: null, ownerName: by, layout: DEFAULT_LAYOUT, texts: {}, design: { name: 'Team template.pptx', at: new Date().toISOString() }, createdAt: new Date().toISOString() };
     fs.mkdirSync(this.#dir, { recursive: true });
     fs.copyFileSync(legacyFile, this.fileOf(tpl.id));
     this.#save([tpl]);

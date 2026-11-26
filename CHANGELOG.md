@@ -2,6 +2,19 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.85 · 2026-11-26
+
+**Team template: its design, Kendra's content**
+
+The template gives the design: its masters and layouts, its cover (filled with the POV's
+customer, people and date), its dividers (Appendix, Screenshots), its toolchain and
+environment slides, its screenshot and closing slides, its logo and branding. The content
+slides and their order are Kendra's own again (AppSec for the Age of AI, CheckmarxOne with
+every current component, the plan with every meeting, the test plan per goal, the overview
+with its at-a-glance panel, the APMA chart, the full toolchain and environment, the meeting
+notes), drawn on the template's layouts in its fonts. A team design given the template's
+own order since 1.0.83 goes back to Kendra's; an order someone chose stays.
+
 ## 1.0.84 · 2026-11-25
 
 **The team template's deck in fewer slides**
