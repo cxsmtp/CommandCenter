@@ -101,6 +101,12 @@ As in the FTR command center, each installation can be marked in Settings → Up
 
 A push to `main` is a full release unless `package.json` has `"releaseChannel": "candidate"`; then it is a candidate. Promote one after it ran well on staging: Actions → release → Run workflow → `promote`: its tag (e.g. `v1.0.80`). That makes it the latest release and the image's `latest`, and production installs it within 15 minutes.
 
+### Presentation templates
+
+Settings → Presentation templates is where the decks shared with customers are designed: each template's slides as previews of a made-up POV (never kept), their order (drag them, or move them between the main deck, the appendix and not used), the design of each slide that exists two ways (the team template's own slide, or Kendra's), a title of its own, the template's words, its name and who it is for. A PowerPoint uploaded there is read by itself: Kendra finds its cover, dividers, closing slide and its own versions of the overview, components, toolchain, APMA, plan, environment, test plan, notes and screenshot slides by what they say, and shows what it found.
+
+Previews are drawn with LibreOffice, which the container image carries (build with `--build-arg PREVIEWS=0` to leave it out, about 300 MB). An update replaces Kendra's code, not the image: pull the new image once to get previews. Without LibreOffice the designer offers the demo deck to download instead.
+
 ## Checkmarx One calls (all read-only)
 
 The IAM token is obtained with the API key (refresh-token grant, client `ast-app`). After that the calls are: `GET /api/projects`, `/api/scans` (last 7 days, and queued/running), `/api/projects/last-scan`, `/api/scan-summary`, `/api/credits/info`, `/api/credits/consumption`, `/api/configuration/tenant`, the IAM users and login events (`{iam}/auth/admin/realms/{tenant}/users` and `/events`, which need IAM read access), and `/api/logs/{scanId}/{engine}` (on request). The authentication and API client come from CxMissionZero (`src/cxone/`).

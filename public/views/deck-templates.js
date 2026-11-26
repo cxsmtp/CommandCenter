@@ -14,7 +14,7 @@ export async function deckPanel() {
     return `<div class="tpl-card"><div class="row center" style="gap:8px;flex-wrap:wrap"><b>${esc(t.name)}</b>${t.builtIn ? '<span class="badge">Built in</span>' : t.scope === 'everyone' ? '<span class="badge accent">Everyone</span>' : '<span class="badge">Team</span>'}${shared}</div>
       <div class="small muted">${esc(t.description || '')}</div>
       <div class="small">${t.classic ? 'The original results presentation' : t.design ? `Design: ${esc(t.design.name)}` : 'Kendra’s own design'} · results ${(t.layout?.results?.main ?? []).length} slides + ${(t.layout?.results?.appendix ?? []).length} in the appendix${t.ownerName ? ` · by ${esc(t.ownerName)}` : ''}</div>
-      ${d.canManage ? `<div class="row" style="margin-top:auto;flex-wrap:wrap">${t.canEdit ? `<button class="btn sm" data-deck-edit="${esc(t.id)}">Edit slides</button>` : ''}<button class="btn sm ghost" data-deck-copy="${esc(t.id)}">Copy</button>${t.myTeamDefault ? '' : `<button class="btn sm ghost" data-deck-team="${esc(t.id)}">Use for my team’s customer decks</button>`}${d.canSetOrg && !t.orgDefault ? `<button class="btn sm ghost" data-deck-org="${esc(t.id)}">Use for everyone</button>` : ''}${t.canEdit ? `<button class="btn sm ghost danger" data-deck-del="${esc(t.id)}">Remove</button>` : ''}</div>` : ''}
+      ${d.canManage ? `<div class="row" style="margin-top:auto;flex-wrap:wrap"><button class="btn sm" data-deck-edit="${esc(t.id)}">${t.canEdit ? 'Open in the designer' : 'Preview'}</button><button class="btn sm ghost" data-deck-copy="${esc(t.id)}">Copy</button>${t.myTeamDefault ? '' : `<button class="btn sm ghost" data-deck-team="${esc(t.id)}">Use for my team’s customer decks</button>`}${d.canSetOrg && !t.orgDefault ? `<button class="btn sm ghost" data-deck-org="${esc(t.id)}">Use for everyone</button>` : ''}${t.canEdit ? `<button class="btn sm ghost danger" data-deck-del="${esc(t.id)}">Remove</button>` : ''}</div>` : ''}
     </div>`;
   };
   return `<section class="panel" style="margin-bottom:18px" id="deckPanel"><div class="head"><h3>Customer presentations</h3>${d.canManage ? '<button class="btn primary sm" data-act="deck-new">New presentation template</button>' : ''}</div>
@@ -29,7 +29,14 @@ export async function wireDeckPanel(main) {
   const find = (id) => d.templates.find((t) => t.id === id);
   const again = () => document.dispatchEvent(new CustomEvent('cc:rerender'));
   panel.querySelector('[data-act="deck-new"]')?.addEventListener('click', () => editDeck(d, null));
-  for (const b of panel.querySelectorAll('[data-deck-edit]')) b.addEventListener('click', () => editDeck(d, find(b.dataset.deckEdit)));
+  // Slides are arranged in the presentation designer (Settings → Presentation templates), with previews.
+  const open = (id) => {
+    try {
+      localStorage.setItem('cc.presentations', JSON.stringify({ ...JSON.parse(localStorage.getItem('cc.presentations') || '{}'), id }));
+    } catch {}
+    location.hash = '#/settings/presentations';
+  };
+  for (const b of panel.querySelectorAll('[data-deck-edit]')) b.addEventListener('click', () => open(b.dataset.deckEdit));
   for (const b of panel.querySelectorAll('[data-deck-copy]')) b.addEventListener('click', () => editDeck(d, find(b.dataset.deckCopy), { copy: true }));
   for (const b of panel.querySelectorAll('[data-deck-team]')) b.addEventListener('click', async () => (await attempt(() => api('/deck-templates/default', { method: 'PUT', body: { templateId: b.dataset.deckTeam } }), 'Your team’s customer decks use it now')) && again());
   for (const b of panel.querySelectorAll('[data-deck-org]')) b.addEventListener('click', async () => (await attempt(() => api('/deck-templates/default', { method: 'PUT', body: { templateId: b.dataset.deckOrg, org: true } }), 'Everyone’s customer decks use it now')) && again());

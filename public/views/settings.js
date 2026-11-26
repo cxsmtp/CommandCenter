@@ -4,6 +4,7 @@ import { $, $$, esc, api, state, can, attempt, toast, formData, when, ago, ask, 
 import { renderPeople, renderTeams } from './people.js';
 import { renderAudit } from './audit.js';
 import { renderCatalog } from './catalog.js';
+import { renderPresentations } from './presentations.js';
 
 const LOOKS = {
   orbit: ['Orbit — launch control', ['#03050b', '#5ce1ff', '#8b7cff']],
@@ -27,7 +28,7 @@ const ALL = () => true;
 const TABS = [
   ['You', [['profile', 'Your profile & look', ALL]]],
   ['People', [['people', 'People', ALL], ['teams', 'Teams', ALL], ['roles', 'Roles & permissions', () => can('roles.manage')], ['signin', 'Sign-in', MANAGE]]],
-  ['POVs', [['capabilities', 'Capabilities & criteria', ALL], ['salesforce', 'Salesforce', MANAGE]]],
+  ['POVs', [['capabilities', 'Capabilities & criteria', ALL], ['presentations', 'Presentation templates', () => can('templates.manage')], ['salesforce', 'Salesforce', MANAGE]]],
   ['Records', [['audit', 'Audit log', () => can('audit.view')]]],
   ['System', [['general', 'General', MANAGE], ['branding', 'Branding', MANAGE], ['email', 'Email (SMTP)', MANAGE], ['sso', 'Single sign-on', MANAGE], ['linked', 'Linked apps', MANAGE], ['https', 'HTTPS & network', MANAGE], ['updates', 'Updates', MANAGE], ['backups', 'Backups & health', MANAGE], ['help', 'Get help', ALL], ['about', 'About', ALL]]],
 ];
@@ -41,6 +42,7 @@ const META = {
   teams: ['The team structure: each leader and everyone below them. A leader sees their team’s POVs, and every team below it.'],
   roles: ['What each role may do. Admins may do everything; what people see always follows the reporting tree.'],
   signin: [ADMINS, true],
+  presentations: ['The decks shared with customers: each template’s slides as they will look, their order, the design of each slide and its words. A new PowerPoint is read by itself.'],
   capabilities: ['What a POV can prove (and how Kendra reads it from Checkmarx One), the business goals, the success criteria templates and the customer presentations.'],
   salesforce: [ADMINS, true],
   audit: [null],
@@ -104,6 +106,7 @@ export async function renderSettings(main, tab, { crumbs, applyLook }) {
     teams: () => renderTeams(body, { linked }),
     audit: () => renderAudit(body, { crumbs: () => {} }),
     capabilities: () => renderCatalog(body, { crumbs: () => {} }),
+    presentations: () => renderPresentations(body),
   };
   await pages[active](body, data, applyLook);
 }

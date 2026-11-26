@@ -15,7 +15,7 @@ import { platformSlide } from './deck.js';
 import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS } from './toolchain.js';
 import { fillCover, fillPlan, fillEnvironment, fillTestPlan } from './template-fill.js';
 import { fillCoverSlide, fillOverviewSlide, fillPlanSlide, fillTestSlide, fillNotesSlide, fillShotSlide, picRelOf, MONTH_NAMES } from './template-slides.js';
-import { DEFAULT_LAYOUT } from './deck-templates.js';
+import { DEFAULT_LAYOUT, DEFAULT_VARIANTS } from './deck-templates.js';
 
 const BG = '170B2B';
 const PANEL = '1F1235';
@@ -50,7 +50,7 @@ function contentOf(opp, story, { owner, catalog }) {
   return { caps, engines, people, am, se: owner };
 }
 
-export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null, layout = null, texts = {}, screenshots = [] }) {
+export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null, layout = null, texts = {}, screenshots = [], variants = {} }) {
   // The same deck, two moments: 'wip' while the POV runs, 'results' for the final readout in the team's template.
   const results = mode === 'results';
   const pptx = new PptxGenJS();
@@ -64,20 +64,42 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const tinfo = template ? await readTemplate(await JSZip.loadAsync(template)) : null;
   // The template gives the design: its masters and layouts, its cover, its dividers (Appendix, Screenshots), its
   // screenshot and closing slides, its logo and branding. The content slides are Kendra's own, drawn on its layouts.
-  if (tinfo) Object.assign(tinfo, { overview: null, components: null, planT: null, testT: null, notes: null });
+  // Each slide that exists both ways is drawn as the template's own slide or as Kendra's, as the presentation template
+  // chooses (SLIDE_VARIANTS); a template slide the PowerPoint does not have is Kendra's.
+  const v = { ...DEFAULT_VARIANTS, ...(variants ?? {}) };
+  const kendra = (key) => v[key] === 'kendra';
+  if (tinfo) {
+    if (kendra('cover')) Object.assign(tinfo, { cover: null, coverT: null });
+    if (kendra('overview')) tinfo.overview = null;
+    if (kendra('components')) tinfo.components = null;
+    if (kendra('devsecops')) tinfo.devsecops = null;
+    if (kendra('apma')) tinfo.apma = null;
+    if (kendra('plan')) Object.assign(tinfo, { plan: null, planT: null });
+    if (kendra('env')) tinfo.env = null;
+    if (kendra('tests')) Object.assign(tinfo, { test: null, testT: null });
+    if (kendra('notes')) tinfo.notes = null;
+    if (kendra('screenshots')) Object.assign(tinfo, { shotsSection: null, shot: null });
+    if (kendra('appendix')) tinfo.appendix = null;
+  }
   const use = { cover: Boolean(tinfo?.cover), plan: Boolean(tinfo?.plan), env: Boolean(tinfo?.env), test: Boolean(tinfo?.test) };
+  // Which slide each slide of the deck is (its key in the presentation template), for previews.
+  let curKey = '';
+  const slideKeys = [];
   const kinds = [];
   const c = contentOf(opp, story, { owner, catalog });
   const C = opp.customer;
 
   const add = (kind) => {
+    slideKeys.push(curKey);
     const s = pptx.addSlide();
     s.background = { color: BG };
     kinds.push(kind);
     if (!templated) s.addText('Checkmarx', { x: 0.35, y: 7.08, w: 2, h: 0.3, fontFace: FONT, fontSize: 9, bold: true, color: WHITE, margin: 0 });
     return s;
   };
-  const head = (s, title, sub, accent = '') => {
+  const head = (s, title0, sub, accent = '') => {
+    // The template may give a slide its own title (Settings → Presentation templates).
+    const title = texts?.titles?.[curKey] || title0;
     s.addText(title, { x: 0.45, y: 0.3, w: 12.4, h: 0.6, fontFace: FONT, fontSize: 28, bold: true, color: WHITE, margin: 0 });
     if (sub || accent) s.addText([{ text: sub ? `${sub} ` : '', options: { color: WHITE } }, { text: accent, options: { color: ORANGE } }], { x: 0.45, y: 0.9, w: 12.4, h: 0.35, fontFace: FONT, fontSize: 14, margin: 0 });
   };
@@ -291,6 +313,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     if (!story?.platform) return;
     platformSlide(pptx, story.platform, { band: false });
     kinds.push('content');
+    slideKeys.push(curKey);
   };
 
   const sDevSecOps = (viaTemplate = true) => {
@@ -757,6 +780,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const sClosing = () => {
   // Closing, then the appendix: the notes of each meeting held
   kinds.push('closing');
+  slideKeys.push(curKey);
   if (!templated) {
     const s = pptx.addSlide();
     s.background = { color: BG };
@@ -1061,10 +1085,18 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const keep = (k) => MAKE[k] && !(same[k] && same[k][1] && usedKeys.has(same[k][0]));
   const appendix = plan.appendix.filter(keep);
   const order = [...plan.main.filter(keep).map((k) => MAKE[k]), ...(appendix.length ? [sAppendix, ...appendix.map((k) => MAKE[k])] : [])];
-  for (const make of order) make();
+  const keyed = [...plan.main.filter(keep).map((k) => [k, MAKE[k]]), ...(appendix.length ? [['appendix', sAppendix], ...appendix.map((k) => [k, MAKE[k]])] : [])];
+  void order;
+  for (const [k, make] of keyed) {
+    curKey = k;
+    make();
+  }
 
   const out = await pptx.write({ outputType: 'nodebuffer' });
-  return template ? intoTemplate(template, out, kinds) : out;
+  const buf = template ? await intoTemplate(template, out, kinds) : out;
+  // (A closing slide the template does not have is left out of the file: so of the keys too.)
+  buf.slideKeys = slideKeys.filter((k, i) => !(template && kinds[i] === 'closing' && !tinfo?.closing));
+  return buf;
 }
 
 // ——— Pouring the deck into the team's template ———
@@ -1333,6 +1365,16 @@ export async function intoTemplate(templateBuf, deckBuf, kinds) {
 }
 
 const scaleChart = (buf) => buf;
+
+/**
+ * What Kendra recognised in a team template, slide by slide (no one has to tell it): for each slide that exists two
+ * ways, whether the template has its own, and the closing slide and layouts it carries.
+ */
+export async function analyzeTemplate(buf) {
+  const t = await readTemplate(await JSZip.loadAsync(buf));
+  const has = { cover: t.cover || t.coverT, overview: t.overview, components: t.components, devsecops: t.devsecops, apma: t.apma, plan: t.plan || t.planT, env: t.env, tests: t.test || t.testT, notes: t.notes, screenshots: t.shotsSection || t.shot, appendix: t.appendix };
+  return { slides: Object.fromEntries(Object.entries(has).map(([k, x]) => [k, Boolean(x)])), closing: Boolean(t.closing), count: t.slides.length };
+}
 
 /** Is this a PowerPoint file we can use as the template? Returns what was found in it. */
 export async function checkTemplate(buf) {

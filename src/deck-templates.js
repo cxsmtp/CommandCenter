@@ -46,6 +46,36 @@ export const SLIDES = {
   closingEnd: 'Closing (again, at the very end)',
 };
 
+/**
+ * The slides that exist two ways: the team template's own slide filled with the POV's words, or Kendra's own drawing
+ * on the template's background. Each presentation template chooses per slide; these are the defaults.
+ */
+export const SLIDE_VARIANTS = {
+  cover: 'Cover',
+  overview: 'Executive overview',
+  components: 'Checkmarx One components',
+  devsecops: 'Tailored to your DevSecOps',
+  apma: 'APMA assessment',
+  plan: 'POV plan & timeline',
+  env: 'POV environment details',
+  tests: 'Test plan per business goal',
+  notes: 'Meeting notes',
+  screenshots: 'POV screenshots',
+  appendix: 'Appendix divider',
+};
+export const DEFAULT_VARIANTS = { cover: 'template', overview: 'kendra', components: 'kendra', devsecops: 'template', apma: 'template', plan: 'kendra', env: 'template', tests: 'kendra', notes: 'kendra', screenshots: 'template', appendix: 'template' };
+export function cleanVariants(v) {
+  const out = {};
+  for (const k of Object.keys(SLIDE_VARIANTS)) out[k] = v?.[k] === 'template' || v?.[k] === 'kendra' ? v[k] : DEFAULT_VARIANTS[k];
+  return out;
+}
+/** Titles a template gives slides of its own (only Kendra-drawn slides take them). */
+export function cleanTitles(t) {
+  const out = {};
+  for (const [k, val] of Object.entries(t ?? {})) if (SLIDES[k] && typeof val === 'string' && val.trim()) out[k] = text(val, 80);
+  return out;
+}
+
 const MAIN = ['cover', 'age', 'devsecops', 'components', 'plan', 'env', 'tests', 'closing'];
 export const DEFAULT_LAYOUT = {
   wip: { main: MAIN, appendix: ['overview', 'apma', 'devsecopsFull', 'planFull', 'envFull', 'notes'] },
@@ -155,15 +185,16 @@ export class DeckTemplates {
   }
 
   #clean(body, prev = {}) {
-    const name = text(body.name, 80);
+    const name = text(body.name ?? prev.name, 80);
     if (!name) throw fail(400, 'Give the template a name.');
     return {
       ...prev,
       name,
-      description: text(body.description, 300),
-      scope: body.scope === 'everyone' ? 'everyone' : 'team',
       layout: cleanLayout(body.layout ?? prev.layout),
-      texts: { support: lines(body.texts?.support ?? prev.texts?.support, 4), success: lines(body.texts?.success ?? prev.texts?.success, 4), quote: text(body.texts?.quote ?? prev.texts?.quote, 200) },
+      description: text(body.description ?? prev.description, 300),
+      scope: (body.scope ?? prev.scope) === 'everyone' ? 'everyone' : 'team',
+      texts: { support: lines(body.texts?.support ?? prev.texts?.support, 4), success: lines(body.texts?.success ?? prev.texts?.success, 4), quote: text(body.texts?.quote ?? prev.texts?.quote, 200), titles: cleanTitles(body.texts?.titles ?? prev.texts?.titles) },
+      variants: cleanVariants(body.variants ?? prev.variants),
     };
   }
 

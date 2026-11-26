@@ -127,10 +127,23 @@ export class Opportunities {
     // From the wizard: each capability with its own priority, and criteria in the team's own words.
     for (const it of Array.isArray(body.criteria) ? body.criteria.slice(0, 200) : []) if (it?.capabilityId && this.#catalog.get(it.capabilityId)) this.#addCriterion(opp, { capabilityId: text(it.capabilityId, 60), priority: it.priority === 'nice' ? 'nice' : 'must' }, actor);
     for (const c of Array.isArray(body.custom) ? body.custom.slice(0, 50) : []) if (text(c?.title)) this.#addCriterion(opp, { title: c.title, category: 'custom', priority: c.priority === 'must' ? 'must' : 'nice' }, actor);
+    if (body.__draft) return opp;
     const all = this.#all();
     all.push(opp);
     this.#save(all);
     return opp;
+  }
+
+  /** An opportunity built as `create` would, and not kept: the demo POV of presentation previews. */
+  draft(actor, body, settings) {
+    // Nothing of it is recorded anywhere either: its history goes nowhere while it is made.
+    const sink = this.onHistory;
+    this.onHistory = null;
+    try {
+      return this.create(actor, { ...body, __draft: true }, settings);
+    } finally {
+      this.onHistory = sink;
+    }
   }
 
   /** Change an opportunity with `fn(opp)`; checked, stamped and logged. */
@@ -354,7 +367,7 @@ function describe(kind, next, existing) {
   return `${existing ? 'Updated' : 'Added'} ${KIND_LABEL[kind]}${name ? ` "${name}"` : ''}`;
 }
 
-const CLEANERS = {
+export const CLEANERS = {
   stakeholders: (s) => ({ name: text(s.name, 120), email: cleanEmail(s.email), title: text(s.title, 120), side: s.side === 'internal' ? 'internal' : 'customer', povRole: text(s.povRole, 60), notify: s.notify !== false }),
   sessions: (s) => ({ date: dateOnly(s.date) || new Date().toISOString().slice(0, 10), type: SESSION_TYPES[s.type] ? s.type : 'technical', title: text(s.title, 200) || SESSION_TYPES[s.type] || 'Session', attendees: text(s.attendees, 1000), notes: text(s.notes, 20000), followUps: text(s.followUps, 4000), did: text(s.did, 8000), theirNext: text(s.theirNext, 4000), ourNext: text(s.ourNext, 4000), status: ['done', 'planned'].includes(s.status) ? s.status : '' }),
   notes: (n, actor, existing) => ({ text: text(n.text, 20000), at: existing?.at ?? new Date().toISOString(), by: existing?.by ?? actor?.id ?? '', pinned: Boolean(n.pinned) }),

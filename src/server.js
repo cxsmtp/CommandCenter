@@ -32,9 +32,11 @@ import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
 import { eventsOf, scanLog, exportSbom, peopleActivity, SCAN_WINDOW_DAYS } from './collector.js';
 import { finalDeck } from './deck.js';
-import { wipDeck, checkTemplate } from './wip.js';
+import { wipDeck, checkTemplate, analyzeTemplate } from './wip.js';
 import { SharePoint } from './sharepoint.js';
-import { DeckTemplates, SLIDES, DEFAULT_LAYOUT } from './deck-templates.js';
+import { DeckTemplates, SLIDES, DEFAULT_LAYOUT, SLIDE_VARIANTS, DEFAULT_VARIANTS, cleanLayout, cleanVariants, cleanTitles } from './deck-templates.js';
+import { demoOpportunity, demoScreenshot } from './deck-demo.js';
+import { canPreview, previewDeck, fingerprint, prunePreviews } from './deck-preview.js';
 import { lockDataDir, preflight, AdminAlerts, ErrorLog, verifyManifest } from './stability.js';
 import { readApma, cleanApma, forAnotherCustomer } from './apma.js';
 import { TOOLCHAIN, POV_ROLES, PLAN_DEFAULTS, DEVSECOPS } from './toolchain.js';
@@ -85,6 +87,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const bank = new Bank(db, { catalog, library });
   const opps = new Opportunities(db, { users, catalog, bank });
   const mailer = new Mailer(db);
+  const PREVIEWS = path.join(dataDir, 'previews');
   const links = new Links(db);
   // Single sign-on with SAML 2.0 (src/sso.js, as in the FTR command center).
   const sso = new Sso({ settings: () => db.read('settings', {}).sso, publicUrl: String(process.env.CC_PUBLIC_URL || '') });
@@ -1450,7 +1453,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const tpl = deckTemplates.get(id);
         if (!deckTemplates.canEdit(user, tpl)) throw fail(403, 'Only its maker, a manager above them or an Admin may change this template.');
         db.vault.writeFile(deckTemplates.fileOf(id), buf, { keepPrevious: false });
-        const t = deckTemplates.setDesign(user, id, { ...found, name: text(decodeURIComponent(req.headers['x-file-name'] ?? 'design.pptx'), 200), at: new Date().toISOString(), by: user.name });
+        const t = deckTemplates.setDesign(user, id, { ...found, found: await analyzeTemplate(buf).catch(() => null), name: text(decodeURIComponent(req.headers['x-file-name'] ?? 'design.pptx'), 200), at: new Date().toISOString(), by: user.name });
         audit.record(user, 'templates', `Uploaded the design of the presentation template “${t.name}”`);
         return send(res, 200, { template: t });
       }
@@ -1461,6 +1464,50 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         fs.rmSync(deckTemplates.fileOf(id), { force: true });
         return send(res, 200, { template: deckTemplates.setDesign(user, id, null) });
       }
+    }
+    // ——— The presentation designer (Settings → Presentation templates): previews of each slide, both designs ———
+    if (parts[0] === 'deck-templates' && parts[1] === 'preview' && parts[2] && parts[3] && m === 'GET') {
+      need(user, 'templates.manage');
+      const f = path.join(PREVIEWS, String(parts[2]).replace(/[^a-f0-9]/g, ''), String(parts[3]).replace(/[^\w.-]/g, ''));
+      if (!/\.png$/.test(f) || !fs.existsSync(f)) return send(res, 404, { error: 'Not found.' });
+      return send(res, 200, fs.readFileSync(f), { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=86400' });
+    }
+    if (parts[0] === 'deck-templates' && parts[1] && parts[2] === 'designer' && m === 'GET') {
+      need(user, 'templates.manage');
+      const tpl = deckTemplates.get(parts[1]);
+      if (!tpl) throw fail(404, 'No such template.');
+      const file = tpl.design && fs.existsSync(deckTemplates.fileOf(tpl.id)) ? db.vault.readFile(deckTemplates.fileOf(tpl.id)) : null;
+      const found = file ? await analyzeTemplate(file) : null;
+      return send(res, 200, { template: { ...tpl, variants: cleanVariants(tpl.variants), canEdit: deckTemplates.canEdit(user, tpl) }, found, slides: SLIDES, variants: SLIDE_VARIANTS, defaultVariants: DEFAULT_VARIANTS, canPreview: await canPreview() });
+    }
+    if (parts[0] === 'deck-templates' && parts[1] && (parts[2] === 'preview' || parts[2] === 'demo') && m === 'POST') {
+      need(user, 'templates.manage');
+      const tpl = deckTemplates.get(parts[1]);
+      if (!tpl) throw fail(404, 'No such template.');
+      const b = await readBody(req);
+      const deck = b.deck === 'results' ? 'results' : 'wip';
+      // What is on screen in the designer (saved or not): its order, designs and titles.
+      const layout = cleanLayout(b.layout ?? tpl.layout);
+      const variants = b.allVariants === 'template' || b.allVariants === 'kendra' ? Object.fromEntries(Object.keys(SLIDE_VARIANTS).map((k) => [k, b.allVariants])) : cleanVariants(b.variants ?? tpl.variants);
+      const texts = { ...(tpl.texts ?? {}), titles: cleanTitles(b.titles ?? tpl.texts?.titles) };
+      const designFile = tpl.design && fs.existsSync(deckTemplates.fileOf(tpl.id)) ? db.vault.readFile(deckTemplates.fileOf(tpl.id)) : null;
+      const demo = demoOpportunity({ opps, actor: user, settings: fullSettings() });
+      const shots = [demoScreenshot('Analytics and Dashboard'), demoScreenshot('Total scans by integration')];
+      const make = () => wipDeck(placed(demo), { story: resultsData(demo), owner: user, catalog, screenshots: shots, template: designFile, mode: deck, layout, texts, variants });
+      if (tpl.classic && deck === 'results') throw fail(400, 'The Classic presentation is Kendra’s fixed design: it has no slides to arrange.');
+      if (parts[2] === 'demo') {
+        const buf = await make();
+        return file(res, `${tpl.name} - demo ${deck === 'wip' ? 'WIP deck' : 'results'}.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf);
+      }
+      if (!(await canPreview())) return send(res, 200, { available: false });
+      // Drawn once for the same template file, order, designs, titles and Kendra version (the demo's dates aside).
+      const key = fingerprint(VERSION, tpl.id, tpl.design?.at ?? '', deck, layout, variants, texts.titles, new Date().toISOString().slice(0, 10));
+      const buf = fs.existsSync(path.join(PREVIEWS, key, 'done.json')) ? null : await make();
+      const keys = buf?.slideKeys ?? JSON.parse(fs.existsSync(path.join(PREVIEWS, key, 'keys.json')) ? fs.readFileSync(path.join(PREVIEWS, key, 'keys.json'), 'utf8') : '[]');
+      const names = await previewDeck(buf, PREVIEWS, key);
+      if (buf) fs.writeFileSync(path.join(PREVIEWS, key, 'keys.json'), JSON.stringify(keys));
+      prunePreviews(PREVIEWS);
+      return send(res, 200, { available: true, slides: names.map((n, i) => ({ key: keys[i] ?? '', img: `/api/deck-templates/preview/${key}/${n}` })) });
     }
     if (route === 'PUT /deck-templates/default') {
       need(user, 'templates.manage');
@@ -1889,7 +1936,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       if (sub === 'wip' && m === 'GET') {
         const opp = viewOpp(user, id);
         const { tpl, file: design } = deckFor(opp, url.searchParams.get('template'));
-        const buf = await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, screenshots: shotsOf(opp), template: design, layout: tpl?.layout, texts: tpl?.texts ?? {} });
+        const buf = await wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, screenshots: shotsOf(opp), template: design, layout: tpl?.layout, texts: tpl?.texts ?? {}, variants: tpl?.variants });
         return file(res, `${opp.customer} - POV WIP.pptx`, 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buf);
       }
       // The APMA assessment: the PDF read into the POV (optional; it fills the APMA slide), kept encrypted.
@@ -2141,7 +2188,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     const orgId = db.read('deckDefaults', { org: null }).org;
     const pick = style === 'classic' ? 'builtin-classic' : style === 'team' ? (own.find((t) => t.id === orgId) ?? own[0])?.id ?? 'builtin-meridian' : style;
     const { tpl, file: design } = deckFor(opp, pick);
-    if (!tpl?.classic) return wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, screenshots: shotsOf(opp), template: design, mode: 'results', live: opp.tenant ? monitor.live(opp.id) : null, layout: tpl?.layout, texts: tpl?.texts ?? {} });
+    if (!tpl?.classic) return wipDeck(placed(opp), { story: resultsData(opp), owner: users.get(opp.ownerId), catalog, screenshots: shotsOf(opp), template: design, mode: 'results', live: opp.tenant ? monitor.live(opp.id) : null, layout: tpl?.layout, texts: tpl?.texts ?? {}, variants: tpl?.variants });
     const snap = opp.tenant ? monitor.snapshot(opp.id) : null;
     return finalDeck(opp, { owner: users.get(opp.ownerId), live: opp.tenant ? monitor.live(opp.id) : null, people: snap ? peopleActivity(snap) : null, evidence: evidenceOf(opp), categories: catalog.categories(), org: settings().orgName, catalog, flow: flowView(placed(opp), catalog, opp.tenant ? monitor.provingSnapshot(opp.id) : null, opp.tenant ? monitor.live(opp.id).summary : null), story: resultsData(opp) });
   }

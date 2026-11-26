@@ -2,6 +2,26 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.87 · 2026-11-26
+
+**Presentation designer: each template's slides as previews, their order, design and words**
+
+- Settings > Presentation templates: every template with its slides drawn from a made-up POV
+  (Northwind Media, built as a real POV is and never kept), in the main deck, the appendix
+  or not used; drag them into order, or move them with the buttons; rename the template,
+  describe it, choose who it is for, copy it, remove it, use it for a team or everyone,
+  download its demo deck.
+- Each slide that exists two ways shows both designs side by side (the team template's own
+  slide filled with the POV, or Kendra's on the template's background) to choose from; a
+  Kendra-drawn slide can take a title of its own; the template's words (support, success,
+  closing line).
+- A PowerPoint uploaded is read by itself: what Kendra found in it (cover, overview,
+  components, toolchain, APMA, plan, environment, test plan, notes, screenshots, appendix
+  divider, closing slide) is shown, and each found slide can be used. Upload a PowerPoint
+  from the list to start a new template from it.
+- Previews are drawn on the server with LibreOffice and pdftoppm (now in the container image;
+  PREVIEWS=0 leaves them out), kept by a fingerprint of what made them, one deck at a time.
+
 ## 1.0.86 · 2026-11-26
 
 **Aptos in every presentation and report**
