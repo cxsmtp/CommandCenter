@@ -149,6 +149,9 @@ function tenantEnd(end, povEnd) {
   if (!end) return '—';
   const left = Math.ceil((Date.parse(`${end}T23:59:59Z`) - Date.now()) / 86400000);
   const early = left >= 0 && povEnd && end < String(povEnd).slice(0, 10);
+  // Ended while the POV still runs: nothing can be scanned, so it is red.
+  const expired = left < 0 && povEnd && String(povEnd).slice(0, 10) >= new Date().toISOString().slice(0, 10);
+  if (expired) return `<span class="bad-t" title="The tenant’s licence has ended but the POV is still running: extend it">${day(end)}</span> <span class="small bad-t"><b>expired</b></span>`;
   return `<span${early ? ' class="warn-t" title="The tenant’s licence ends before the POV does: extend it"' : ''}>${day(end)}</span> <span class="small ${left < 0 ? 'muted' : left <= 14 || early ? 'warn-t' : 'muted'}">${left < 0 ? 'ended' : `${left}d`}${early ? ' · before POV end' : ''}</span>`;
 }
 const COLS = [

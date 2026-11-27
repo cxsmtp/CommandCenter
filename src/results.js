@@ -108,7 +108,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
       <div><b>${gradient(s?.users?.total != null ? `${s.users.active + s.users.quiet}/${s.users.total}` : '—')}</b><span>people active</span></div>
     </div>
     ${d.completedAt ? `<p class="done-line">${MARKS.done} POV ${d.povResult === 'successful' ? 'completed successfully' : 'completed'} on <b>${stamp(d.completedAt)}</b></p>` : `<p class="done-line">${MARKS.progress} POV in progress · ${d.endDate ? `ends ${day(d.endDate)}` : 'no end date set'}</p>`}
-    ${d.summary ? `<p class="summary">${esc(d.summary)}</p>` : ''}`,
+    ${d.summary ? `<p class="summary">${esc(d.summary)}${d.summaryAt ? ` <span class="m">(written ${stamp(d.summaryAt)})</span>` : ''}</p>` : ''}`,
   );
   // ——— What the POV changed: the Analytics dashboard's numbers, with the start of the POV where they moved ———
   const tiles = impactTiles(d.analytics);
@@ -191,7 +191,7 @@ export function resultsPage(data, { nonce = '' } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(d.customer)} — Checkmarx One POV results</title>
 <style>${CSS}</style></head><body>
-<header class="bar"><div><b>${esc(d.customer)}</b> · Checkmarx One proof of value <span class="m">· prepared by ${esc(d.owner?.name ?? '')} · ${stamp(d.generatedAt)}</span></div><button class="btn" id="pdf">Download PDF</button></header>
+<header class="bar"><div><b>${esc(d.customer)}</b> · Checkmarx One proof of value <span class="m">· ${(d.team?.length ? d.team : d.owner ? [d.owner] : []).map((p) => `${esc(p.name)}${p.title ? ` (${esc(p.title)})` : ''}`).join(', ')} · ${stamp(d.generatedAt)}</span></div><button class="btn" id="pdf">Download PDF</button></header>
 <main>${slide1}${flowSlide}${slide2}${impactSlide}${goalSlides.join('')}${critSlides.join('')}${slide4}${expansionSlide}${slide5}${slide6}${appendix}</main>
 <aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-label="Engine record"><button class="x" id="close" aria-label="Close">×</button><div id="rec"></div></aside>
 <div class="scrim" id="scrim"></div>

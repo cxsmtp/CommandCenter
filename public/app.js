@@ -1,4 +1,4 @@
-import { $, esc, api, state, can, local, toast, attempt, openDialog, closeDialog, sheetsSettled } from './core.js';
+import { $, esc, api, state, can, local, toast, attempt, openDialog, closeDialog, sheetsSettled, purgeDrafts } from './core.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderOpportunity } from './views/opportunity.js';
 import { renderSettings } from './views/settings.js';
@@ -257,6 +257,8 @@ document.addEventListener('click', async (e) => {
   if (action === 'menu') return $('#nav').classList.toggle('open');
   if (action === 'more') return openMore();
   if (action === 'signout') {
+    // What was being typed stays on this browser no longer than the session.
+    purgeDrafts({ all: true });
     await api('/logout', { method: 'POST' }).catch(() => {});
     location.hash = '';
     location.reload();
@@ -444,6 +446,7 @@ function mustChangePassword() {
 let streaming = false;
 async function start() {
   state.session = await api('/session');
+  purgeDrafts();
   loadedVersion = loadedVersion ?? state.session.version ?? null;
   applyLook(state.session.user?.prefs);
   applyIcon();

@@ -25,6 +25,24 @@ export const STAGES = {
   lost: 'Lost',
   on_hold: 'On hold',
 };
+/** A criterion's status in words: one the SE demonstrated says so, never passing for the customer's own result. */
+export const statusText = (c) => (c.status === 'met' && c.proofType === 'demo' ? 'Demonstrated by the SE' : CRITERION_STATUS[c.status] ?? '');
+/** The demonstration, in a line (when, where, seen by whom, the recording). */
+export const demoText = (c) => {
+  const d = c.proofType === 'demo' && c.status === 'met' ? c.demo : null;
+  if (!d) return '';
+  return ['Demonstrated by the SE', d.date && `on ${d.date}`, d.environment && `in ${d.environment}`, d.attendees && `seen by ${d.attendees}`, d.recordingUrl && `recording: ${d.recordingUrl}`].filter(Boolean).join(' ');
+};
+/** The Checkmarx side's POV team: the account manager, then the opportunity's SE, then any other SEs. */
+export function povTeam(opp, owner) {
+  const internal = (opp.stakeholders ?? []).filter((p) => p.side === 'internal');
+  const same = (p) => owner?.email && p.email && p.email.toLowerCase() === owner.email.toLowerCase();
+  const am = internal.find((p) => ['Account manager', 'Checkmarx sponsor'].includes(p.povRole) && !same(p));
+  const ses = internal.filter((p) => ['Solution engineer', 'Checkmarx technical lead'].includes(p.povRole) && p !== am && !same(p));
+  return [am && { name: am.name, title: am.title || 'Account Manager', email: am.email }, owner && { name: owner.name, title: owner.title || 'Solution Engineer', email: owner.email }, ...ses.map((p) => ({ name: p.name, title: p.title || 'Solution Engineer', email: p.email }))].filter(Boolean);
+}
+/** Text written for the customer, without the team's own to-dos (lines starting "Next:"). */
+export const customerText = (t) => String(t ?? '').split('\n').map((l) => l.replace(/(^|\.\s+)Next: [^.]*\.?/g, '$1').trim()).filter(Boolean).join('\n');
 export const CRITERION_STATUS = { not_started: 'Not started', in_progress: 'In progress', met: 'Completed successfully', not_met: 'Not met', na: 'Not applicable' };
 export const SESSION_TYPES = { first_call: 'First call', discovery: 'Discovery', pre_pov: 'Pre-POV call', technical: 'Technical session', workshop: 'Workshop', launch: 'POV launch & setup', checkpoint: 'Check-in call', gate: 'Approval gate', wrapup: 'Wrap-up call', readout: 'Readout' };
 const HISTORY = 400;
@@ -123,6 +141,8 @@ export class Opportunities {
     if (!opp.customer) throw fail(400, 'Give the customer name.');
     opp.name ||= opp.customer;
     log(opp, actor, `Created the opportunity (${STAGES[opp.stage]})`, this.onHistory);
+    // The business goals the SE chose come first: a capability's criterion joins one of them, never adds another.
+    for (const g of Array.isArray(body.goalIds) ? body.goalIds.slice(0, 12) : []) this.#ensureGoal(opp, text(g, 60));
     for (const id of strList(body.capabilities, 200, 60)) this.#addCriterion(opp, { capabilityId: id }, actor);
     // From the wizard: each capability with its own priority, and criteria in the team's own words.
     for (const it of Array.isArray(body.criteria) ? body.criteria.slice(0, 200) : []) if (it?.capabilityId && this.#catalog.get(it.capabilityId)) this.#addCriterion(opp, { capabilityId: text(it.capabilityId, 60), priority: it.priority === 'nice' ? 'nice' : 'must' }, actor);
@@ -340,7 +360,8 @@ export class Opportunities {
     if (cap && opp.criteria.some((c) => c.capabilityId === cap.id)) return opp.criteria.find((c) => c.capabilityId === cap.id);
     // From the bank: the business goal it serves, the criterion in the customer's words, the test and the benefit.
     const b = cap && this.#bank ? this.#bank.forCapability(cap.id) : null;
-    const filled = b ? { goal: b.goal, statement: b.title, test: b.test, benefit: b.benefit } : {};
+    // Its goal only when the POV has that goal: picking an engine never adds a business goal nobody chose.
+    const filled = b ? { goal: (opp.goals ?? []).some((g) => g.key === b.goal) ? b.goal : '', statement: b.title, test: b.test, benefit: b.benefit } : {};
     const crit = { id: randomUUID(), ...CLEANERS.criteria({ title: cap?.name, category: cap?.category ?? 'custom', ...filled, ...Object.fromEntries(Object.entries(item).filter(([, v]) => v !== '' && v !== undefined)), capabilityId: cap?.id ?? '' }, actor) };
     if (crit.goal) this.#ensureGoal(opp, crit.goal);
     if (!crit.title) throw fail(400, 'Give the success criterion a title.');
@@ -447,7 +468,10 @@ function applyFields(opp, b) {
   if ('startDate' in b) set('startDate', dateOnly(b.startDate));
   if ('endDate' in b) set('endDate', dateOnly(b.endDate));
   if ('closeDate' in b) set('closeDate', dateOnly(b.closeDate));
-  if ('summary' in b) set('summary', text(b.summary, 4000));
+  if ('summary' in b && text(b.summary, 4000) !== opp.summary) {
+    set('summary', text(b.summary, 4000));
+    opp.summaryAt = new Date().toISOString();
+  }
   if (b.valueRates && typeof b.valueRates === 'object') {
     opp.valueRates = cleanRates(b.valueRates);
     changed.push('value rates');

@@ -272,7 +272,10 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const must = list.filter((x) => x.priority === 'must');
       const custom = [...customFromTemplates(), ...w.custom];
       const group = (items) => items.map((x) => `<button type="button" class="wz-chip ${x.priority}" data-cap="${esc(x.capabilityId)}">${esc(caps.get(x.capabilityId)?.name)}<small>${LABEL[x.priority]}</small></button>`).join('');
-      return `<div class="wz-sum"><div><b class="ok-t">${must.length}</b><span>must have</span></div><div><b class="warn-t">${list.length - must.length + custom.length}</b><span>nice to have</span></div><div><b>${list.length + custom.length}</b><span>success criteria${have.size ? ` (plus ${have.size} already there)` : ''}</span></div></div>
+      // The criteria the chosen business goals bring (must have), counted as the POV will hold them.
+      const fromGoals = goalCriteria();
+      const customMust = custom.filter((c) => c.priority === 'must').length;
+      return `<div class="wz-sum"><div><b>${fromGoals}</b><span>from ${[...w.goals].filter((k) => !goalsBefore.has(k)).length} business goals</span></div><div><b class="ok-t">${must.length + customMust}</b><span>more must have</span></div><div><b class="warn-t">${list.length - must.length + custom.length - customMust}</b><span>nice to have</span></div><div><b>${fromGoals + list.length + custom.length}</b><span>success criteria${have.size ? ` (plus ${have.size} already there)` : ''}</span></div></div>
         ${list.length ? `<div class="wz-chips">${group(list)}</div>` : '<p class="muted">No capability chosen yet — go back a step, or add your own below.</p>'}
         <fieldset class="item"><legend class="small muted">In the customer’s own words (optional)</legend>
           ${custom.map((c, i) => `<div class="row center"><span style="flex:1">${esc(c.title)}</span><span class="badge">${LABEL[c.priority] ?? 'Nice to have'}</span>${i >= customFromTemplates().length ? `<button type="button" class="btn sm ghost" data-del-custom="${i - customFromTemplates().length}" aria-label="Remove">✕</button>` : '<span class="small muted">from a template</span>'}</div>`).join('')}
@@ -285,6 +288,8 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         ${mode === 'template' ? templateFields() : canSave ? `<fieldset class="item"><label class="check"><input type="checkbox" id="wzSave" ${w.save.on ? 'checked' : ''}> Also save this set as a template for my team</label>${w.save.on ? `<div class="row" style="margin-top:8px"><label class="field">Template name<input id="wzSaveName" value="${esc(w.save.name)}" placeholder="e.g. Banking — core AppSec"></label>${shareWide ? `<label class="field" style="max-width:200px">Shared with<select id="wzSaveScope"><option value="team" ${w.save.scope === 'team' ? 'selected' : ''}>My team</option><option value="everyone" ${w.save.scope === 'everyone' ? 'selected' : ''}>Everyone</option></select></label>` : ''}</div>` : ''}</fieldset>` : ''}`;
     },
   };
+  // The criteria the newly chosen goals bring, once each (as the server adds them: by goal and title).
+  const goalCriteria = () => new Set([...w.goals].filter((k) => !goalsBefore.has(k)).flatMap((k) => goalEntries(k).map((e) => `${k}|${e.title}`))).size;
   // Editing: what Save will change in the criteria, the rest is saved as it is on each step.
   const criteriaChanges = () => {
     const want = new Map(chosen().map((x) => [x.capabilityId, x.priority]));
@@ -319,7 +324,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   const html = () => {
     const [key] = stepsNow()[w.step];
     const last = w.step === stepsNow().length - 1;
-    const count = edit ? criteriaChanges().add.length + customFromTemplates().length + w.custom.length + [...w.goals].filter((k) => !goalsBefore.has(k)).reduce((n, k) => n + goalEntries(k).length, 0) : chosen().length + customFromTemplates().length + w.custom.length + [...w.goals].filter((k) => !(opp?.goals ?? []).some((g) => g.key === k)).reduce((n, k) => n + goalEntries(k).length, 0);
+    const count = (edit ? criteriaChanges().add.length : chosen().length) + customFromTemplates().length + w.custom.length + goalCriteria();
     return `<form id="wz" class="wz" novalidate>
       <div class="wz-top"><h2>${esc(title)}</h2>
         <ol class="wz-steps">${stepsNow().map(([, l], i) => `<li class="${i < w.step ? 'done' : i === w.step ? 'current' : ''}"><button type="button" data-goto="${i}" ${i > w.step && !edit ? 'disabled' : ''}><span>${i < w.step && !edit ? '✓' : i + 1}</span>${esc(l)}</button></li>`).join('')}</ol></div>
@@ -391,7 +396,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       // The account manager on the cover (the Checkmarx sponsor).
       const am = p.am;
       if (am.name.trim() && (am.name !== (sponsor?.name ?? '') || am.email !== (sponsor?.email ?? '') || am.title !== (sponsor?.title ?? ''))) {
-        await api(`/opportunities/${id}/stakeholders${sponsor ? `/${sponsor.id}` : ''}`, { method: 'POST', body: { ...(sponsor ?? { side: 'internal', povRole: 'Account manager', notify: false }), name: am.name, email: am.email, title: am.title } });
+        await api(`/opportunities/${id}/stakeholders${sponsor ? `/${sponsor.id}` : ''}`, { method: 'POST', body: { ...(sponsor ?? { side: 'internal', povRole: 'Account manager', notify: true }), name: am.name, email: am.email, title: am.title } });
       }
       const { add, change, remove } = criteriaChanges();
       for (const c of change) await api(`/opportunities/${id}/criteria/${c.id}`, { method: 'POST', body: c });
@@ -410,7 +415,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const lines = (t) => String(t ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
       const toolchain = Object.fromEntries(TC().map((t) => [t.key, { tools: [...w.tools[t.key], ...String(w.toolExtra[t.key] ?? '').split(',').map((x) => x.trim()).filter(Boolean)], access: w.access[t.key] ?? t.access }]));
       toolchain.languages = c.languages;
-      const am = p.am.name.trim() ? [{ name: p.am.name, email: p.am.email, title: p.am.title, side: 'internal', povRole: 'Account manager', notify: false }] : [];
+      const am = p.am.name.trim() ? [{ name: p.am.name, email: p.am.email, title: p.am.title, side: 'internal', povRole: 'Account manager', notify: true }] : [];
       const people = withCall ? c.people.filter((p) => p.name.trim()) : [];
       const body = {
         stage: 'pov',
@@ -451,6 +456,22 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   const draw = (d) => {
     d.innerHTML = html();
     wire(d);
+    const field = w.badField ? d.querySelector(`[name="${w.badField}"]`) : null;
+    if (field) {
+      field.setAttribute('aria-invalid', 'true');
+      const note = Object.assign(document.createElement('p'), { className: 'field-error', role: 'alert', textContent: w.error });
+      field.closest('details')?.setAttribute('open', '');
+      (field.closest('label') ?? field).after(note);
+      d.querySelector('.form-error').textContent = '';
+      field.focus();
+      field.addEventListener('input', () => {
+        note.remove();
+        field.removeAttribute('aria-invalid');
+        w.error = '';
+        w.badField = '';
+        w.badField = '';
+      }, { once: true });
+    }
   };
   const wire = (d) => {
     const f = $('#wz', d);
@@ -465,6 +486,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       keep(d);
       w.step -= 1;
       w.error = '';
+      w.badField = '';
       draw(d);
     });
     for (const b of f.querySelectorAll('[data-goto]'))
@@ -472,6 +494,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         keep(d);
         w.step = Number(b.dataset.goto);
         w.error = '';
+        w.badField = '';
         draw(d);
       });
     for (const card of f.querySelectorAll('[data-goal]')) {
@@ -503,17 +526,21 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     });
     // A meeting's date changed: the ones after it move by the same number of days.
     for (const el of f.querySelectorAll('[name^="m_date_"]'))
+      // Updated in place (no redraw: a date field fires while it is being typed in, and redrawing under it loses the
+      // typing); only a whole, valid date moves the others.
       el.addEventListener('change', () => {
         const i = Number(el.name.slice(7));
         const p = planNow();
         const before = p.meetings[i]?.date;
-        keep(d);
-        const after = p.meetings[i]?.date;
-        if (before && after && before !== after) p.meetings = shiftFrom(p.meetings, i, daysBetween(before, after));
+        const after = el.value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(after) || !before || before === after) return;
+        const days = daysBetween(before, after);
+        p.meetings = shiftFrom(p.meetings.map((m, j) => (j === i ? { ...m, date: after } : m)), i, days);
         p.touched = true;
-        const scroll = $('#wzBody', d).scrollTop;
-        draw(d);
-        $('#wzBody', d).scrollTop = scroll;
+        p.meetings.forEach((m, j) => {
+          const input = f.querySelector(`[name="m_date_${j}"]`);
+          if (j > i && input) input.value = m.date;
+        });
       });
     for (const el of f.querySelectorAll('[name^="m_type_"], [name^="m_title_"]')) el.addEventListener('change', () => (planNow().touched = true));
     for (const b of f.querySelectorAll('[data-del-meeting]'))
@@ -613,10 +640,31 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       keep(d);
       const [key] = stepsNow()[w.step];
       w.error = '';
-      if (key === 'details' && !String(w.details.customer ?? '').trim()) {
-        w.error = 'Give the customer name.';
-        return draw(d);
+      w.badField = '';
+      // Checked at the field: the message sits under it, and goes when it is corrected.
+      const bad = (field, message) => {
+        w.error = message;
+        w.badField = field;
+        draw(d);
+      };
+      const url = (v) => !v || /^https?:\/\/[^\s.]+\.[^\s]+$/i.test(String(v).trim());
+      const mail = (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+      if (key === 'details') {
+        const x = w.details;
+        if (!String(x.customer ?? '').trim()) return bad('customer', 'Give the customer name.');
+        if (!url(x.salesforceUrl)) return bad('salesforceUrl', 'This is not a link: paste the whole address, starting with https://');
+        if (!url(x.sharepointUrl)) return bad('sharepointUrl', 'This is not a link: paste the whole address, starting with https://');
+        if (x.startDate && x.endDate && x.endDate < x.startDate) return bad('endDate', 'The POV ends before it starts: pick an end date after the start.');
       }
+      if (key === 'call') {
+        const i = w.call.people.findIndex((p) => !mail(p.email));
+        if (i >= 0) return bad(`p_email_${i}`, 'This email address is not complete.');
+      }
+      if (key === 'plan') {
+        const p = planNow();
+        if (!mail(p.am.email)) return bad('am_email', 'This email address is not complete.');
+      }
+      if (key === 'goals' && mode === 'new' && !w.goals.size) return bad('', 'Pick at least one business goal (three to five is best): they bring the success criteria and the story of the decks.');
       const saveNow = e.submitter?.dataset.act === 'save-now';
       if (w.step < stepsNow().length - 1 && !saveNow) {
         w.step += 1;

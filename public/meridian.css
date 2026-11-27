@@ -715,3 +715,6 @@ details.pd-sec > summary { cursor: pointer; list-style: none; }
 .pd-bar { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; justify-content: flex-end; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 -6px 20px rgba(0,0,0,.06); }
 .pd-bar > span { margin-right: auto; }
 @media (max-width: 900px) { .pd-layout { grid-template-columns: 1fr; } .pd-list { position: static; } }
+/* A wizard field's own error, right under it */
+.field-error { margin: 4px 0 0; font-size: 12.5px; color: var(--bad, #c0392b); font-weight: 600; }
+[aria-invalid="true"] { border-color: var(--bad, #c0392b) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--bad, #c0392b) 18%, transparent); }

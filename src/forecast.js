@@ -30,6 +30,8 @@ export function criteriaForecast(opp, now = Date.now()) {
   const base = { total, done: done.length, remaining, pacePerWeek: round(pace * 7), neededPerWeek: needed === null ? null : round(needed * 7), daysLeft: daysLeft === null ? null : Math.ceil(daysLeft) };
   if (daysLeft !== null && daysLeft <= 0) return { ...base, state: 'late', label: `${remaining} still open after the end date` };
   if (!done.length) return { ...base, state: daysLeft !== null && daysLeft < 7 ? 'at-risk' : 'no-pace', label: daysLeft !== null ? `None completed yet · ${base.neededPerWeek}/week needed` : 'None completed yet' };
+  // Too early to tell in the first three days: a pace from a day's work says nothing.
+  if (elapsed < 3) return { ...base, state: daysLeft !== null && daysLeft < 7 && remaining > 0 ? 'at-risk' : 'no-pace', label: daysLeft !== null ? `Too early for a pace · ${base.neededPerWeek ?? 0}/week needed` : 'Too early for a pace' };
   const projected = now + (remaining / pace) * DAY;
   const margin = daysLeft === null ? null : Math.round((end - projected) / DAY);
   const state = margin === null ? 'on-track' : margin >= 0 ? 'on-track' : margin >= -3 ? 'at-risk' : 'late';

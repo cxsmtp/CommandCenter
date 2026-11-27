@@ -6,7 +6,7 @@
  */
 import { impactTiles } from './impact.js';
 import PptxGenJS from 'pptxgenjs';
-import { CRITERION_STATUS, SESSION_TYPES, progressOf } from './opportunities.js';
+import { CRITERION_STATUS, SESSION_TYPES, progressOf, statusText, demoText } from './opportunities.js';
 import { platformView } from './platform.js';
 
 // Every slide in the platform slide's own look: deep violet, white, the orange-to-violet accent.
@@ -115,8 +115,8 @@ export async function finalDeck(opp, { owner, live, people, evidence = {}, categ
     const body = rows.slice(i, i + 10).map((c) => [
       { text: catLabel[c.category] ?? 'Custom', options: { color: MUTED, fontSize: 10 } },
       { text: `${c.title}${c.priority === 'nice' ? ' (nice to have)' : ''}`, options: { color: INK, fontSize: 11 } },
-      { text: CRITERION_STATUS[c.status], options: { color: STATUS_COLOR[c.status], bold: true, fontSize: 11, align: 'center', valign: 'middle' } },
-      { text: [c.notes, ...(evidence[c.id]?.level === 'detected' ? evidence[c.id].evidence : [])].filter(Boolean).join(' · ').slice(0, 220), options: { color: MUTED, fontSize: 9 } },
+      { text: statusText(c), options: { color: STATUS_COLOR[c.status], bold: true, fontSize: 11, align: 'center', valign: 'middle' } },
+      { text: [demoText(c), c.notes, ...(evidence[c.id]?.level === 'detected' ? evidence[c.id].evidence : [])].filter(Boolean).join(' · ').slice(0, 220), options: { color: MUTED, fontSize: 9 } },
     ]);
     slide.addTable([head, ...body], { x: 0.6, y: 1.65, w: 12.1, colW: [2.2, 4.3, 1.5, 4.1], fontFace: BODY, border: { type: 'solid', color: LINE, pt: 0.5 }, rowH: 0.42, valign: 'middle' });
   }

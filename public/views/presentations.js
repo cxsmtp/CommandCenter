@@ -91,8 +91,14 @@ async function designer(el, list, reload) {
     const L = draft.layout[ui.deck];
     const seq = [...L.main, ...L.appendix];
     const pos = seq.indexOf(k);
+    // Its place in its part (main deck or appendix); at the edge between them, the arrow moves it across the divider.
+    const inMain = L.main.includes(k);
+    const part = inMain ? L.main : L.appendix;
+    const at = part.indexOf(k);
+    const back = inMain ? (at === 0 ? '' : 'Earlier') : at === 0 ? 'Back into the main deck' : 'Earlier';
+    const fwd = inMain ? (at === part.length - 1 ? 'Into the appendix' : 'Later') : at === part.length - 1 ? '' : 'Later';
     const nav = edit && pos >= 0
-      ? `<div class="pd-nav"><button type="button" class="pd-arrow" data-move="-1" ${pos === 0 ? 'disabled' : ''} aria-label="Move ${esc(label(k))} earlier" title="Earlier">◀</button><span class="pd-pos">${pos + 1} of ${seq.length}</span><button type="button" class="pd-arrow" data-move="1" ${pos === seq.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(label(k))} later" title="Later">▶</button></div>`
+      ? `<div class="pd-nav"><button type="button" class="pd-arrow" data-move="-1" ${back ? '' : 'disabled'} aria-label="${esc(back || 'Earlier')}: ${esc(label(k))}" title="${esc(back || 'First')}">◀</button><span class="pd-pos">${inMain ? 'Main deck' : 'Appendix'} ${at + 1} of ${part.length}</span><button type="button" class="pd-arrow" data-move="1" ${fwd ? '' : 'disabled'} aria-label="${esc(fwd || 'Later')}: ${esc(label(k))}" title="${esc(fwd || 'Last')}">▶</button></div>`
       : '';
     const choose = two(k)
       ? `<div class="pd-variants">${['template', 'kendra'].map((v) => {
@@ -244,7 +250,14 @@ async function designer(el, list, reload) {
     <div class="pd-bar"><span class="small muted" id="pdDirty">All saved</span><button class="btn" data-act="refresh">Refresh the previews</button><button class="btn primary" id="pdSave" disabled>Save</button></div>` : ''}`;
   drawStrip();
   for (const r of el.querySelectorAll('input[name="pdDeck"]')) r.addEventListener('change', () => ((ui.deck = r.value), save(), drawStrip(), loadPreviews()));
-  for (const id of ['pdName', 'pdDesc', 'pdScope', 'pdSupport', 'pdSuccess', 'pdQuote']) el.querySelector(`#${id}`)?.addEventListener('input', markDirty);
+  // What is typed is kept in the draft at once, so nothing that redraws the page can put the old name back.
+  const KEEP = { pdName: 'name', pdDesc: 'description', pdScope: 'scope' };
+  for (const id of ['pdName', 'pdDesc', 'pdScope', 'pdSupport', 'pdSuccess', 'pdQuote'])
+    for (const ev of ['input', 'change'])
+      el.querySelector(`#${id}`)?.addEventListener(ev, (e) => {
+        if (KEEP[id]) draft[KEEP[id]] = e.target.value;
+        markDirty();
+      });
   el.querySelector('#pdScope')?.addEventListener('change', markDirty);
   el.querySelector('[data-act="refresh"]')?.addEventListener('click', loadPreviews);
   el.querySelector('#pdSave')?.addEventListener('click', async () => {

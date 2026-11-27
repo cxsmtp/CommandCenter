@@ -77,6 +77,11 @@ export function gaps(opp, row, { facts = null, people = null, catalog = null, no
   if (pov && row.live?.health === 'failed') add('bad', 'read', `The tenant cannot be read: ${row.live.error?.message ?? ''}`.trim(), 'Replace the API key or check the network');
   if (['pov', 'completed'].includes(opp.stage) && !p.total) add('bad', 'criteria', 'No success criteria agreed', 'Add them from the capabilities');
   if (pov && !opp.endDate) add('warn', 'end', 'No POV end date', 'Set the end date');
+  // The tenant's licence: ended while the POV runs (nothing can be scanned), or ending before the POV does.
+  const lic = row.live?.summary?.license?.end ? String(row.live.summary.license.end).slice(0, 10) : '';
+  const today = new Date(now).toISOString().slice(0, 10);
+  if (pov && lic && lic < today) add('bad', 'tenant-expired', `The tenant’s licence ended on ${lic} and the POV is still running`, 'Ask for the tenant licence to be extended to the POV end');
+  else if (pov && lic && opp.endDate && lic < opp.endDate) add('warn', 'tenant-ending', `The tenant’s licence ends on ${lic}, before the POV does (${opp.endDate})`, 'Ask for the tenant licence to be extended');
   if (pov && row.daysLeft !== null && row.daysLeft < 0) add('bad', 'overdue', `The end date passed ${-row.daysLeft} day${row.daysLeft === -1 ? '' : 's'} ago and the POV is still running`, 'Complete the POV or move the end date');
   const open = (opp.criteria ?? []).filter((c) => c.status === 'not_started' && c.priority === 'must');
   if (pov && open.length && row.daysLeft !== null && row.daysLeft <= 7) add('bad', 'must-open', `${open.length} must-have${open.length > 1 ? 's' : ''} not started, ${Math.max(0, row.daysLeft)} days left: ${open.slice(0, 3).map((c) => c.title).join(', ')}${open.length > 3 ? '…' : ''}`, 'Plan a session for them, or record a demo');

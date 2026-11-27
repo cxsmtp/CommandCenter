@@ -195,13 +195,13 @@ function draftSummary(d) {
   const p = r.progress;
   const s = r.live?.summary;
   const parts = [];
-  if (p.total) parts.push(`${p.met} of ${p.total} success criteria are completed successfully (${p.percent}%)${p.must ? `, including ${p.mustMet} of ${p.must} must-haves` : ''}.`);
+  if (p.total) parts.push(p.met ? `${p.met} of ${p.total} success criteria are completed successfully${p.must ? `, including ${p.mustMet} of ${p.must} must-haves` : ''}.` : `The POV has ${p.total} success criteria${p.must ? ` (${p.must} must-haves)` : ''}; the first results are on their way.`);
   if (s) parts.push(`In the POV tenant, ${s.scans7d} scans ran in the last 7 days across ${s.projects} projects${s.fusion7d ? `, ${s.fusion7d} of them with Fusion` : ''}${(s.origins ?? []).length ? `, from ${s.origins.slice(0, 3).map((x) => x.name).join(', ')}` : ''}.`);
   const done = (o.criteria ?? []).filter((c) => c.status === 'met').slice(0, 4).map((c) => c.title);
   if (done.length) parts.push(`Shown working: ${done.join(', ')}.`);
   const open_ = (o.criteria ?? []).filter((c) => c.priority === 'must' && c.status !== 'met').slice(0, 3).map((c) => c.title);
   if (open_.length) parts.push(`Still to show: ${open_.join(', ')}${r.daysLeft !== null && o.stage === 'pov' ? `, with ${r.daysLeft} days left` : ''}.`);
-  if (r.nextTask) parts.push(`Next: ${r.nextTask.title}${r.nextTask.due ? ` (${day(r.nextTask.due)})` : ''}.`);
+  // (The team's own tasks stay out: this text is for the customer.)
   return parts.join(' ');
 }
 
@@ -865,9 +865,17 @@ const WIRES = {
     on(main, '[data-mail="outlook"]', () => {
       const m = msg();
       const list = (v) => String(v ?? '').split(/[,;]/).map((x) => x.trim()).filter(Boolean).join(';');
-      const q = Object.entries({ to: list(m.to), cc: list(m.cc), subject: m.subject, body: m.body }).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-      const href = `https://outlook.office.com/mail/deeplink/compose?${q}`;
-      if (href.length > 7500) toast('A long email may be cut short on the way to Outlook: Download .eml keeps all of it.');
+      // Microsoft's sign-in refuses long addresses (AADSTS90015), and the address carries the message: a long body goes
+      // on the clipboard instead, to paste into the message Outlook opens.
+      const link = (body) => `https://outlook.office.com/mail/deeplink/compose?${Object.entries({ to: list(m.to), cc: list(m.cc), subject: m.subject, body }).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
+      let href = link(m.body);
+      if (href.length > 1500) {
+        href = link('');
+        navigator.clipboard?.writeText(m.body).then(
+          () => toast('The message is on your clipboard: paste it into the email Outlook opens (Ctrl+V).'),
+          () => toast('The message is too long for the link: use Copy, then paste it into Outlook.', { bad: true }),
+        );
+      }
       if (form.attachDeck?.checked) toast('Attach the deck in Outlook: download it from the Results tab.');
       window.open(href, '_blank', 'noopener');
     });

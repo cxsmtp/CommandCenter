@@ -7,7 +7,7 @@ import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { randomUUID } from 'node:crypto';
 import { fail, text, email as cleanEmail } from './db.js';
-import { STAGES, CRITERION_STATUS, SESSION_TYPES, progressOf } from './opportunities.js';
+import { STAGES, CRITERION_STATUS, SESSION_TYPES, progressOf, statusText, demoText } from './opportunities.js';
 import { CATEGORIES } from './catalog.js';
 
 export const TEMPLATES = {
@@ -44,19 +44,32 @@ export function draft(template, opp, { owner, live, catalog }) {
     }
     return [...groups].map(([k, list]) => `${k}\n${bullet(list.map((c) => `${c.title}${c.priority === 'nice' ? ' (nice to have)' : ''}`))}`).join('\n\n');
   };
-  const statusLines = () => (opp.criteria ?? []).filter((c) => c.status !== 'na').map((c) => `${c.status === 'met' ? '✔' : c.status === 'not_met' ? '✘' : c.status === 'in_progress' ? '◐' : '○'} ${c.title} — ${CRITERION_STATUS[c.status]}`).join('\n');
+  const statusLines = () => (opp.criteria ?? []).filter((c) => c.status !== 'na').map((c) => `${c.status === 'met' ? '✔' : c.status === 'not_met' ? '✘' : c.status === 'in_progress' ? '◐' : '○'} ${c.title} — ${statusText(c)}${demoText(c) && statusText(c) !== demoText(c) ? ` (${demoText(c).replace(/^Demonstrated by the SE /, '')})` : ''}`).join('\n');
   const s = live?.summary;
+  // The check-ins as planned: twice a week, weekly, or as the meetings are.
+  const checkIns = () => {
+    const c = (opp.sessions ?? []).filter((x) => x.type === 'checkpoint').map((x) => x.date).sort();
+    if (c.length < 2) return 'A 30-minute check-in each week';
+    const span = (Date.parse(c.at(-1)) - Date.parse(c[0])) / 86_400_000 || 1;
+    const perWeek = Math.round(((c.length - 1) * 7) / span);
+    return perWeek >= 2 ? 'Two 30-minute check-ins a week' : 'A 30-minute check-in each week';
+  };
   const tenantLine = s ? `\nIn the POV tenant this week: ${s.scans7d} scans (${s.fusion7d ? `${s.fusion7d} with Fusion, ` : ''}${s.failed24h ? `${s.failed24h} failed in the last day, ` : ''}${s.projects} projects), from ${nice(s.origins?.map((o) => o.name)) || 'the web portal'}.` : '';
 
   switch (template) {
-    case 'discovery':
+    case 'discovery': {
+      // The call itself: the first-call or discovery meeting (else the last one already held), never a planned one.
+      const held = [...(opp.sessions ?? [])].filter((x) => x.date && x.date <= new Date().toISOString().slice(0, 10)).sort((a, b) => b.date.localeCompare(a.date));
+      const callDay = d.callDate || held.find((x) => ['first_call', 'discovery'].includes(x.type))?.date || held[0]?.date || '';
+      // Their tools as they named them in the toolchain; the discovery's own picks (by name) when there is none.
+      const tools = (key, picked) => nice(opp.toolchain?.[key]?.tools?.length ? opp.toolchain[key].tools : (picked ?? []).map(capName));
       return {
         to: customerTo,
         cc: internalCc,
         subject: `${opp.customer} × Checkmarx — discovery recap and next steps`,
         body: `Hi ${first},
 
-Thank you for your time${opp.sessions?.length ? ` on ${fmtDate([...opp.sessions].sort((a, b) => b.date.localeCompare(a.date))[0].date)}` : ''}. Here is what we heard, so we can make sure we got it right.
+Thank you for your time${callDay ? ` on ${fmtDate(callDay)}` : ''}. Here is what we heard, so we can make sure we got it right.
 
 What you want to achieve
 ${d.goals || '—'}
@@ -68,7 +81,7 @@ Challenges
 ${d.painPoints || '—'}
 
 Your environment
-${bullet([d.languages && `Languages: ${d.languages}`, d.scm?.length && `Source control: ${nice(d.scm)}`, d.ci?.length && `CI/CD: ${nice(d.ci)}`, d.tracking?.length && `Defect tracking: ${nice(d.tracking)}`, d.ide?.length && `IDEs: ${nice(d.ide)}`, d.teamSize && `Teams: ${d.teamSize}`]) || '  • —'}
+${bullet([(d.languages || opp.toolchain?.languages) && `Languages: ${d.languages || opp.toolchain.languages}`, tools('scm', d.scm) && `Source control: ${tools('scm', d.scm)}`, tools('cicd', d.ci) && `CI/CD: ${tools('cicd', d.ci)}`, tools('feedback', d.tracking) && `Defect tracking: ${tools('feedback', d.tracking)}`, tools('ide', d.ide) && `IDEs: ${tools('ide', d.ide)}`, d.teamSize && `Teams: ${d.teamSize}`]) || '  • —'}
 
 What you would like to see in Checkmarx One
 ${bullet((d.requested ?? []).map(capName)) || '  • —'}
@@ -79,6 +92,7 @@ ${d.nextSteps || bullet(['Agree the success criteria above', 'Schedule the techn
 Please reply with anything we missed or got wrong.
 ${sign}`,
       };
+    }
     case 'kickoff':
       return {
         to: customerTo,
@@ -92,7 +106,7 @@ Success criteria
 ${criteriaByCat() || '  • to be agreed'}
 
 What we need from you
-${bullet(['Access for the people who will take part (we will send the invitations)', 'The repositories and pipelines in scope', 'A 30-minute weekly check-in'])}
+${bullet(['Access for the people who will take part (we will send the invitations)', 'The repositories and pipelines in scope', checkIns()])}
 
 I will send a short status every week, with what has been shown and what is next.
 ${sign}`,

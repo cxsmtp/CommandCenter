@@ -2,6 +2,37 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.95 · 2026-11-27
+
+**QA fixes: no secrets in drafts, readable toasts, wizard goals, counts and checks, demos, team on results**
+
+From the live QA review of 1.0.94:
+- Drafts never keep passwords, API keys, secrets or tokens. Old drafts with
+  them, and other people's drafts, are cleared at sign-in; all at sign-out.
+  A draft goes the moment its form is sent, so Add or Save never refills it.
+- Toasts are readable in the default look (light text on the dark pill).
+- Open in Outlook stays under Microsoft's address limit (AADSTS90015): a long
+  message goes on the clipboard to paste.
+- Meeting dates: a changed date moves the later meetings in place, with no
+  redraw under the typing (the blur error is gone).
+- Business goals: only the goals chosen. A picked engine joins one of them,
+  never adds another.
+- The wizard's Review counts the criteria the goals bring, and agrees with the
+  footer and the POV created.
+- The wizard checks at the field: end before start, links that are not links,
+  incomplete emails, and at least one business goal.
+- A criterion the SE demonstrated says "Demonstrated by the SE", with when,
+  where and who, in emails, the success-criteria report and the deck.
+- Discovery recap: the call's own date (never a future one), and the tools as
+  named in the toolchain. The kick-off matches the check-ins planned, and the
+  AM from the wizard is copied on emails.
+- Results page and success-criteria report list the POV team (AM, SEs). The
+  customer summary leaves out internal tasks and says when it was written.
+  No pace projection in the first three days.
+- An expired tenant licence on a running POV is red ("expired") and a gap.
+- Designer: the template name typed is kept; positions read "Main deck 3 of
+  8" / "Appendix 2 of 6", and the arrows at the divider say they cross it.
+
 ## 1.0.94 · 2026-11-27
 
 **POV emails from the SE's own address: Open in Outlook, and Send through Microsoft 365**

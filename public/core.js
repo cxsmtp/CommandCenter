@@ -119,7 +119,28 @@ export async function api(path, { method = 'GET', body } = {}) {
 // form opens again before it was saved, they are put back.
 const DRAFT_DAY = 86_400_000;
 const draftKey = (f) => `cc.draft.${state.session?.user?.id ?? ''}.${location.hash.split('?')[0]}.${f.id}`;
-const draftable = (el) => el.name && !['password', 'file', 'hidden', 'submit', 'button'].includes(el.type);
+// Never kept: passwords, keys, secrets and tokens (by type, by name, or a form or field marked data-no-draft).
+const SECRET = /pass|secret|token|api.?key|private|credential|(^|_)key$/i;
+const draftable = (el) => el.name && !['password', 'file', 'hidden', 'submit', 'button'].includes(el.type) && !SECRET.test(el.name) && el.dataset?.noDraft == null && el.autocomplete !== 'new-password';
+// Drafts written before secrets were left out, and other people's drafts on this browser, go.
+export function purgeDrafts({ all = false } = {}) {
+  try {
+    const me = state.session?.user?.id ?? '';
+    for (const k of Object.keys(localStorage)) {
+      if (!k.startsWith('cc.draft.')) continue;
+      let bad = all || !me || !k.startsWith(`cc.draft.${me}.`);
+      if (!bad) {
+        try {
+          const d = JSON.parse(localStorage.getItem(k) ?? 'null');
+          bad = !d || Object.keys(d.values ?? {}).some((n) => SECRET.test(n)) || Date.now() - d.at > DRAFT_DAY;
+        } catch {
+          bad = true;
+        }
+      }
+      if (bad) localStorage.removeItem(k);
+    }
+  } catch {}
+}
 let draftTimer;
 document.addEventListener('input', (e) => {
   const f = e.target.closest?.('form[id]');
@@ -133,9 +154,15 @@ document.addEventListener('input', (e) => {
     } catch {}
   }, 400);
 });
+// Sent: the draft is done with, at once (a form that stays on the page must not refill itself after Add or Save).
 document.addEventListener('submit', (e) => {
   const f = e.target;
-  if (f.id) setTimeout(() => !document.contains(f) && localStorage.removeItem(draftKey(f)), 1500);
+  if (!f.id) return;
+  clearTimeout(draftTimer);
+  try {
+    localStorage.removeItem(draftKey(f));
+  } catch {}
+  f.querySelector('.draft-note')?.remove();
 }, true);
 new MutationObserver(() => {
   for (const f of document.querySelectorAll('form[id]:not([data-draft-checked])')) {
@@ -144,7 +171,7 @@ new MutationObserver(() => {
     try {
       d = JSON.parse(localStorage.getItem(draftKey(f)) ?? 'null');
     } catch {}
-    if (!d || Date.now() - d.at > DRAFT_DAY) continue;
+    if (!d || Date.now() - d.at > DRAFT_DAY || f.dataset.noDraft != null) continue;
     let changed = 0;
     for (const el of f.elements) {
       if (!draftable(el) || !(el.name in d.values)) continue;

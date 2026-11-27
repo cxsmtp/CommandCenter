@@ -26,7 +26,7 @@ import { tenantEvidence } from './tenant-evidence.js';
 import { Library } from './library.js';
 import { Users, ROLES, PERMISSIONS, DEFAULT_MATRIX, THEMES } from './users.js';
 import { Catalog, CATEGORIES, tenantFacts, evaluate, provingScans } from './catalog.js';
-import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted } from './opportunities.js';
+import { Opportunities, STAGES, CRITERION_STATUS, SESSION_TYPES, publicOpp, progressOf, wordsOf, isMuted, povTeam, customerText } from './opportunities.js';
 import { Monitor } from './monitor.js';
 import { Mailer, TEMPLATES, draft, cleanMessage, toEml } from './mail.js';
 import { successReport } from './report.js';
@@ -2142,13 +2142,15 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       customer: opp.customer,
       name: opp.name,
       owner: users.get(opp.ownerId),
+      team: povTeam(opp, users.get(opp.ownerId)),
       startDate: opp.startDate,
       endDate: opp.endDate,
       stage: opp.stage,
       povResult: opp.povResult ?? '',
       completedAt: completed?.at ?? opp.outcome?.closedAt ?? null,
       generatedAt: new Date().toISOString(),
-      summary: opp.summary ?? '',
+      summary: customerText(opp.summary),
+      summaryAt: opp.summaryAt ?? null,
       progress: progressOf(opp),
       value: valueFor(raw),
       platform: platformView(opp, catalog),

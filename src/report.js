@@ -4,7 +4,7 @@
  * The layout is a starting point until the team's own report formats are supplied.
  */
 import { CATEGORIES } from './catalog.js';
-import { CRITERION_STATUS, SESSION_TYPES, STAGES, progressOf } from './opportunities.js';
+import { CRITERION_STATUS, SESSION_TYPES, STAGES, progressOf, statusText, demoText, povTeam, customerText } from './opportunities.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
@@ -40,7 +40,7 @@ export function successReport(opp, { owner, live, evidence = {}, org = 'Kendra',
 <header>
   <div class="muted">Checkmarx One proof of value</div>
   <h1>${esc(opp.customer)}</h1>
-  <div class="muted">${esc(opp.name !== opp.customer ? opp.name : '')} ${esc(STAGES[opp.stage])} · ${day(opp.startDate)} – ${day(opp.endDate)} · ${esc(owner?.name ?? '')}${opp.tenant ? ` · tenant ${esc(opp.tenant.tenant)} (${esc(opp.tenant.regionLabel)})` : ''}</div>
+  <div class="muted">${esc(opp.name !== opp.customer ? opp.name : '')} ${esc(STAGES[opp.stage])} · ${day(opp.startDate)} – ${day(opp.endDate)} · ${povTeam(opp, owner).map((p) => `${esc(p.name)}${p.title ? ` (${esc(p.title)})` : ''}`).join(', ')}${opp.tenant ? ` · tenant ${esc(opp.tenant.tenant)} (${esc(opp.tenant.regionLabel)})` : ''}</div>
 </header>
 <div class="bar"><span style="width:${p.percent}%"></span></div>
 <div class="answer">
@@ -49,13 +49,13 @@ export function successReport(opp, { owner, live, evidence = {}, org = 'Kendra',
   <div><b>${p.mustMet} / ${p.must}</b>must-haves met</div>
   <div><b>${p.notMet}</b>not met</div>
 </div>
-${opp.summary ? `<h2>Summary</h2><p>${esc(opp.summary).replace(/\n/g, '<br>')}</p>` : ''}
+${customerText(opp.summary) ? `<h2>Summary</h2><p>${esc(customerText(opp.summary)).replace(/\n/g, '<br>')}${opp.summaryAt ? ` <span class="muted">(written ${day(opp.summaryAt)})</span>` : ''}</p>` : ''}
 <h2>Success criteria</h2>
 ${[...groups]
   .map(([k, list]) => `<h3>${esc(k)}</h3><table><thead><tr><th style="width:42%">Criterion</th><th style="text-align:center">Status</th><th>Evidence and notes</th></tr></thead><tbody>${list
     .map((c) => {
       const ev = evidence[c.id];
-      return `<tr><td>${esc(c.title)}${c.priority === 'nice' ? ' <span class="muted">(nice to have)</span>' : ''}</td><td class="st" style="color:${COLOR[c.status]}">${esc(CRITERION_STATUS[c.status])}${c.confirmedAt ? `<div class="ev">${day(c.confirmedAt)}</div>` : ''}</td><td>${esc(c.notes)}${ev?.evidence?.length ? `<div class="ev">${ev.evidence.map(esc).join('<br>')}</div>` : ''}${c.evidenceLink ? `<div class="ev"><a href="${esc(c.evidenceLink)}">${esc(c.evidenceLink)}</a></div>` : ''}</td></tr>`;
+      return `<tr><td>${esc(c.title)}${c.priority === 'nice' ? ' <span class="muted">(nice to have)</span>' : ''}</td><td class="st" style="color:${COLOR[c.status]}">${esc(statusText(c))}${c.confirmedAt ? `<div class="ev">${day(c.confirmedAt)}</div>` : ''}</td><td>${demoText(c) ? `<div>${esc(demoText(c))}</div>` : ''}${esc(c.notes)}${ev?.evidence?.length ? `<div class="ev">${ev.evidence.map(esc).join('<br>')}</div>` : ''}${c.evidenceLink ? `<div class="ev"><a href="${esc(c.evidenceLink)}">${esc(c.evidenceLink)}</a></div>` : ''}</td></tr>`;
     })
     .join('')}</tbody></table>`)
   .join('')}

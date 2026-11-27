@@ -162,7 +162,7 @@
 [data-look="orbit"] .dialog { background: rgba(10, 14, 28, 0.92); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); border-color: rgba(92, 225, 255, 0.2); border-radius: 18px; }
 [data-look="orbit"][data-theme="light"] .dialog { background: rgba(255, 255, 255, 0.96); }
 [data-look="orbit"] .dialog::backdrop { background: rgba(2, 4, 10, 0.65); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
-[data-look="orbit"] .toast { background: rgba(10, 14, 28, 0.95); color: var(--ink); border: 1px solid rgba(92, 225, 255, 0.3); border-radius: 12px; }
+[data-look="orbit"] .toast { background: rgba(10, 14, 28, 0.95); color: #f2f5ff; border: 1px solid rgba(92, 225, 255, 0.3); border-radius: 12px; }
 
 /* Sign-in: the launch pad */
 [data-look="orbit"] .login .panel { border-radius: 22px; padding: 36px; background: rgba(10, 14, 28, 0.6); border: 1px solid rgba(92, 225, 255, 0.18); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: 0 30px 80px -40px var(--accent); }
