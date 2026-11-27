@@ -2,6 +2,26 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.96 · 2026-11-27
+
+**QA fixes: Save button for mail/SSO/sign-in, day counts, gzip, smaller things**
+
+From the live QA review of 1.0.94:
+- Email server, own-mailbox sending, Single sign-on and Sign-in settings
+  wait for Save: a stray keystroke no longer changes live mail or sign-in.
+  (General and Branding still save as you type.)
+- Days left, days late, tenant days and close dates count calendar days
+  (27 Nov to 18 Dec is 21, whatever the hour), so "within 7 days" is right.
+- Static files are compressed and revalidated (ETag): faster pages.
+- Downloads say "Preparing the file…" and "Downloaded".
+- Portfolio: "x of all shown", with Show everything.
+- Pace: no "On pace: on pace" repeat; no frozen "Next read 0:00".
+- Results page: held sessions, then "Still planned"; no stray ×.
+- #/opp/<id>/results opens the Results tab.
+- Get help warns when no address receives the requests.
+- Add AM / Add SE lists real people, not admin or .local accounts.
+- The edit wizard points to Notes & tasks → Sessions for meetings.
+
 ## 1.0.95 · 2026-11-27
 
 **QA fixes: no secrets in drafts, readable toasts, wizard goals, counts and checks, demos, team on results**

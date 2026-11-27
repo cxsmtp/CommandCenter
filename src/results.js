@@ -182,7 +182,12 @@ export function resultsPage(data, { nonce = '' } = {}) {
           <div><div class="kick" style="position:static">Next on the platform</div><ul class="next-list">${x.next.slice(0, 6).map((n) => `<li><b>${esc(n.name)}</b>${n.isNew ? ' <span class="new">New</span>' : ''}<span class="m small">${esc(n.group)}${n.goal ? ` · ${esc(n.goal)}` : ''}</span>${n.benefit ? `<span class="small">${esc(n.benefit)}</span>` : ''}</li>`).join('')}</ul></div></div>`,
       )
     : '';
-  const slide5 = d.sessions.length ? slide('Sessions', 'How we got here', `<table class="tbl"><tbody>${d.sessions.map((x) => `<tr><td class="m" style="width:22%">${day(x.date)}</td><td>${esc(x.title)}</td><td class="m">${esc(x.type)}</td></tr>`).join('')}</tbody></table>`) : '';
+  // What already happened, then what is still planned (a running POV has both).
+  const today = new Date().toISOString().slice(0, 10);
+  const rowsOf = (list) => list.map((x) => `<tr><td class="m" style="width:22%">${day(x.date)}</td><td>${esc(x.title)}</td><td class="m">${esc(x.type)}</td></tr>`).join('');
+  const held = d.sessions.filter((x) => String(x.date).slice(0, 10) <= today);
+  const planned = d.sessions.filter((x) => String(x.date).slice(0, 10) > today);
+  const slide5 = d.sessions.length ? slide('Sessions', 'How we got here', `${held.length ? `<table class="tbl"><tbody>${rowsOf(held)}</tbody></table>` : ''}${planned.length ? `<p class="m" style="margin:14px 0 6px">Still planned</p><table class="tbl"><tbody>${rowsOf(planned)}</tbody></table>` : ''}`) : '';
   const slide6 = slide('From here', 'Next steps', `<ul class="steps">${(d.next.length ? d.next : ['Agree the rollout plan and the first teams', 'Confirm the commercial proposal', 'Schedule the onboarding']).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`);
 
   // ——— One page per engine, for the PDF ———
@@ -350,6 +355,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 80px; display: flex
 .steps { margin: 0; padding-left: 1.2em; font-size: ${u(22)}; } .steps li { margin-bottom: ${u(14)}; } .steps li::marker { color: var(--orange); }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: #170c26; border-left: 1px solid #6b34fd; transform: translateX(100%); transition: transform 0.25s ease; z-index: 20; overflow-y: auto; padding: 28px 28px 40px; box-shadow: -20px 0 60px #000a; }
 .drawer.open { transform: none; }
+.drawer:not(.open) { visibility: hidden; }
 .drawer h2 { margin: 0 32px 10px 0; font-weight: 400; font-size: 26px; }
 .drawer .x { position: absolute; top: 14px; right: 16px; background: none; border: 0; color: var(--dim); font-size: 28px; cursor: pointer; }
 .scrim { position: fixed; inset: 0; background: #0008; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 15; }

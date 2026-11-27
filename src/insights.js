@@ -9,6 +9,9 @@
  */
 import { progressOf } from './opportunities.js';
 
+// Whole calendar days from today (UTC) to a date: 27 Nov → 18 Dec is 21, whatever the hour.
+const daysTo = (date, now = Date.now()) => Math.round((Date.parse(`${String(date).slice(0, 10)}T00:00:00Z`) - Date.parse(`${new Date(now).toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000);
+
 const DAY = 86_400_000;
 const clamp = (v) => Math.max(0, Math.min(100, Math.round(v)));
 
@@ -34,7 +37,7 @@ export function predict(opp, row, { now = Date.now() } = {}) {
   if (!p.total) add(-20, 'No success criteria agreed');
   else {
     if (f?.state === 'done') add(30, 'Every criterion completed');
-    else if (f?.state === 'on-track') add(20, `On pace: ${f.label.toLowerCase()}`);
+    else if (f?.state === 'on-track') add(20, f.label);
     else if (f?.state === 'at-risk') add(-10, f.label);
     else if (f?.state === 'no-pace') add(-12, f.label);
     else if (f?.state === 'late') add(-25, f.label);
@@ -313,7 +316,7 @@ export function insightsMore(rows, { oppOf, catalog, history = {}, now = Date.no
     .map((r) => ({ r, close: r.closeDate || r.sf?.closeDate || '' }))
     .filter(({ r, close }) => close && !['won', 'lost'].includes(r.stage) && !/closed/i.test(r.sf?.stage ?? '') && Date.parse(`${close}T23:59:59Z`) >= now && Date.parse(`${close}T23:59:59Z`) - now <= 30 * DAY)
     .sort((a, b) => a.close.localeCompare(b.close))
-    .map(({ r, close }) => ({ id: r.id, customer: r.customer, owner: r.owner.name, closeDate: close, daysToClose: Math.ceil((Date.parse(`${close}T23:59:59Z`) - now) / DAY), endDate: r.endDate, povAfterClose: Boolean(r.stage === 'pov' && r.endDate && close < r.endDate), score: r.prediction?.score ?? null, amount: amount(r) }));
+    .map(({ r, close }) => ({ id: r.id, customer: r.customer, owner: r.owner.name, closeDate: close, daysToClose: daysTo(close, now), endDate: r.endDate, povAfterClose: Boolean(r.stage === 'pov' && r.endDate && close < r.endDate), score: r.prediction?.score ?? null, amount: amount(r) }));
 
   // What moved: the totals now against a week ago, the last 30 days, and the POVs that moved most.
   const ids = new Set(live.map((r) => r.id));

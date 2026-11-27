@@ -195,7 +195,14 @@ new MutationObserver(() => {
 
 /** POST that returns a file: saved through a temporary link. */
 export async function download(path, body, fallbackName = 'download') {
-  const res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'X-Requested-With': 'Kendra', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  // A deck takes a few seconds to make: say so, then say it is done.
+  const slow = setTimeout(() => toast('Preparing the file…'), 600);
+  let res;
+  try {
+    res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'X-Requested-With': 'Kendra', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  } finally {
+    clearTimeout(slow);
+  }
   if (!res.ok) throw new ApiError((await res.json().catch(() => ({}))).error || `${res.status} ${res.statusText}`);
   const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
   const url = URL.createObjectURL(await res.blob());
@@ -204,6 +211,7 @@ export async function download(path, body, fallbackName = 'download') {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast(`Downloaded: ${decodeURIComponent(name)}`);
 }
 
 export function ago(iso) {

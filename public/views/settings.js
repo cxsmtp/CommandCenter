@@ -58,7 +58,7 @@ const META = {
   help: ['a support case or an idea, to the team that runs Kendra', true],
 };
 /** A settings form that saves as it is changed (after a pause while typing), as in the FTR command center. */
-export function autosave(form, save, status, { delay = 700 } = {}) {
+export function autosave(form, save, status, { delay = 700, manual = false } = {}) {
   let timer = null;
   const say = (t, bad = false) => {
     if (!status) return;
@@ -76,6 +76,24 @@ export function autosave(form, save, status, { delay = 700 } = {}) {
     }
   };
   form.addEventListener('submit', (e) => (e.preventDefault(), run()));
+  // Settings that change how people sign in or how mail goes out wait for Save: a stray keystroke changes nothing.
+  if (manual) {
+    const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'btn primary sm', textContent: 'Save', disabled: true });
+    btn.style.marginLeft = '10px';
+    status?.after(btn);
+    const dirty = () => {
+      btn.disabled = false;
+      say('Not saved yet: press Save.');
+    };
+    form.addEventListener('input', dirty);
+    form.addEventListener('change', dirty);
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      await run();
+      if (status?.classList.contains('bad')) btn.disabled = false;
+    });
+    return { run };
+  }
   form.addEventListener('input', (e) => {
     if (['checkbox', 'radio', 'select-one', 'file'].includes(e.target.type)) return;
     clearTimeout(timer);
@@ -85,6 +103,7 @@ export function autosave(form, save, status, { delay = 700 } = {}) {
   return { run };
 }
 export const SAVES = '<div class="st-banner">✓ Changes save as you type.</div>';
+export const SAVE_BUTTON = '<div class="st-banner">Changes take effect when you press Save.</div>';
 
 export async function renderSettings(main, tab, { crumbs, applyLook }) {
   crumbs('<h2 style="font-size:16px">Settings</h2>');
@@ -179,7 +198,7 @@ async function branding(body, data, applyLook) {
 // ——— Email (SMTP) ———
 function email(body, data) {
   const s = data.smtp;
-  body.innerHTML = `${SAVES}<section class="panel st-panel"><div class="st-ph"><h2>Email server (SMTP)</h2><span class="st-aside"><span class="status ${s.host ? 'on' : 'off'}"><i></i>${s.host ? 'Set up' : 'Not set up'}</span></span></div>
+  body.innerHTML = `${SAVE_BUTTON}<section class="panel st-panel"><div class="st-ph"><h2>Email server (SMTP)</h2><span class="st-aside"><span class="status ${s.host ? 'on' : 'off'}"><i></i>${s.host ? 'Set up' : 'Not set up'}</span></span></div>
     <p class="st-note">Kendra sends the SEs’ emails through this account, with the SE as Reply-To, and the “Forgot your password?”, joining and Get help emails. Saved as you type and tested with the mail server at once; settings that fail give way to the last ones that worked. The password is kept encrypted and never shown again.</p>
     <form id="smtpForm" class="st-form">
       <div class="st-cols2"><label class="field">Mail server<input name="host" value="${esc(s.host)}" placeholder="smtp.office365.com"></label><label class="field">Port<input type="number" name="port" value="${esc(s.port)}"></label></div>
@@ -196,7 +215,7 @@ function email(body, data) {
     if (r.restored) throw new Error(`These settings did not work (${r.error}); the last working ones were put back.`);
     if (r.verified === false && r.error) throw new Error(`Saved, but the email server did not accept them: ${r.error}.`);
     f.pass.value = '';
-  }, $('#smtpSaved', body), { delay: 1200 });
+  }, $('#smtpSaved', body), { manual: true });
   $('#smtpTest', body).addEventListener('click', async () => {
     const r = await attempt(() => api('/settings/smtp/test', { method: 'POST', body: {} }));
     if (r) toast(`Test email sent to ${r.to}`);
@@ -220,7 +239,7 @@ async function ownMailPanel(body) {
     <div class="st-form row center" style="padding-top:0"><button type="button" class="btn" id="ownMailTest">Send me a test from my mailbox</button></div>
     <div class="st-foot" id="ownMailSaved">Saved as you change it.</div>`;
   body.append(box);
-  autosave($('#ownMailForm', box), async (f) => api('/settings/mail-own', { method: 'PUT', body: { enabled: f.enabled.checked, domains: f.domains.value } }), $('#ownMailSaved', box));
+  autosave($('#ownMailForm', box), async (f) => api('/settings/mail-own', { method: 'PUT', body: { enabled: f.enabled.checked, domains: f.domains.value } }), $('#ownMailSaved', box), { manual: true });
   $('#ownMailTest', box).addEventListener('click', async () => {
     const r = await attempt(() => api('/settings/mail-own/test', { method: 'POST', body: {} }));
     if (r) toast(`Sent from your mailbox to ${r.to}`);
@@ -252,12 +271,12 @@ async function security(body) {
   autosave($('#joinForm', body), async (f) => {
     const b = formData(f);
     await api('/settings/signin', { method: 'PUT', body: { joinEnabled: b.joinEnabled, domains: b.domains } });
-  }, $('#joinSaved', body));
-  autosave($('#resetForm', body), async (f) => api('/settings/signin', { method: 'PUT', body: { reset: f.reset.value } }), $('#resetSaved', body));
+  }, $('#joinSaved', body), { manual: true });
+  autosave($('#resetForm', body), async (f) => api('/settings/signin', { method: 'PUT', body: { reset: f.reset.value } }), $('#resetSaved', body), { manual: true });
   autosave($('#secForm', body), async (f) => {
     const b = formData(f);
     await api('/settings/security', { method: 'PUT', body: { sessionHours: Number(b.sessionHours), maxAttempts: Number(b.maxAttempts) } });
-  }, $('#secSaved', body));
+  }, $('#secSaved', body), { manual: true });
 }
 
 // ——— Get help: a support case or an enhancement request (everyone); where they go (Admins) ———
@@ -272,7 +291,7 @@ async function helpPage(body) {
         <label class="field">Details<textarea name="details" rows="6" required placeholder="What you did, what you expected, what happened (and which POV)"></textarea></label>
         <div><button class="btn primary">Send</button></div></form></section>
     ${admin ? `<section class="panel st-panel"><div class="st-ph"><h2>Where requests go</h2><span class="st-aside">Admins only</span></div><form id="helpTo" class="st-form">
-      <label class="field">Send requests to<input type="email" name="email" value="${esc(d.email ?? '')}" placeholder="support@company.com"></label>
+      <label class="field">Send requests to<input type="email" name="email" value="${esc(d.email ?? '')}" placeholder="support@company.com"></label>${d.email ? '' : '<div class="st-warn">No address yet: help requests are not emailed to anyone. Add the address of whoever looks after Kendra.</div>'}
       <p class="small muted" style="margin:0">Each request is emailed here through the email server (Settings → Email); replying answers the person who asked. Until the email server is set up, requests are kept here.</p></form><div class="st-foot" id="helpSaved">All changes are saved.</div></section>` : ''}</div>
     <section class="panel st-panel"><div class="st-ph"><h2>${admin ? 'Requests' : 'Your requests'}</h2><span class="st-aside">${d.requests.length}</span></div>
       <ul class="feed">${d.requests.map((r) => `<li><span class="icon">${r.kind === 'idea' ? '✦' : '!'}</span><div><div class="t">${esc(r.subject)}</div><div class="m">${admin ? `${esc(r.byName)} · ` : ''}${r.kind === 'idea' ? 'Enhancement' : 'Support case'} · ${r.mailed ? 'emailed' : r.error ? `<span class="warn-t">${esc(r.error)}</span>` : 'kept here'}</div></div><span class="when">${ago(r.at)}</span></li>`).join('') || '<li class="empty" style="display:block">Nothing yet.</li>'}</ul></section></div>`;
@@ -505,7 +524,7 @@ async function linkedPage(body) {
 async function ssoPage(body) {
   const x = await api('/settings/sso');
   const chip = x.ready ? '<span class="status on"><i></i>On</span>' : x.enabled ? '<span class="status warn"><i></i>On, but CC_PUBLIC_URL is missing</span>' : '<span class="status off"><i></i>Off</span>';
-  body.innerHTML = `${SAVES}<div class="grid2">
+  body.innerHTML = `${SAVE_BUTTON}<div class="grid2">
     <section class="panel st-panel"><div class="st-ph"><h2>Identity provider (SAML 2.0)</h2><span class="st-aside">${chip}</span></div>
       <form id="ssoForm" class="st-form">
         <label class="field">Sign-in URL of the identity provider (SSO URL)<input name="entryPoint" value="${esc(x.entryPoint)}" placeholder="https://login.microsoftonline.com/<tenant>/saml2"></label>
@@ -530,7 +549,7 @@ async function ssoPage(body) {
     if (String(fd.get('idpCert') ?? '').trim()) b.idpCert = fd.get('idpCert');
     await api('/settings/sso', { method: 'PUT', body: b });
     f.idpCert.value = '';
-  }, $('#ssoSaved', body), { delay: 1000 });
+  }, $('#ssoSaved', body), { manual: true });
 }
 
 // ——— HTTPS: how the server is reached and the certificate it presents (as in the FTR command center) ———

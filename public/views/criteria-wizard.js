@@ -212,7 +212,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const p = planNow();
       const types = state.meta?.sessionTypes ?? {};
       return `<p class="muted wz-lead">${edit ? 'The plan the customer sees in the WIP deck.' : 'The plan the customer sees in the WIP deck. Meetings are proposed from the POV dates: change, add or remove them. Each shows as Completed once its date has passed.'}</p>
-        ${edit ? '<p class="small muted" style="margin:0">The meetings are on the POV’s Meetings tab.</p>' : `<div class="field">Meetings${p.meetings.map((m, i) => `<div class="call-person" style="grid-template-columns:1.2fr 1fr 1.6fr auto">
+        ${edit ? '<p class="small muted" style="margin:0">The meetings are under Notes &amp; tasks → Sessions on the POV page.</p>' : `<div class="field">Meetings${p.meetings.map((m, i) => `<div class="call-person" style="grid-template-columns:1.2fr 1fr 1.6fr auto">
           <select name="m_type_${i}" aria-label="Kind">${Object.entries(types).map(([k, l]) => `<option value="${k}" ${m.type === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
           <input type="date" name="m_date_${i}" value="${esc(m.date)}" aria-label="Date">
           <input name="m_title_${i}" value="${esc(m.title)}" placeholder="Title" aria-label="Title">

@@ -17,7 +17,7 @@ const TABS = [
   ['report', 'Results'],
 ];
 // Where the tabs that were folded into others now live.
-const MOVED = { discovery: 'email', sessions: 'notes', history: 'report' };
+const MOVED = { results: 'report', discovery: 'email', sessions: 'notes', history: 'report' };
 let current = null; // the detail last read
 let catalog = null;
 
@@ -1234,7 +1234,9 @@ function addFromTenant(d) {
 async function addTeamMember(kind) {
   await reloadPeople().catch(() => {});
   const role = kind === 'am' ? 'Account manager' : 'Solution engineer';
-  const users = (state.users ?? []).filter((u) => u.active !== false && u.id !== current.opportunity.ownerId);
+  // Real people only: not shared or system accounts (admin, admin1, …@….local).
+  const system = (u) => /^admin\d*$/i.test(String(u.name ?? '').trim()) || /^administrator$/i.test(String(u.name ?? '').trim()) || /\.local$/i.test(String(u.email ?? ''));
+  const users = (state.users ?? []).filter((u) => u.active !== false && u.id !== current.opportunity.ownerId && !system(u));
   const v = await dialogForm(
     kind === 'am' ? 'teamAmForm' : 'teamSeForm',
     kind === 'am' ? 'Add the account manager' : 'Add a solution engineer',

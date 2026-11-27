@@ -192,9 +192,11 @@ function refreshNote() {
   if (!el || !state.overview) return;
   const rows = state.overview.rows ?? [];
   if (rows.some((x) => x.live?.refreshing)) return (el.textContent = 'Reading Checkmarx One…');
-  const next = rows.map((x) => Date.parse(x.live?.nextAt ?? '')).filter(Boolean);
+  const next = rows.filter((x) => x.tenant).map((x) => Date.parse(x.live?.nextAt ?? '')).filter(Boolean);
   if (!next.length) return (el.textContent = `Tenants read every ${state.overview.intervalMinutes} min`);
   const s = Math.max(0, Math.round((Math.min(...next) - Date.now()) / 1000));
+  // A read already due (or a POV with no tenant to read) shows no frozen 0:00.
+  if (!s) return (el.textContent = `Tenants read every ${state.overview.intervalMinutes} min`);
   el.textContent = `Next read ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · every ${state.overview.intervalMinutes} min`;
 }
 setInterval(refreshNote, 1000);

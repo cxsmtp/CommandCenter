@@ -57,6 +57,9 @@ import { CxClient } from './cxone/client.js';
 import { deriveConnection, publicConnection, scrubText } from './cxone/endpoints.js';
 import { tenantColours } from '../public/tenant-colour.js';
 
+// Whole calendar days from today (UTC) to a date: 27 Nov → 18 Dec is 21, whatever the hour.
+const daysTo = (date, now = Date.now()) => Math.round((Date.parse(`${String(date).slice(0, 10)}T00:00:00Z`) - Date.parse(`${new Date(now).toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000);
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const STARTED_AT = new Date().toISOString();
@@ -88,6 +91,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const opps = new Opportunities(db, { users, catalog, bank });
   const mailer = new Mailer(db);
   const PREVIEWS = path.join(dataDir, 'previews');
+  const staticCache = new Map();
   const links = new Links(db);
   // Single sign-on with SAML 2.0 (src/sso.js, as in the FTR command center).
   const sso = new Sso({ settings: () => db.read('settings', {}).sso, publicUrl: String(process.env.CC_PUBLIC_URL || '') });
@@ -394,7 +398,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       else if (left <= 14) add('warn', `The API key expires in ${left} day${left === 1 ? '' : 's'}`);
     }
     if (pov && opp.endDate) {
-      const left = Math.ceil((Date.parse(`${opp.endDate}T23:59:59Z`) - now) / DAY);
+      const left = daysTo(opp.endDate, now);
       const p = progressOf(opp);
       if (left < 0) add('bad', `POV end date passed ${-left} day${left === -1 ? '' : 's'} ago`);
       else if (left <= 7 && p.percent < 100) add('warn', `${left} day${left === 1 ? '' : 's'} left with ${p.total - p.met} criteria to go`);
@@ -448,7 +452,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       managers: users.chain(opp.ownerId).map((m) => ({ id: m.id, name: m.name })),
       startDate: opp.startDate,
       endDate: opp.endDate,
-      daysLeft: opp.endDate ? Math.ceil((Date.parse(`${opp.endDate}T23:59:59Z`) - now) / DAY) : null,
+      daysLeft: opp.endDate ? daysTo(opp.endDate, now) : null,
       // The Salesforce close date: from the latest report, else as the SE typed it.
       closeDate: opp.salesforce?.closeDate || opp.closeDate || '',
       closeFrom: opp.salesforce?.closeDate ? 'report' : opp.closeDate ? 'typed' : '',
@@ -2270,18 +2274,34 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
     let target = path.normalize(path.join(PUBLIC, decodeURIComponent(url.pathname)));
     if (!target.startsWith(PUBLIC)) return send(res, 404, { error: 'Not found.' });
     if (url.pathname === '/' || !path.extname(target)) target = path.join(PUBLIC, 'index.html');
-    fs.readFile(target, (error, data) => {
-      if (error) return send(res, 404, { error: 'Not found.' });
-      res.writeHead(200, {
-        'Content-Type': TYPES[path.extname(target)] ?? 'application/octet-stream',
-        'Cache-Control': 'no-cache',
-        'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
-        'X-Content-Type-Options': 'nosniff',
-        'Referrer-Policy': 'no-referrer',
-        'X-Frame-Options': 'DENY',
-      });
-      res.end(data);
-    });
+    // Each file once from disk (again when it changes), compressed once, and not sent at all when the browser has it.
+    let st;
+    try {
+      st = fs.statSync(target);
+    } catch {
+      return send(res, 404, { error: 'Not found.' });
+    }
+    let hit = staticCache.get(target);
+    if (!hit || hit.mtime !== st.mtimeMs || hit.size !== st.size) {
+      const raw = fs.readFileSync(target);
+      const textual = /\.(html|js|css|svg|json)$/.test(target);
+      hit = { mtime: st.mtimeMs, size: st.size, raw, gz: textual && raw.length > 1024 ? gzipSync(raw, { level: 6 }) : null, etag: `"${createHash('sha1').update(raw).digest('base64url').slice(0, 20)}"` };
+      staticCache.set(target, hit);
+    }
+    const common = {
+      'Content-Type': TYPES[path.extname(target)] ?? 'application/octet-stream',
+      'Cache-Control': 'no-cache',
+      ETag: hit.etag,
+      Vary: 'Accept-Encoding',
+      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+      'X-Frame-Options': 'DENY',
+    };
+    if (req.headers['if-none-match'] === hit.etag) return void res.writeHead(304, common).end();
+    const gz = hit.gz && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+    res.writeHead(200, { ...common, ...(gz ? { 'Content-Encoding': 'gzip' } : {}) });
+    return void res.end(gz ? hit.gz : hit.raw);
   }
 
   // ——— Single sign-on (SAML 2.0): the identity provider signs people in ———

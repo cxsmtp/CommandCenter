@@ -2,6 +2,9 @@
 // Three numbers to narrow it, a search, and the rest of the filters in one sheet.
 import { esc, api, state, local, openDialog, closeDialog, download, attempt, ago, when, day, KIND, scanTypeBadge, stageBadge, daysBadge, peopleOptions, can } from '../core.js';
 
+// Whole calendar days from today (UTC) to a date: 27 Nov → 18 Dec is 21, whatever the hour.
+const daysTo = (date, now = Date.now()) => Math.round((Date.parse(`${String(date).slice(0, 10)}T00:00:00Z`) - Date.parse(`${new Date(now).toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000);
+
 const lastSeen = local.get('cc.lastSeen', 0);
 const markSeen = () => local.set('cc.lastSeen', Date.now());
 document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && markSeen());
@@ -56,7 +59,7 @@ export async function renderDashboard(main, { crumbs, open = '' }) {
       <button class="btn ghost" data-act="tools" aria-label="More actions">•••</button>
     </div>
     ${filters.length ? `<div class="chips">${filters.map(([k, label]) => `<button class="chip-x" data-clear="${k}" aria-label="Remove filter ${esc(label)}">${esc(label)}</button>`).join('')}</div>` : ''}
-    ${table ? tableHtml(all) : `<div class="list-scroll">${open_.length ? groupedRows(open_) : `<div class="panel empty-line" style="padding:16px">${ui.focus || filters.length || q ? 'Nothing matches. <button class="btn sm" data-act="reset">Show everything</button>' : 'No open opportunity.'}</div>`}
+    ${table ? tableHtml(all, o.rows.length) : `<div class="list-scroll">${open_.length ? groupedRows(open_) : `<div class="panel empty-line" style="padding:16px">${ui.focus || filters.length || q ? 'Nothing matches. <button class="btn sm" data-act="reset">Show everything</button>' : 'No open opportunity.'}</div>`}
     ${closed.length ? `<details class="closed-fold" ${ui.showClosed ? 'open' : ''}><summary>Won and lost <span class="muted">(${closed.length})</span></summary>${rowsHtml(closed)}</details>` : ''}</div>`}`;
   wire(main, { owner, regions });
   if (table) wireTable(main, all);
@@ -138,7 +141,7 @@ const n0 = (v) => (v === null || v === undefined || v === '' ? null : Number(v))
 /** The Salesforce close date: days to go, amber when the POV ends after it, grey when typed rather than from a report. */
 function closeCell(r) {
   if (!r.closeDate) return '—';
-  const left = Math.ceil((Date.parse(`${r.closeDate}T23:59:59Z`) - Date.now()) / 86400000);
+  const left = daysTo(r.closeDate, Date.now());
   const open = !['won', 'lost'].includes(r.stage) && !/closed/i.test(r.sf?.stage ?? '');
   const late = open && r.stage === 'pov' && r.endDate && r.closeDate < r.endDate;
   const title = `${r.closeFrom === 'report' ? 'From the Salesforce report' : 'Typed on the POV'}${late ? ': the POV ends after the deal closes' : ''}`;
@@ -147,7 +150,7 @@ function closeCell(r) {
 /** The tenant's licence end, with the days left: amber within 14 days, ended in grey. */
 function tenantEnd(end, povEnd) {
   if (!end) return '—';
-  const left = Math.ceil((Date.parse(`${end}T23:59:59Z`) - Date.now()) / 86400000);
+  const left = daysTo(end, Date.now());
   const early = left >= 0 && povEnd && end < String(povEnd).slice(0, 10);
   // Ended while the POV still runs: nothing can be scanned, so it is red.
   const expired = left < 0 && povEnd && String(povEnd).slice(0, 10) >= new Date().toISOString().slice(0, 10);
@@ -226,14 +229,14 @@ function tableRows(rows) {
   }
   return out;
 }
-function tableHtml(rows) {
+function tableHtml(rows, everything = rows.length) {
   const cols = shownCols();
   const f = ui.colFilter ?? {};
   const list = tableRows(rows);
   const opts = (c) => [...new Set(rows.map((r) => String(c.v(r) ?? '')).filter(Boolean))].sort();
   const arrow = (c) => (ui.sort?.key === c.key ? (ui.sort.dir === 'desc' ? ' ▼' : ' ▲') : '');
   const any = Object.values(f).some(Boolean);
-  return `<div class="panel ptable-wrap"><div class="ptable-meta small muted">${list.length} of ${rows.length} shown${any ? ' · <button class="btn sm ghost" data-act="clear-cols">Clear column filters</button>' : ''}<span class="spacer"></span>Filters take text, a choice, or a number like &gt;5, &lt;10, =0</div>
+  return `<div class="panel ptable-wrap"><div class="ptable-meta small muted">${list.length} of ${everything} shown${list.length < everything ? ' · <button class="btn sm ghost" data-act="reset">Show everything</button>' : ''}${any ? ' · <button class="btn sm ghost" data-act="clear-cols">Clear column filters</button>' : ''}<span class="spacer"></span>Filters take text, a choice, or a number like &gt;5, &lt;10, =0</div>
     <div class="ptable-scroll"><table class="ptable"><thead><tr>${cols.map((c) => `<th class="${c.num ? 'n' : ''}"><button type="button" data-sort="${c.key}" aria-label="Sort by ${esc(c.label)}">${esc(c.label)}${arrow(c)}</button></th>`).join('')}</tr>
       <tr class="frow">${cols.map((c) => `<th>${c.filter === 'select' ? `<select data-cf="${c.key}" aria-label="Filter ${esc(c.label)}"><option value="">All</option>${opts(c).map((o) => `<option ${f[c.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : `<input data-cf="${c.key}" value="${esc(f[c.key] ?? '')}" placeholder="${c.filter === 'num' ? '>0' : 'Filter'}" aria-label="Filter ${esc(c.label)}">`}</th>`).join('')}</tr></thead>
       <tbody>${list.map((r) => `<tr data-row="${esc(r.id)}" class="${ui.open === r.id ? 'selected' : ''}" tabindex="0">${cols.map((c) => `<td class="${c.num ? 'n' : ''}" title="${esc(String(c.v(r) ?? ''))}">${c.html ? c.html(r) : esc(c.v(r) ?? '—') || '—'}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">Nothing matches these filters.</td></tr>`}</tbody></table></div></div>`;
