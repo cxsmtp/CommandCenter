@@ -2,6 +2,22 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.92 · 2026-11-27
+
+**Opportunity wizard: every section any time; meetings from today, twice a week**
+
+- Edit on a POV opens the wizard with everything filled in: the opportunity,
+  business goals, toolchain, POV plan & APMA, templates, engines, integrations.
+  Any step can be opened from the top, and Save works from any step.
+  Criteria already there can change priority or be taken out; Review lists
+  what will be removed, with completed ones marked. (Edit details is in •••.)
+- New POV meetings start on the start date (today by default) with check-ins
+  twice a week until the end date, then the wrap-up. A pre-POV call only when
+  it is not in the past.
+- Changing a meeting's date moves every meeting after it by the same days.
+  Changing the POV dates re-plans meetings not yet edited, and moves edited
+  ones with the start.
+
 ## 1.0.91 · 2026-11-26
 
 **Presentation templates: Kendra standard and Classic built in; Chakra and Version Kendra go**

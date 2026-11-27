@@ -17,20 +17,27 @@ export async function getTemplates(force = false) {
 
 /**
  * @param {object} o
- * @param {'new'|'add'|'template'} o.mode
- * @param {object} [o.opp]       the opportunity (mode add)
+ * @param {'new'|'add'|'edit'|'template'} o.mode   edit: every section of an opportunity, any time, in any order
+ * @param {object} [o.opp]       the opportunity (modes add and edit)
+ * @param {string} [o.section]   edit: the section to open on (details, goals, tools, plan, templates, engines, integrations, review)
  * @param {object} [o.template]  the template to change, or to copy (mode template; copy when `copy`)
  * @returns {Promise<string|null>} the new opportunity's id (mode new), 'ok', or null when cancelled
  */
 const TC = () => state.meta?.toolchain ?? [];
 
-export async function criteriaWizard({ mode, opp = null, template = null, copy = false }) {
+export async function criteriaWizard({ mode, opp = null, template = null, copy = false, section = '' }) {
+  const edit = mode === 'edit';
   const [cat, tpls, bankInfo, lib] = await Promise.all([getCatalog(), getTemplates(true), api('/bank'), api('/library').catch(() => ({ values: [] }))]);
   const goalsAll = bankInfo.goals;
   const goalEntries = (key) => bankInfo.entries.filter((e) => e.goal === key);
   if (mode === 'new') await reloadPeople();
   const caps = new Map(cat.catalog.map((c) => [c.id, c]));
-  const have = new Set((opp?.criteria ?? []).map((c) => c.capabilityId).filter(Boolean));
+  // Editing: the criteria already there are chosen like new ones (their priority can change, or they can go); adding
+  // only: they show as added and stay as they are.
+  const have = new Set(edit ? [] : (opp?.criteria ?? []).map((c) => c.capabilityId).filter(Boolean));
+  const existing = new Map();
+  if (edit) for (const c of opp.criteria ?? []) if (c.capabilityId) existing.set(c.capabilityId, [...(existing.get(c.capabilityId) ?? []), c]);
+  const goalsBefore = new Set((opp?.goals ?? []).map((g) => g.key));
   const catLabel = Object.fromEntries(cat.categories);
   const engineCats = cat.categories.map(([k]) => k).filter((k) => !INTEGRATION_CATS.includes(k));
   const integrationCats = cat.categories.map(([k]) => k).filter((k) => INTEGRATION_CATS.includes(k));
@@ -58,29 +65,70 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     done: null,
   };
   if (template) for (const i of template.items) w.manual.set(i.capabilityId, i.priority);
+  // Editing: everything the opportunity holds, as the wizard asks for it.
+  const sponsor = edit ? (opp.stakeholders ?? []).find((p) => p.side === 'internal' && p.povRole === 'Checkmarx sponsor') : null;
+  if (edit) {
+    for (const [id, list] of existing) w.manual.set(id, list.some((c) => c.priority === 'must') ? 'must' : 'nice');
+    w.details = { customer: opp.customer ?? '', name: opp.name ?? '', salesforceUrl: opp.salesforceUrl ?? '', sharepointUrl: opp.sharepointUrl ?? '', startDate: opp.startDate ?? '', endDate: opp.endDate ?? '', ownerId: opp.ownerId, more: true };
+    const tc = opp.toolchain ?? {};
+    for (const t of TC()) {
+      const known = new Set(t.tools.map(([n]) => n));
+      const names = tc[t.key]?.tools ?? [];
+      w.tools[t.key] = new Set(names.filter((n) => known.has(n)));
+      w.toolExtra[t.key] = names.filter((n) => !known.has(n)).join(', ');
+      if (tc[t.key]?.access) w.access[t.key] = tc[t.key].access;
+    }
+    w.call.languages = tc.languages ?? '';
+    const p = opp.plan ?? {};
+    w.plan = { meetings: [], scope: (p.scope ?? []).join('\n'), support: (p.support ?? []).join('\n'), success: (p.success ?? []).join('\n'), outOfScope: p.outOfScope ?? '', accountName: p.accountName ?? '', am: { name: sponsor?.name ?? '', email: sponsor?.email ?? '', title: sponsor?.title || 'Strategic Account Manager' } };
+    w.apma = opp.apma ?? null;
+  }
   const fromTemplates = () => {
     const m = new Map();
     for (const t of tpls.templates.filter((x) => w.picked.has(x.id))) for (const i of t.items) if (m.get(i.capabilityId) !== 'must') m.set(i.capabilityId, i.priority);
     return m;
   };
-  const inGoals = () => new Set([...w.goals].flatMap((k) => goalEntries(k).map((e) => e.capabilityId)).filter(Boolean));
+  const inGoals = () => new Set([...w.goals].filter((k) => !edit || !goalsBefore.has(k)).flatMap((k) => goalEntries(k).map((e) => e.capabilityId)).filter(Boolean).filter((id) => !existing.has(id)));
   const prio = (id) => (w.manual.has(id) ? w.manual.get(id) : fromTemplates().get(id) ?? 'off');
   const chosen = () => [...caps.keys()].filter((id) => !have.has(id) && !inGoals().has(id) && prio(id) !== 'off').map((id) => ({ capabilityId: id, priority: prio(id) }));
   const customFromTemplates = () => tpls.templates.filter((x) => w.picked.has(x.id)).flatMap((t) => t.custom ?? []);
 
   const plus = (n, from) => new Date((from ? new Date(`${from}T12:00:00Z`).getTime() : Date.now()) + n * 86_400_000).toISOString().slice(0, 10);
-  // The meetings of the POV, proposed from its dates: the launch, a check-in each week, the wrap-up.
-  const proposeMeetings = () => {
+  // The meetings of the POV, proposed from its dates: the launch on the start date (today unless set), two check-ins a
+  // week (every 3 and 4 days) until the end date, the wrap-up on it. A pre-POV call only when there is a week before the
+  // start; nothing in the past.
+  const povDates = () => {
     const start = w.details.startDate || plus(0);
-    const end = w.details.endDate || plus(30, start);
-    const m = [{ type: 'pre_pov', date: plus(-7, start), title: 'Pre-POV call' }, { type: 'launch', date: start, title: 'POV launch & quick setup' }];
-    for (let d = plus(7, start); d < end; d = plus(7, d)) m.push({ type: 'checkpoint', date: d, title: 'Check-in call' });
+    const end = w.details.endDate && w.details.endDate > start ? w.details.endDate : plus(30, start);
+    return { start, end };
+  };
+  const proposeMeetings = () => {
+    const { start, end } = povDates();
+    const m = [];
+    if (plus(-7, start) >= plus(0)) m.push({ type: 'pre_pov', date: plus(-7, start), title: 'Pre-POV call' });
+    m.push({ type: 'launch', date: start, title: 'POV launch & quick setup' });
+    for (let d = plus(3, start), i = 0; d < plus(-1, end); d = plus(i % 2 ? 3 : 4, d), i += 1) m.push({ type: 'checkpoint', date: d, title: 'Check-in call' });
     m.push({ type: 'wrapup', date: end, title: 'Wrap-up call' });
     return m;
   };
+  // Every meeting after one whose date changed moves by as many days.
+  const shiftFrom = (meetings, i, days) => meetings.map((m, j) => (j > i && m.date ? { ...m, date: plus(days, m.date) } : m));
+  const daysBetween = (a, b) => Math.round((new Date(`${b}T12:00:00Z`) - new Date(`${a}T12:00:00Z`)) / 86_400_000);
+  // The POV dates changed on the first step: untouched meetings are proposed again; edited ones move with the start.
+  const syncMeetings = () => {
+    if (edit || !w.plan) return;
+    const { start, end } = povDates();
+    const was = w.plan.for;
+    if (was && was.start === start && was.end === end) return;
+    if (!w.plan.touched) w.plan.meetings = proposeMeetings();
+    else if (was && was.start !== start) w.plan.meetings = shiftFrom(w.plan.meetings, -1, daysBetween(was.start, start));
+    w.plan.for = { start, end };
+  };
   const planNow = () =>
     (w.plan ??= {
-      meetings: proposeMeetings(),
+      for: edit ? null : povDates(),
+      touched: false,
+      meetings: edit ? [] : proposeMeetings(),
       scope: '',
       support: (state.meta?.planDefaults?.support ?? []).join('\n'),
       success: (state.meta?.planDefaults?.success ?? []).join('\n'),
@@ -89,15 +137,16 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       am: { name: '', email: '', title: 'Strategic Account Manager' },
     });
   const stepsNow = () => [
-    ...(mode === 'new' ? [['details', 'Opportunity']] : []),
+    ...(mode === 'new' || edit ? [['details', 'Opportunity']] : []),
     ...(mode === 'new' && ['first_call', 'discovery'].includes(w.details.stage) ? [['call', 'First call']] : []),
     ...(mode !== 'template' ? [['goals', 'Business goals']] : []),
-    ...(mode === 'new' ? [['tools', 'Toolchain'], ['plan', 'POV plan']] : []),
-    ...(mode !== 'template' ? [['templates', 'Start from']] : []),
+    ...(mode === 'new' || edit ? [['tools', 'Toolchain'], ['plan', edit ? 'POV plan & APMA' : 'POV plan']] : []),
+    ...(mode !== 'template' ? [['templates', edit ? 'Add from a template' : 'Start from']] : []),
     ['engines', 'Engines & agents'],
     ['integrations', 'Integrations'],
     ['review', mode === 'template' ? 'Name & share' : 'Review'],
   ];
+  if (edit && section) w.step = Math.max(0, stepsNow().findIndex(([k]) => k === section));
   const canSave = can('templates.manage');
   const shareWide = ['admin', 'vp', 'leader'].includes(state.session.user.role);
 
@@ -125,7 +174,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const d = w.details;
       const plus = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
       return `<label class="field">Customer<input name="customer" required maxlength="160" value="${esc(d.customer ?? '')}" placeholder="e.g. Acme Bank" autofocus></label>
-        <div class="field">Where it stands<div class="status-pick" role="radiogroup">${[['first_call', 'First call'], ['discovery', 'Discovery'], ['technical', 'Technical sessions'], ['pov', 'POV running']].map(([k, l]) => `<button type="button" data-pick-stage="${k}" aria-pressed="${(d.stage ?? 'pov') === k}">${l}</button>`).join('')}</div><input type="hidden" name="stage" value="${esc(d.stage ?? 'pov')}"></div>
+        ${edit ? '' : `<div class="field">Where it stands<div class="status-pick" role="radiogroup">${[['first_call', 'First call'], ['discovery', 'Discovery'], ['technical', 'Technical sessions'], ['pov', 'POV running']].map(([k, l]) => `<button type="button" data-pick-stage="${k}" aria-pressed="${(d.stage ?? 'pov') === k}">${l}</button>`).join('')}</div><input type="hidden" name="stage" value="${esc(d.stage ?? 'pov')}"></div>`}
         <label class="field">Salesforce opportunity link <span class="muted">(optional)</span><input name="salesforceUrl" type="url" value="${esc(d.salesforceUrl ?? '')}" placeholder="Paste it from Salesforce"></label>
         <details class="more-details" ${d.more ? 'open' : ''}><summary class="small">More details <span class="muted">— owner, dates, SharePoint</span></summary>
           <div class="stack" style="gap:10px;margin-top:10px">
@@ -159,15 +208,16 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         <input name="extra_${t.key}" value="${esc(w.toolExtra[t.key] ?? '')}" placeholder="Others, separated by commas" aria-label="Other ${esc(t.label)} tools" style="margin-top:6px"></div>`).join('')}
       <label class="field">Languages and frameworks<input name="c_languages" value="${esc(w.call.languages)}" placeholder="e.g. Java, C#, Python, React"></label>`,
     plan: () => {
+      syncMeetings();
       const p = planNow();
       const types = state.meta?.sessionTypes ?? {};
-      return `<p class="muted wz-lead">The plan the customer sees in the WIP deck. Meetings are proposed from the POV dates: change, add or remove them. Each shows as Completed once its date has passed.</p>
-        <div class="field">Meetings${p.meetings.map((m, i) => `<div class="call-person" style="grid-template-columns:1.2fr 1fr 1.6fr auto">
+      return `<p class="muted wz-lead">${edit ? 'The plan the customer sees in the WIP deck.' : 'The plan the customer sees in the WIP deck. Meetings are proposed from the POV dates: change, add or remove them. Each shows as Completed once its date has passed.'}</p>
+        ${edit ? '<p class="small muted" style="margin:0">The meetings are on the POV’s Meetings tab.</p>' : `<div class="field">Meetings${p.meetings.map((m, i) => `<div class="call-person" style="grid-template-columns:1.2fr 1fr 1.6fr auto">
           <select name="m_type_${i}" aria-label="Kind">${Object.entries(types).map(([k, l]) => `<option value="${k}" ${m.type === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
           <input type="date" name="m_date_${i}" value="${esc(m.date)}" aria-label="Date">
           <input name="m_title_${i}" value="${esc(m.title)}" placeholder="Title" aria-label="Title">
           <button type="button" class="btn sm ghost" data-del-meeting="${i}" aria-label="Remove">✕</button></div>`).join('')}
-          <button type="button" class="btn sm" data-act="add-meeting" style="align-self:flex-start">Add a meeting</button></div>
+          <button type="button" class="btn sm" data-act="add-meeting" style="align-self:flex-start">Add a meeting</button></div>`}
         <div class="row"><label class="field">Scope <span class="muted small">one per line; the business goals if empty</span><textarea name="pl_scope" rows="4">${esc(p.scope)}</textarea></label>
           <label class="field">Support<textarea name="pl_support" rows="4">${esc(p.support)}</textarea></label>
           <label class="field">Success<textarea name="pl_success" rows="4">${esc(p.success)}</textarea></label></div>
@@ -217,6 +267,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     engines: () => `<p class="muted wz-lead">What the customer wants to see working. Click once for <b class="ok-t">must have</b>, again for <b class="warn-t">nice to have</b>, again to leave it out.</p>${chips(engineCats)}`,
     integrations: () => `<p class="muted wz-lead">Where Checkmarx One meets their tools: code hosts, pipelines, IDEs and AI coding agents, tickets and access.</p>${chips(integrationCats)}`,
     review: () => {
+      if (edit) return editReview();
       const list = chosen();
       const must = list.filter((x) => x.priority === 'must');
       const custom = [...customFromTemplates(), ...w.custom];
@@ -234,25 +285,51 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         ${mode === 'template' ? templateFields() : canSave ? `<fieldset class="item"><label class="check"><input type="checkbox" id="wzSave" ${w.save.on ? 'checked' : ''}> Also save this set as a template for my team</label>${w.save.on ? `<div class="row" style="margin-top:8px"><label class="field">Template name<input id="wzSaveName" value="${esc(w.save.name)}" placeholder="e.g. Banking — core AppSec"></label>${shareWide ? `<label class="field" style="max-width:200px">Shared with<select id="wzSaveScope"><option value="team" ${w.save.scope === 'team' ? 'selected' : ''}>My team</option><option value="everyone" ${w.save.scope === 'everyone' ? 'selected' : ''}>Everyone</option></select></label>` : ''}</div>` : ''}</fieldset>` : ''}`;
     },
   };
+  // Editing: what Save will change in the criteria, the rest is saved as it is on each step.
+  const criteriaChanges = () => {
+    const want = new Map(chosen().map((x) => [x.capabilityId, x.priority]));
+    const add = [...want].filter(([id]) => !existing.has(id)).map(([capabilityId, priority]) => ({ capabilityId, priority }));
+    const change = [...existing].flatMap(([id, list]) => (want.has(id) ? list.filter((c) => c.priority !== want.get(id)).map((c) => ({ ...c, priority: want.get(id) })) : []));
+    const remove = [...existing].filter(([id]) => !want.has(id) && !inGoals().has(id)).flatMap(([, list]) => list);
+    return { add, change, remove };
+  };
+  const editReview = () => {
+    const { add, change, remove } = criteriaChanges();
+    const newGoals = [...w.goals].filter((k) => !goalsBefore.has(k));
+    const goneGoals = [...goalsBefore].filter((k) => !w.goals.has(k));
+    const fromGoals = newGoals.reduce((n, k) => n + goalEntries(k).length, 0);
+    const name = (c) => esc(c.title || caps.get(c.capabilityId)?.name || c.capabilityId);
+    const done = (c) => (c.status === 'met' ? ' <span class="badge">completed</span>' : '');
+    return `<p class="muted wz-lead">Save keeps everything on every step: the opportunity, its goals, toolchain, plan and criteria. Go back to any step from the top.</p>
+      <div class="wz-sum"><div><b class="ok-t">${add.length + fromGoals + w.custom.length}</b><span>criteria to add</span></div><div><b class="warn-t">${change.length}</b><span>change priority</span></div><div><b class="${remove.length ? 'bad-t' : ''}">${remove.length}</b><span>to remove</span></div></div>
+      ${newGoals.length || goneGoals.length ? `<p class="small">${newGoals.length ? `Business goals added: ${newGoals.map((k) => esc(goalsAll.find((g) => g.key === k)?.title ?? k)).join(', ')}.` : ''} ${goneGoals.length ? `Taken out: ${goneGoals.map((k) => esc((opp.goals ?? []).find((g) => g.key === k)?.title ?? k)).join(', ')} (their criteria stay unless removed below).` : ''}</p>` : ''}
+      ${remove.length ? `<fieldset class="item"><legend class="small bad-t">These criteria will be removed, with their status and notes</legend><ul class="small" style="margin:0;padding-left:18px">${remove.map((c) => `<li>${name(c)}${done(c)}</li>`).join('')}</ul></fieldset>` : ''}
+      ${change.length ? `<p class="small muted">Priority changes: ${change.map((c) => `${name(c)} → ${LABEL[c.priority]}`).join(' · ')}</p>` : ''}
+      <fieldset class="item"><legend class="small muted">Add one in the customer’s own words (optional)</legend>
+        ${w.custom.map((c, i) => `<div class="row center"><span style="flex:1">${esc(c.title)}</span><span class="badge">${LABEL[c.priority] ?? 'Nice to have'}</span><button type="button" class="btn sm ghost" data-del-custom="${i}" aria-label="Remove">✕</button></div>`).join('')}
+        <div class="row"><input id="wzCustom" placeholder="e.g. Results reviewed with the AppSec team in under 2 weeks" style="flex:1;min-width:200px"><select id="wzCustomPrio"><option value="must">Must have</option><option value="nice" selected>Nice to have</option></select><button type="button" class="btn sm" data-act="add-custom">Add</button></div>
+      </fieldset>`;
+  };
   const templateFields = () => `<fieldset class="item"><legend class="small muted">The template</legend>
     <div class="row"><label class="field">Name<input id="wzTplName" value="${esc(w.tpl.name)}" required placeholder="e.g. Banking — core AppSec"></label>${shareWide ? `<label class="field" style="max-width:200px">Shared with<select id="wzTplScope"><option value="team" ${w.tpl.scope === 'team' ? 'selected' : ''}>My team</option><option value="everyone" ${w.tpl.scope === 'everyone' ? 'selected' : ''}>Everyone</option></select></label>` : ''}</div>
     <label class="field">What it is for<input id="wzTplDesc" value="${esc(w.tpl.description)}" maxlength="300" placeholder="When to use it, in a line"></label></fieldset>`;
 
   // ——— The dialog ———
-  const title = mode === 'new' ? 'New opportunity' : mode === 'add' ? 'Add success criteria' : template && !copy ? `Change “${template.name}”` : 'New success criteria template';
+  const title = edit ? `Edit ${opp.customer}` : mode === 'new' ? 'New opportunity' : mode === 'add' ? 'Add success criteria' : template && !copy ? `Change “${template.name}”` : 'New success criteria template';
   const html = () => {
     const [key] = stepsNow()[w.step];
     const last = w.step === stepsNow().length - 1;
-    const count = chosen().length + customFromTemplates().length + w.custom.length + [...w.goals].filter((k) => !(opp?.goals ?? []).some((g) => g.key === k)).reduce((n, k) => n + goalEntries(k).length, 0);
+    const count = edit ? criteriaChanges().add.length + customFromTemplates().length + w.custom.length + [...w.goals].filter((k) => !goalsBefore.has(k)).reduce((n, k) => n + goalEntries(k).length, 0) : chosen().length + customFromTemplates().length + w.custom.length + [...w.goals].filter((k) => !(opp?.goals ?? []).some((g) => g.key === k)).reduce((n, k) => n + goalEntries(k).length, 0);
     return `<form id="wz" class="wz" novalidate>
       <div class="wz-top"><h2>${esc(title)}</h2>
-        <ol class="wz-steps">${stepsNow().map(([, l], i) => `<li class="${i < w.step ? 'done' : i === w.step ? 'current' : ''}"><button type="button" data-goto="${i}" ${i > w.step ? 'disabled' : ''}><span>${i < w.step ? '✓' : i + 1}</span>${esc(l)}</button></li>`).join('')}</ol></div>
+        <ol class="wz-steps">${stepsNow().map(([, l], i) => `<li class="${i < w.step ? 'done' : i === w.step ? 'current' : ''}"><button type="button" data-goto="${i}" ${i > w.step && !edit ? 'disabled' : ''}><span>${i < w.step && !edit ? '✓' : i + 1}</span>${esc(l)}</button></li>`).join('')}</ol></div>
       <div class="wz-body" id="wzBody">${VIEWS[key]()}</div>
       <p class="form-error" role="alert">${esc(w.error)}</p>
       <div class="dialog-actions wz-foot"><button type="button" class="btn ghost" data-act="cancel">Cancel</button><span class="spacer"></span>
-        ${key !== 'details' ? `<span class="small muted wz-count">${count} criteria</span>` : ''}
+        ${key !== 'details' ? `<span class="small muted wz-count">${edit ? `${count} to add` : `${count} criteria`}</span>` : ''}
         ${w.step ? '<button type="button" class="btn" data-act="back">Back</button>' : ''}
-        <button class="btn primary" data-act="${last ? 'finish' : 'next'}">${last ? (mode === 'new' ? 'Create opportunity' : mode === 'add' ? `Add ${count} criteria` : 'Save template') : 'Next'}</button></div>
+        ${edit && !last ? '<button type="submit" class="btn" data-act="save-now">Save</button>' : ''}
+        <button class="btn primary" data-act="${last ? 'finish' : 'next'}">${last ? (edit ? 'Save' : mode === 'new' ? 'Create opportunity' : mode === 'add' ? `Add ${count} criteria` : 'Save template') : 'Next'}</button></div>
     </form>`;
   };
 
@@ -275,7 +352,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     if (stepsNow()[w.step][0] === 'plan') {
       const p = planNow();
       const val = (n) => f.querySelector(`[name="${n}"]`)?.value ?? '';
-      p.meetings = p.meetings.map((_, i) => ({ type: val(`m_type_${i}`), date: val(`m_date_${i}`), title: val(`m_title_${i}`) }));
+      if (!edit) p.meetings = p.meetings.map((_, i) => ({ type: val(`m_type_${i}`), date: val(`m_date_${i}`), title: val(`m_title_${i}`) }));
       Object.assign(p, { scope: val('pl_scope'), support: val('pl_support'), success: val('pl_success'), outOfScope: val('pl_out'), accountName: val('pl_account'), am: { name: val('am_name'), title: val('am_title'), email: val('am_email') } });
     }
     if ($('#wzKey', d)) w.apiKey = $('#wzKey', d).value;
@@ -296,6 +373,33 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       return 'ok';
     }
     let id = opp?.id;
+    if (edit) {
+      const { more, stage, ...details } = w.details;
+      const p = planNow();
+      const lines = (t) => String(t ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
+      const toolchain = Object.fromEntries(TC().map((t) => [t.key, { tools: [...w.tools[t.key], ...String(w.toolExtra[t.key] ?? '').split(',').map((x) => x.trim()).filter(Boolean)], access: w.access[t.key] ?? t.access }]));
+      toolchain.languages = w.call.languages;
+      const goals = (opp.goals ?? []).filter((g) => w.goals.has(g.key));
+      const body = { ...details, toolchain, plan: { scope: lines(p.scope), support: lines(p.support), success: lines(p.success), outOfScope: p.outOfScope, accountName: p.accountName }, ...(goals.length !== (opp.goals ?? []).length ? { goals } : {}) };
+      if (!w.apmaFile && (w.apma ?? null) !== (opp.apma ?? null)) body.apma = w.apma;
+      if (!can('opps.reassign')) delete body.ownerId;
+      await api(`/opportunities/${id}`, { method: 'PATCH', body });
+      if (w.apmaFile) {
+        await api(`/opportunities/${id}`, { method: 'PATCH', body: { apma: w.apma } });
+        await fetch(`/api/opportunities/${id}/apma`, { method: 'POST', headers: { 'X-Requested-With': 'Kendra', 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(w.apmaFile.name) }, body: w.apmaFile }).catch(() => {});
+      }
+      // The account manager on the cover (the Checkmarx sponsor).
+      const am = p.am;
+      if (am.name.trim() && (am.name !== (sponsor?.name ?? '') || am.email !== (sponsor?.email ?? '') || am.title !== (sponsor?.title ?? ''))) {
+        await api(`/opportunities/${id}/stakeholders${sponsor ? `/${sponsor.id}` : ''}`, { method: 'POST', body: { ...(sponsor ?? { side: 'internal', povRole: 'Checkmarx sponsor', notify: false }), name: am.name, email: am.email, title: am.title } });
+      }
+      const { add, change, remove } = criteriaChanges();
+      for (const c of change) await api(`/opportunities/${id}/criteria/${c.id}`, { method: 'POST', body: c });
+      for (const c of remove) await api(`/opportunities/${id}/criteria/${c.id}`, { method: 'DELETE' });
+      const newGoals = [...w.goals].filter((k) => !goalsBefore.has(k));
+      if (add.length || custom.length || templateIds.length || newGoals.length) await api(`/opportunities/${id}/criteria/bulk`, { method: 'POST', body: { items: add, custom, templateIds, goalIds: newGoals } });
+      return 'ok';
+    }
     if (mode === 'new') {
       const { more, ...details } = w.details;
       if ((details.stage ?? 'pov') !== 'pov' && !w.details.more) delete details.startDate, delete details.endDate;
@@ -393,12 +497,29 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
     f.querySelector('[data-act="add-meeting"]')?.addEventListener('click', () => {
       keep(d);
       const p = planNow();
+      p.touched = true;
       p.meetings.push({ type: 'checkpoint', date: p.meetings.at(-1)?.date ?? plus(0), title: 'Check-in call' });
       draw(d);
     });
+    // A meeting's date changed: the ones after it move by the same number of days.
+    for (const el of f.querySelectorAll('[name^="m_date_"]'))
+      el.addEventListener('change', () => {
+        const i = Number(el.name.slice(7));
+        const p = planNow();
+        const before = p.meetings[i]?.date;
+        keep(d);
+        const after = p.meetings[i]?.date;
+        if (before && after && before !== after) p.meetings = shiftFrom(p.meetings, i, daysBetween(before, after));
+        p.touched = true;
+        const scroll = $('#wzBody', d).scrollTop;
+        draw(d);
+        $('#wzBody', d).scrollTop = scroll;
+      });
+    for (const el of f.querySelectorAll('[name^="m_type_"], [name^="m_title_"]')) el.addEventListener('change', () => (planNow().touched = true));
     for (const b of f.querySelectorAll('[data-del-meeting]'))
       b.addEventListener('click', () => {
         keep(d);
+        planNow().touched = true;
         planNow().meetings.splice(Number(b.dataset.delMeeting), 1);
         draw(d);
       });
@@ -452,7 +573,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       b.addEventListener('click', () => {
         if (!b.dataset.tpl) {
           w.picked.clear();
-          w.manual.clear();
+          if (!edit) w.manual.clear();
         } else if (w.picked.has(b.dataset.tpl)) w.picked.delete(b.dataset.tpl);
         else w.picked.add(b.dataset.tpl);
         redraw();
@@ -496,7 +617,8 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         w.error = 'Give the customer name.';
         return draw(d);
       }
-      if (w.step < stepsNow().length - 1) {
+      const saveNow = e.submitter?.dataset.act === 'save-now';
+      if (w.step < stepsNow().length - 1 && !saveNow) {
         w.step += 1;
         return draw(d);
       }
@@ -504,11 +626,11 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
         w.error = 'Give the template a name.';
         return draw(d);
       }
-      if (mode !== 'new' && !chosen().length && !w.custom.length && !customFromTemplates().length) {
+      if (!edit && mode !== 'new' && !chosen().length && !w.custom.length && !customFromTemplates().length) {
         w.error = 'Nothing is chosen yet.';
         return draw(d);
       }
-      const btn = f.querySelector('[data-act="finish"]');
+      const btn = f.querySelector(saveNow ? '[data-act="save-now"]' : '[data-act="finish"]');
       btn.disabled = true;
       try {
         w.done = await finish();

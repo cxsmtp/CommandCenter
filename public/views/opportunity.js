@@ -68,7 +68,7 @@ export async function renderOpportunity(main, id, tab, { crumbs, drawer = null }
   });
   main.querySelector('[data-next]')?.addEventListener('click', () => doFix(next.key));
   main.querySelector('[data-act="opp-menu"]')?.addEventListener('click', oppMenu);
-  main.querySelector('[data-act="edit"]')?.addEventListener('click', editDetails);
+  main.querySelector('[data-act="edit"]')?.addEventListener('click', () => editAll());
   WIRES[active]?.(main, d);
   on(main, '[data-sf-log]', async (b) => {
     b.disabled = true;
@@ -157,6 +157,7 @@ async function oppMenu() {
   const o = current.opportunity;
   await openDialog(
     `<div class="dbody"><h2>${esc(o.customer)}</h2><nav class="more-list">
+      <button type="button" data-m="wizard"><span>Edit in the wizard</span><small class="muted">Every section: details, goals, toolchain, plan, criteria</small></button>
       <button type="button" data-m="edit"><span>Edit details</span><small class="muted">Name, dates, owner, Salesforce and SharePoint links</small></button>
       <button type="button" data-m="note"><span>Add a note</span></button>
       <button type="button" data-m="sf"><span>Send the status to Salesforce</span><small class="muted">Through your Email to Salesforce address</small></button>
@@ -172,6 +173,7 @@ async function oppMenu() {
             const m = b.dataset.m;
             setTimeout(async () => {
               if (m === 'edit') editDetails();
+              if (m === 'wizard') editAll();
               else if (m === 'note') doFix('note');
               else if (m === 'results') open(`/api/opportunities/${o.id}/results`, '_blank', 'noopener');
               else if (m === 'delete') removeOpportunity();
@@ -1028,6 +1030,15 @@ function connectTenant() {
      <details><summary class="small muted" style="cursor:pointer">Single-tenant or on-prem addresses</summary><div class="row" style="margin-top:8px"><label class="field">IAM URL<input name="iamUrl"></label><label class="field">API URL<input name="baseUrl"></label><label class="field">Tenant<input name="tenant"></label></div></details>`,
     (b) => api(`/opportunities/${oid()}/tenant`, { method: 'POST', body: { apiKey: b.apiKey, replaceTenant: b.replaceTenant, overrides: { iamUrl: b.iamUrl, baseUrl: b.baseUrl, tenant: b.tenant } } }),
   ).then((v) => v === 'ok' && toast('Connected. Reading the tenant…'));
+}
+
+/** Every section of the new-opportunity wizard, on this opportunity: any step, any time, saved from any step. */
+async function editAll(section = '') {
+  const { criteriaWizard } = await import('./criteria-wizard.js');
+  if (await criteriaWizard({ mode: 'edit', opp: current.opportunity, section })) {
+    toast('Saved');
+    rerender();
+  }
 }
 
 async function addCapabilities() {
