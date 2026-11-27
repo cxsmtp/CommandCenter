@@ -559,6 +559,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       row: row(opp, now),
       canEdit: opps.canEdit(viewer, opp, fullSettings()),
       people: Object.fromEntries([...ids].map((id) => [id, users.get(id)?.name ?? 'Former member'])),
+      // The opportunity's SE: first in the POV team on the Customer tab.
+      owner: users.get(opp.ownerId) ? { id: opp.ownerId, name: users.get(opp.ownerId).name, email: users.get(opp.ownerId).email ?? '', title: users.get(opp.ownerId).title ?? '' } : null,
       evidence: evidenceOf(opp),
       tenant: snap
         ? {

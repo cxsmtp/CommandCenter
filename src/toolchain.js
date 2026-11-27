@@ -31,7 +31,10 @@ export const TOOLCHAIN = [
 export const DEVSECOPS = ['Train', 'Design', 'Code', 'Build', 'Test', 'Deploy', 'Go-live'];
 
 /** POV roles for the people on the POV. */
-export const POV_ROLES = ['POV admin', 'Evaluator', 'Decision maker', 'Champion', 'Executive sponsor', 'Checkmarx technical lead', 'Checkmarx sponsor'];
+export const POV_ROLES = ['POV admin', 'Evaluator', 'Decision maker', 'Champion', 'Executive sponsor', 'Account manager', 'Solution engineer', 'Checkmarx technical lead', 'Checkmarx sponsor'];
+/** The Checkmarx side's POV team: account manager and solution engineers (older names kept). */
+export const AM_ROLES = ['Account manager', 'Checkmarx sponsor'];
+export const SE_ROLES = ['Solution engineer', 'Checkmarx technical lead'];
 
 /** Objectives of the plan, as the WIP deck shows them, with sensible defaults. */
 export const PLAN_DEFAULTS = {

@@ -2,6 +2,16 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.93 · 2026-11-27
+
+**Customer tab: the POV team in the stakeholder list**
+
+- The opportunity's SE is always listed first, as the POV team's Opportunity SE.
+  Change opens the owner choice for those who may reassign.
+- Add AM and Add SE: pick someone from Kendra (name and email filled in) or
+  type them. They are listed as the POV team and copied on POV emails.
+- The deck cover lists the account manager and every SE.
+
 ## 1.0.92 · 2026-11-27
 
 **Opportunity wizard: every section any time; meetings from today, twice a week**

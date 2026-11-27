@@ -12,7 +12,7 @@ import PptxGenJS from 'pptxgenjs';
 import JSZip from 'jszip';
 import { SESSION_TYPES } from './opportunities.js';
 import { platformSlide } from './deck.js';
-import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS } from './toolchain.js';
+import { TOOLCHAIN, DEVSECOPS, PLAN_DEFAULTS, AM_ROLES, SE_ROLES } from './toolchain.js';
 import { fillCover, fillPlan, fillEnvironment, fillTestPlan } from './template-fill.js';
 import { fillCoverSlide, fillOverviewSlide, fillPlanSlide, fillTestSlide, fillNotesSlide, fillShotSlide, picRelOf, MONTH_NAMES } from './template-slides.js';
 import { DEFAULT_LAYOUT, DEFAULT_VARIANTS } from './deck-templates.js';
@@ -46,8 +46,10 @@ function contentOf(opp, story, { owner, catalog }) {
   const engines = [...new Set(caps.filter((c) => PLATFORM_CATS.has(c.category)).map((c) => (c.name || c.cxName).replace(/\s*\(.*\)$/, '')))].slice(0, 10);
   const people = [...(opp.stakeholders ?? [])].sort((a, b) => (a.side === b.side ? 0 : a.side === 'customer' ? -1 : 1));
   if (owner && !people.some((p) => p.email && p.email === owner.email)) people.push({ name: owner.name, title: owner.title || 'Solution Engineer', email: owner.email, side: 'internal', povRole: 'Checkmarx technical lead' });
-  const am = people.find((p) => p.side === 'internal' && (/account|sponsor|sales|ae\b/i.test(`${p.title} ${p.povRole}`)) && p.email !== owner?.email);
-  return { caps, engines, people, am, se: owner };
+  const am = people.find((p) => p.side === 'internal' && AM_ROLES.includes(p.povRole) && p.email !== owner?.email) ?? people.find((p) => p.side === 'internal' && (/account|sponsor|sales|ae\b/i.test(`${p.title} ${p.povRole}`)) && p.email !== owner?.email);
+  // The POV team's solution engineers: the opportunity's SE first, then any others added to it.
+  const ses = [owner && { name: owner.name, title: owner.title || 'Solution Engineer', email: owner.email }, ...people.filter((p) => p.side === 'internal' && SE_ROLES.includes(p.povRole) && p !== am && (!owner?.email || p.email !== owner.email)).map((p) => ({ name: p.name, title: p.title || 'Solution Engineer', email: p.email }))].filter(Boolean);
+  return { caps, engines, people, am, se: owner, ses };
 }
 
 export async function wipDeck(opp, { story, owner, catalog, template = null, mode = 'wip', live = null, layout = null, texts = {}, screenshots = [], variants = {} }) {
@@ -122,11 +124,11 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
   const sCover = () => {
   // 1 — Cover
   {
-    const coverFill = { customer: C, results, people: [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean), date: longDay(today()) };
+    const coverFill = { customer: C, results, people: [c.am, ...c.ses].filter(Boolean), date: longDay(today()) };
     const s = add(use.cover ? { kind: 'cover', reuse: 'cover', fill: coverFill } : tinfo?.coverT ? { kind: 'cover', reuse: 'coverT', fill: coverFill } : 'cover');
     s.addText(C.toUpperCase(), { x: 0.5, y: 2.6, w: 9, h: 0.8, fontFace: FONT, fontSize: 38, bold: true, color: WHITE, margin: 0 });
     s.addText(results ? 'CxOne Platform: Proof of Value Results' : 'CxOne Platform: Proof of Value Guide', { x: 0.5, y: 3.35, w: 9, h: 0.6, fontFace: FONT, fontSize: 26, color: ORANGE, margin: 0 });
-    const who = [c.am, c.se && { name: c.se.name, title: c.se.title || 'Solution Engineer' }].filter(Boolean);
+    const who = [c.am, ...c.ses].filter(Boolean);
     s.addText(who.map((p) => ({ text: `${p.name} | ${p.title || ''}`, options: { breakLine: true } })), { x: 0.5, y: 5.2, w: 8, h: 0.75, fontFace: FONT, fontSize: 15, color: '8F7BFF', margin: 0, valign: 'top' });
     s.addText(longDay(today()), { x: 0.5, y: 6.3, w: 6, h: 0.35, fontFace: FONT, fontSize: 13, color: WHITE, margin: 0 });
   }

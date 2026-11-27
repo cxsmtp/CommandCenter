@@ -66,7 +66,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
   };
   if (template) for (const i of template.items) w.manual.set(i.capabilityId, i.priority);
   // Editing: everything the opportunity holds, as the wizard asks for it.
-  const sponsor = edit ? (opp.stakeholders ?? []).find((p) => p.side === 'internal' && p.povRole === 'Checkmarx sponsor') : null;
+  const sponsor = edit ? (opp.stakeholders ?? []).find((p) => p.side === 'internal' && ['Account manager', 'Checkmarx sponsor'].includes(p.povRole)) : null;
   if (edit) {
     for (const [id, list] of existing) w.manual.set(id, list.some((c) => c.priority === 'must') ? 'must' : 'nice');
     w.details = { customer: opp.customer ?? '', name: opp.name ?? '', salesforceUrl: opp.salesforceUrl ?? '', sharepointUrl: opp.sharepointUrl ?? '', startDate: opp.startDate ?? '', endDate: opp.endDate ?? '', ownerId: opp.ownerId, more: true };
@@ -222,7 +222,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
           <label class="field">Support<textarea name="pl_support" rows="4">${esc(p.support)}</textarea></label>
           <label class="field">Success<textarea name="pl_success" rows="4">${esc(p.success)}</textarea></label></div>
         <label class="field">Out of scope<input name="pl_out" value="${esc(p.outOfScope)}" placeholder="e.g. Production deployments, mobile apps"></label>
-        <div class="field">Account manager <span class="muted small">(on the cover, as Checkmarx sponsor)</span><div class="call-person" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="field">Account manager <span class="muted small">(on the cover, in the POV team)</span><div class="call-person" style="grid-template-columns:1fr 1fr 1fr">
           <input name="am_name" value="${esc(p.am.name)}" placeholder="Name" aria-label="Account manager name"><input name="am_title" value="${esc(p.am.title)}" placeholder="Title" aria-label="Title"><input name="am_email" type="email" value="${esc(p.am.email)}" placeholder="Email" aria-label="Email"></div></div>
         <label class="field">Account name in the tenant <span class="muted small">(optional)</span><input name="pl_account" value="${esc(p.accountName)}"></label>
         <div class="field">APMA assessment <span class="muted small">(optional: the report’s PDF fills the APMA slide)</span>
@@ -391,7 +391,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       // The account manager on the cover (the Checkmarx sponsor).
       const am = p.am;
       if (am.name.trim() && (am.name !== (sponsor?.name ?? '') || am.email !== (sponsor?.email ?? '') || am.title !== (sponsor?.title ?? ''))) {
-        await api(`/opportunities/${id}/stakeholders${sponsor ? `/${sponsor.id}` : ''}`, { method: 'POST', body: { ...(sponsor ?? { side: 'internal', povRole: 'Checkmarx sponsor', notify: false }), name: am.name, email: am.email, title: am.title } });
+        await api(`/opportunities/${id}/stakeholders${sponsor ? `/${sponsor.id}` : ''}`, { method: 'POST', body: { ...(sponsor ?? { side: 'internal', povRole: 'Account manager', notify: false }), name: am.name, email: am.email, title: am.title } });
       }
       const { add, change, remove } = criteriaChanges();
       for (const c of change) await api(`/opportunities/${id}/criteria/${c.id}`, { method: 'POST', body: c });
@@ -410,7 +410,7 @@ export async function criteriaWizard({ mode, opp = null, template = null, copy =
       const lines = (t) => String(t ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
       const toolchain = Object.fromEntries(TC().map((t) => [t.key, { tools: [...w.tools[t.key], ...String(w.toolExtra[t.key] ?? '').split(',').map((x) => x.trim()).filter(Boolean)], access: w.access[t.key] ?? t.access }]));
       toolchain.languages = c.languages;
-      const am = p.am.name.trim() ? [{ name: p.am.name, email: p.am.email, title: p.am.title, side: 'internal', povRole: 'Checkmarx sponsor', notify: false }] : [];
+      const am = p.am.name.trim() ? [{ name: p.am.name, email: p.am.email, title: p.am.title, side: 'internal', povRole: 'Account manager', notify: false }] : [];
       const people = withCall ? c.people.filter((p) => p.name.trim()) : [];
       const body = {
         stage: 'pov',

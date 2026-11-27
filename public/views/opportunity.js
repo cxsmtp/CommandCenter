@@ -1,5 +1,8 @@
 // One opportunity, from discovery to the outcome: the micro view a manager drills into and the SE works in.
-import { $, $$, esc, fmt, api, state, can, ago, when, day, tc, toast, attempt, download, copy, openDialog, closeDialog, formData, HEALTH, sevBar, sevLegend, progressBar, ring, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, ask } from '../core.js';
+import { $, $$, esc, fmt, api, state, can, ago, when, day, tc, toast, attempt, download, copy, openDialog, closeDialog, formData, HEALTH, sevBar, sevLegend, progressBar, ring, scanTypeBadge, stageBadge, daysBadge, alertList, table, peopleOptions, reloadPeople, ask } from '../core.js';
+
+const AM_ROLES = ['Account manager', 'Checkmarx sponsor'];
+const SE_ROLES = ['Solution engineer', 'Checkmarx technical lead'];
 import { feed } from './dashboard.js';
 import { aiTab, wireAiTab } from './ai-tab.js';
 import { getCatalog, capabilityPicker } from './new-opportunity.js';
@@ -505,14 +508,20 @@ function notes(d) {
 // ——— Stakeholders & email ———
 function email(d) {
   const o = d.opportunity;
+  // The POV team first (the opportunity's SE, always; the account manager and other SEs added), then the customer.
+  const team = (p) => p.side === 'internal';
+  const rank = (p) => (p.owner ? 0 : AM_ROLES.includes(p.povRole) ? 1 : SE_ROLES.includes(p.povRole) ? 2 : team(p) ? 3 : 4);
+  const ownerRow = d.owner && !(o.stakeholders ?? []).some((p) => p.email && p.email.toLowerCase() === String(d.owner.email).toLowerCase()) ? [{ id: '', owner: true, name: d.owner.name, title: d.owner.title || 'Solution Engineer', email: d.owner.email, side: 'internal', povRole: 'Solution engineer', notify: true }] : [];
+  const rows = [...ownerRow, ...(o.stakeholders ?? [])].sort((a, b) => rank(a) - rank(b));
+  const roleOf = (p) => (p.owner ? 'Opportunity SE' : AM_ROLES.includes(p.povRole) ? 'Account manager' : SE_ROLES.includes(p.povRole) ? 'Solution engineer' : p.povRole);
   const cols = [
     { label: 'Name', key: (p) => p.name, html: (p) => `<b>${esc(p.name)}</b><div class="small muted">${esc(p.title)}</div>` },
     { label: 'Email', key: (p) => p.email, html: (p) => (p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '—') },
-    { label: 'Side', key: (p) => p.side, html: (p) => (p.side === 'internal' ? 'Internal (cc)' : 'Customer (to)') },
-    { label: 'Gets emails', key: (p) => p.notify, html: (p) => (p.notify ? '✓' : '—') },
-    { label: '', html: (p) => (current.canEdit ? `<button class="btn sm" data-edit-person="${esc(p.id)}">Edit</button> <button class="btn sm ghost danger" data-del-person="${esc(p.id)}">Remove</button>` : '') },
+    { label: 'Side', key: (p) => p.side, html: (p) => (team(p) ? `<span class="badge">POV team</span> ${esc(roleOf(p) || 'Checkmarx')}` : `Customer (to)${p.povRole ? ` · ${esc(p.povRole)}` : ''}`) },
+    { label: 'Gets emails', key: (p) => p.notify, html: (p) => (p.notify ? (team(p) ? '✓ cc' : '✓') : '—') },
+    { label: '', html: (p) => (!current.canEdit ? '' : p.owner ? (can('opps.reassign') ? '<button class="btn sm" data-act="change-se">Change</button>' : '') : `<button class="btn sm" data-edit-person="${esc(p.id)}">Edit</button> <button class="btn sm ghost danger" data-del-person="${esc(p.id)}">Remove</button>`) },
   ];
-  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders</h3>${current.canEdit ? `<span class="row">${d.tenant?.people?.users?.length ? '<button class="btn sm" data-act="add-from-tenant">Add from Checkmarx One</button>' : ''}<button class="btn sm" data-act="add-person">Stakeholder</button></span>` : ''}</div>${table('people', cols, o.stakeholders ?? [], { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
+  return `<section class="panel" style="margin-bottom:16px"><div class="head"><h3>Stakeholders &amp; POV team</h3>${current.canEdit ? `<span class="row"><button class="btn sm" data-team="am">Add AM</button><button class="btn sm" data-team="se">Add SE</button>${d.tenant?.people?.users?.length ? '<button class="btn sm" data-act="add-from-tenant">Add from Checkmarx One</button>' : ''}<button class="btn sm" data-act="add-person">Stakeholder</button></span>` : ''}</div>${table('people', cols, rows, { empty: 'Add the customer’s champion, decision makers and your account team.' })}</section>
   <div class="layout"><section class="panel"><div class="head"><h3>Write an email</h3></div><div class="body"><p class="small muted" style="margin:0 0 8px">Pick one: Kendra writes it from the POV, with the stakeholders filled in.</p><div class="row center">${Object.entries(state.meta.templates).map(([k, l]) => `<button class="btn sm" data-template="${k}">${esc(l)}</button>`).join('')}</div></div>
     <form id="mailForm" class="body stack" style="gap:8px" ${wants('completion') ? '' : 'hidden'}>
       <input type="hidden" name="template">
@@ -856,6 +865,8 @@ const WIRES = {
       copy(`To: ${m.to}\n${m.cc ? `Cc: ${m.cc}\n` : ''}Subject: ${m.subject}\n\n${m.body}`);
     });
     on(main, '[data-act="add-person"]', () => editPerson(null));
+    on(main, '[data-team]', (b) => addTeamMember(b.dataset.team));
+    on(main, '[data-act="change-se"]', () => editDetails());
     on(main, '[data-act="add-from-tenant"]', () => addFromTenant(d));
     on(main, '[data-edit-person]', (b) => editPerson(d.opportunity.stakeholders.find((x) => x.id === b.dataset.editPerson)));
     on(main, '[data-del-person]', (b) => removeItem('stakeholders', b.dataset.delPerson, 'this stakeholder'));
@@ -973,11 +984,12 @@ const WIRES = {
 }
 
 // ——— Dialogs ———
-function dialogForm(id, title, inner, onSubmit, { wide = false } = {}) {
+function dialogForm(id, title, inner, onSubmit, { wide = false, onOpen = null } = {}) {
   return openDialog(`<form id="${id}"><h2>${title}</h2>${inner}<p class="form-error" id="${id}Err" role="alert"></p><div class="dialog-actions"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Save</button></div></form>`, {
     wide,
     onOpen(d) {
       d.querySelector('[data-close]').addEventListener('click', () => closeDialog());
+      onOpen?.(d);
       d.querySelector('form').addEventListener('submit', async (e) => {
         e.preventDefault();
         try {
@@ -1197,6 +1209,33 @@ function addFromTenant(d) {
       },
     },
   );
+}
+
+/** The POV team: an account manager or another SE, picked from Kendra's people or typed in. */
+async function addTeamMember(kind) {
+  await reloadPeople().catch(() => {});
+  const role = kind === 'am' ? 'Account manager' : 'Solution engineer';
+  const users = (state.users ?? []).filter((u) => u.active !== false && u.id !== current.opportunity.ownerId);
+  const v = await dialogForm(
+    kind === 'am' ? 'teamAmForm' : 'teamSeForm',
+    kind === 'am' ? 'Add the account manager' : 'Add a solution engineer',
+    `${users.length ? `<label class="field">From Kendra<select name="pick"><option value="">— Someone not in Kendra —</option>${users.map((u) => `<option value="${esc(u.id)}">${esc(u.name)}${u.email ? ` · ${esc(u.email)}` : ''}</option>`).join('')}</select></label>` : ''}
+     <div class="row"><label class="field">Name<input name="name" required></label><label class="field">Title<input name="title" value="${kind === 'am' ? 'Strategic Account Manager' : 'Solution Engineer'}"></label></div>
+     <label class="field">Email<input type="email" name="email"></label>
+     <p class="small muted" style="margin:0">In the POV team: on the deck’s cover and copied on POV emails.</p>`,
+    (b) => api(`/opportunities/${oid()}/stakeholders`, { method: 'POST', body: { name: b.name, title: b.title, email: b.email, side: 'internal', povRole: role, notify: true } }),
+    {
+      onOpen: (dl) =>
+        dl.querySelector('[name="pick"]')?.addEventListener('change', (e) => {
+          const u = users.find((x) => x.id === e.target.value);
+          if (!u) return;
+          dl.querySelector('[name="name"]').value = u.name ?? '';
+          dl.querySelector('[name="email"]').value = u.email ?? '';
+          if (u.title) dl.querySelector('[name="title"]').value = u.title;
+        }),
+    },
+  );
+  if (v === 'ok') toast(kind === 'am' ? 'Account manager added' : 'Solution engineer added');
 }
 
 function editPerson(p) {
