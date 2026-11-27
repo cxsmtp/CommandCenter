@@ -82,4 +82,22 @@ export class SharePoint {
     }
     return { site: site.webUrl ?? siteUrl, folder, files: out };
   }
+
+  /**
+   * An email from a person's own Microsoft 365 mailbox (it lands in their Sent Items). Needs the app's Mail.Send
+   * application permission with admin consent; an Exchange application access policy can limit it to the SEs' mailboxes.
+   */
+  async sendMail(cfg, from, { to, cc = [], bcc = [], subject, body }, attachments = []) {
+    if (!cfg?.tenantId || !cfg?.clientId || !cfg?.clientSecret) throw fail(400, 'The Microsoft app is not set up (Settings → Email).');
+    const size = attachments.reduce((n, a) => n + a.content.length, 0);
+    if (size > 3 * 1048576) throw fail(413, 'Attachments over 3 MB cannot go through Microsoft 365 this way: download the .eml or send the deck from SharePoint.');
+    const who = (list) => list.map((address) => ({ emailAddress: { address } }));
+    const message = { subject, body: { contentType: 'Text', content: body }, toRecipients: who(to), ccRecipients: who(cc), bccRecipients: who(bcc), attachments: attachments.map((a) => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: a.filename, contentBytes: Buffer.from(a.content).toString('base64') })) };
+    const token = await this.#accessToken(cfg);
+    const r = await this.#fetch(`${GRAPH()}/v1.0/users/${encodeURIComponent(from)}/sendMail`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message, saveToSentItems: true }) });
+    if (r.status === 202) return true;
+    const j = await r.json().catch(() => ({}));
+    const why = j.error?.code === 'ErrorAccessDenied' || r.status === 403 ? 'the Microsoft app may not send as this mailbox yet (Mail.Send permission, admin consent, or the access policy)' : j.error?.message ?? `status ${r.status}`;
+    throw fail(502, `Microsoft 365 did not send it: ${why}.`);
+  }
 }

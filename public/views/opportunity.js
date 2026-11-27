@@ -531,7 +531,8 @@ function email(d) {
       <label class="field">Message<textarea name="body" rows="18" class="copy-area"></textarea></label>
       <label class="check"><input type="checkbox" name="attachDeck" id="attachDeck"> Attach the final presentation (.pptx)</label>
       <div class="row">
-        ${can('mail.send') && current.canEdit ? `<button class="btn primary" data-mail="send" ${d.mailConfigured ? '' : 'disabled title="No email server is set up (Settings → Email)"'}>Send</button>` : ''}
+        ${can('mail.send') && current.canEdit ? `<button class="btn primary" data-mail="send" ${d.mailConfigured ? (d.mailFromOwn ? 'title="From your own Microsoft 365 mailbox; kept in your Sent Items"' : '') : 'disabled title="No email server is set up (Settings → Email)"'}>${d.mailFromOwn ? 'Send from my mailbox' : 'Send'}</button>` : ''}
+        <button class="btn sm" type="button" data-mail="outlook" title="Opens in Outlook on the web, from your own address: check it and press Send there">Open in Outlook</button>
         <button class="btn ghost sm" type="button" data-mail="eml" title="Opens in Outlook or your mail app, ready to send">Download .eml</button>
         <button class="btn ghost sm" type="button" data-mail="mailto">Open in mail app</button>
         <button class="btn ghost sm" type="button" data-mail="copy">Copy</button>
@@ -859,6 +860,16 @@ const WIRES = {
       const href = `mailto:${encodeURIComponent(m.to).replace(/%2C/g, ',')}?${new URLSearchParams({ cc: m.cc, subject: m.subject, body: m.body }).toString().replace(/\+/g, '%20')}`;
       if (href.length > 1900) toast('Long emails may be cut off by mailto; Download .eml keeps all of it.');
       location.href = href;
+    });
+    // Outlook on the web: a new message from the SE's own mailbox (Okta / Microsoft sign-in as usual), filled in.
+    on(main, '[data-mail="outlook"]', () => {
+      const m = msg();
+      const list = (v) => String(v ?? '').split(/[,;]/).map((x) => x.trim()).filter(Boolean).join(';');
+      const q = Object.entries({ to: list(m.to), cc: list(m.cc), subject: m.subject, body: m.body }).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+      const href = `https://outlook.office.com/mail/deeplink/compose?${q}`;
+      if (href.length > 7500) toast('A long email may be cut short on the way to Outlook: Download .eml keeps all of it.');
+      if (form.attachDeck?.checked) toast('Attach the deck in Outlook: download it from the Results tab.');
+      window.open(href, '_blank', 'noopener');
     });
     on(main, '[data-mail="copy"]', () => {
       const m = msg();

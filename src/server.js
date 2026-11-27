@@ -579,7 +579,8 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         : null,
       outbox: mailer.outbox(new Set([opp.id])).slice(0, 100),
       finals: finals(opp.id),
-      mailConfigured: mailer.configured,
+      mailConfigured: mailer.configured || sendsOwn(viewer),
+      mailFromOwn: sendsOwn(viewer),
     };
   }
 
@@ -1136,6 +1137,26 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
       db.write('settings', all);
       audit.record(user, 'settings', b.remove ? 'Removed the SharePoint connection' : 'Saved the SharePoint connection');
       return send(res, 200, { ok: true });
+    }
+    // ——— POV emails from each SE's own Microsoft 365 mailbox (through the Microsoft app) ———
+    if (route === 'GET /settings/mail-own') {
+      need(user, 'settings.manage');
+      return send(res, 200, { ...mailOwn(), appReady: Boolean(spConfig()?.clientSecret) });
+    }
+    if (route === 'PUT /settings/mail-own') {
+      need(user, 'settings.manage');
+      const b = await readBody(req);
+      const all = db.read('settings', {});
+      all.mailOwn = { enabled: Boolean(b.enabled), domains: String(b.domains ?? '').toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^@/, '').trim()).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).slice(0, 20) };
+      db.write('settings', all);
+      audit.record(user, 'settings', `${all.mailOwn.enabled ? 'Turned on' : 'Turned off'} POV emails from the SEs’ own Microsoft 365 mailboxes`);
+      return send(res, 200, mailOwn());
+    }
+    if (route === 'POST /settings/mail-own/test') {
+      need(user, 'settings.manage');
+      if (!sendsOwn(user)) throw fail(400, `Turn it on, and use an address of ${mailOwn().domains.join(', ') || 'an allowed domain'}: yours is ${user.email}.`);
+      await sharepoint.sendMail(spConfig(), user.email, { to: [user.email], subject: 'Kendra: a test from your own mailbox', body: 'This email was sent by Kendra from your Microsoft 365 mailbox. POV emails from Kendra now go out this way, and are kept in your Sent Items.' });
+      return send(res, 200, { to: user.email });
     }
     if (route === 'POST /settings/sharepoint/test') {
       need(user, 'settings.manage');
@@ -2025,14 +2046,16 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         const msg = cleanMessage(b);
         let messageId;
         const attachments = b.attachDeck ? [{ filename: `${opp.customer} - POV results.pptx`, content: await deckOf(opp) }] : [];
+        const own = sendsOwn(user);
         try {
           const sf = sfAddressOf(user.id);
-          messageId = await mailer.send(msg, { replyTo: user.email, attachments, bcc: sf?.copy ? [sf.address] : [] });
+          if (own) await sharepoint.sendMail(spConfig(), user.email, { ...msg, bcc: sf?.copy ? [sf.address] : [] }, attachments);
+          else messageId = await mailer.send(msg, { replyTo: user.email, attachments, bcc: sf?.copy ? [sf.address] : [] });
         } catch (error) {
           throw fail(error.status ?? 502, `The email was not sent: ${scrubText(error.message)}`);
         }
-        mailer.record({ oppId: id, by: user.id, status: 'sent', template: text(b.template, 20), ...msg, messageId, attachments: attachments.map((a) => a.filename) });
-        opps.mutate({ ...user, role: 'admin' }, id, s, (o) => (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Emailed "${msg.subject}" to ${msg.to.join(', ')}` }));
+        mailer.record({ oppId: id, by: user.id, status: 'sent', template: text(b.template, 20), ...msg, messageId, from: own ? user.email : undefined, attachments: attachments.map((a) => a.filename) });
+        opps.mutate({ ...user, role: 'admin' }, id, s, (o) => (o.history ??= []).push({ at: new Date().toISOString(), by: user.id, what: `Emailed "${msg.subject}" to ${msg.to.join(', ')}${own ? ` from ${user.email}` : ''}` }));
         return done();
       }
       if (sub === 'email' && parts[3] === 'eml' && m === 'POST') {
@@ -2569,6 +2592,13 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
   const designFileOf = (tpl) => {
     const d = deckTemplates.designOf(tpl);
     return d && fs.existsSync(deckTemplates.fileOf(d.id)) ? db.vault.readFile(deckTemplates.fileOf(d.id)) : null;
+  };
+  /** POV emails from the SE's own Microsoft 365 mailbox: on, the Microsoft app set up, and the SE's address allowed. */
+  const mailOwn = () => ({ enabled: false, domains: [], ...(db.read('settings', {}).mailOwn ?? {}) });
+  const sendsOwn = (u) => {
+    const o = mailOwn();
+    const domain = String(u?.email ?? '').toLowerCase().split('@')[1] ?? '';
+    return Boolean(o.enabled && spConfig()?.clientSecret && domain && (!o.domains.length || o.domains.includes(domain)));
   };
   const deckFor = (opp, chosen = null) => {
     const tpl = (chosen && deckTemplates.get(chosen)) || deckTemplates.resolve(opp, { legacyStyle: settings().reportStyle });

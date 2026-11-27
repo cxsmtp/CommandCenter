@@ -870,6 +870,7 @@ test('success criteria count everything the tenant ever proved, not only the las
 test('SharePoint: an Admin connects the Microsoft app, an SE publishes the POVâ€™s documents to its site', async () => {
   const http = await import('node:http');
   const got = [];
+  const mails = [];
   const ms = http.createServer((req, res) => {
     let body = [];
     req.on('data', (c) => body.push(c));
@@ -879,6 +880,11 @@ test('SharePoint: an Admin connects the Microsoft app, an SE publishes the POVâ€
       if (req.url.endsWith('/oauth2/v2.0/token')) return new URLSearchParams(body.toString()).get('client_secret') === 'top-secret' ? json(200, { access_token: 'tok', expires_in: 3600 }) : json(401, { error: 'invalid_client' });
       if (req.headers.authorization !== 'Bearer tok') return json(401, { error: { message: 'no token' } });
       if (req.method === 'GET' && req.url.startsWith('/v1.0/sites/contoso.sharepoint.com:/sites/Initech')) return json(200, { id: 'site-1', displayName: 'Initech POV', webUrl: 'https://contoso.sharepoint.com/sites/Initech' });
+      if (req.method === 'POST' && /^\/v1\.0\/users\/[^/]+\/sendMail$/.test(req.url)) {
+        mails.push({ from: decodeURIComponent(req.url.split('/')[3]), ...JSON.parse(body.toString()) });
+        res.writeHead(202);
+        return res.end();
+      }
       if (req.method === 'PUT' && req.url.startsWith('/v1.0/sites/site-1/drive/root:/')) {
         got.push({ path: decodeURIComponent(req.url), size: body.length });
         return json(201, { webUrl: `https://contoso.sharepoint.com/x/${got.length}`, size: body.length });
@@ -905,6 +911,21 @@ test('SharePoint: an Admin connects the Microsoft app, an SE publishes the POVâ€
     assert.ok(got.every((g) => g.path.includes('/POV/Initech SP/Initech SP - POV') && g.size > 1000));
     const after = (await call('se1', `/api/opportunities/${id}`)).body.opportunity;
     assert.equal(after.sharepointPublished.files.length, 2);
+    // POV emails from the SE's own Microsoft 365 mailbox: off, then on for their domain.
+    const se1Email = (await call('se1', '/api/session')).body.user.email;
+    assert.equal((await call('se1', `/api/opportunities/${id}`)).body.mailFromOwn, false);
+    assert.equal((await call('se1', '/api/settings/mail-own', { method: 'PUT', body: { enabled: true } })).status, 403);
+    const on = await call('admin', '/api/settings/mail-own', { method: 'PUT', body: { enabled: true, domains: `@${se1Email.split('@')[1]}, not a domain` } });
+    assert.deepEqual(on.body.domains, [se1Email.split('@')[1]]);
+    assert.equal((await call('se1', `/api/opportunities/${id}`)).body.mailFromOwn, true);
+    const sent = await call('se1', `/api/opportunities/${id}/email/send`, { method: 'POST', body: { to: 'cto@initech.example', cc: 'am@vendor.example', subject: 'POV status', body: 'All good.' } });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    assert.equal(mails.length, 1);
+    assert.equal(mails[0].from, se1Email, 'from the SEâ€™s own mailbox');
+    assert.equal(mails[0].saveToSentItems, true);
+    assert.deepEqual(mails[0].message.toRecipients, [{ emailAddress: { address: 'cto@initech.example' } }]);
+    assert.equal(mails[0].message.subject, 'POV status');
+    await call('admin', '/api/settings/mail-own', { method: 'PUT', body: { enabled: false } });
     await call('se1', `/api/opportunities/${id}`, { method: 'DELETE' });
   } finally {
     delete process.env.CC_MS_LOGIN_URL;

@@ -2,6 +2,21 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.94 · 2026-11-27
+
+**POV emails from the SE's own address: Open in Outlook, and Send through Microsoft 365**
+
+- Open in Outlook (Customer tab → Write an email): a new message in Outlook on
+  the web, from the SE's own mailbox, with To, Cc, subject and body filled in.
+  Sign-in is the company's usual one (Okta / Microsoft); nothing to set up.
+- Send from my mailbox: with Settings → Email → "From each SE's own mailbox"
+  on, Send goes out through Microsoft Graph as the signed-in SE and is kept in
+  their Sent Items. It uses the Microsoft app already set up for SharePoint.
+  The Microsoft 365 admin grants it Mail.Send (admin consent), ideally limited
+  to the SEs' mailboxes with an application access policy. Only addresses of
+  the listed domains send this way; anyone else uses the email server. A test
+  button sends the Admin a message from their own mailbox.
+
 ## 1.0.93 · 2026-11-27
 
 **Customer tab: the POV team in the stakeholder list**

@@ -201,6 +201,30 @@ function email(body, data) {
     const r = await attempt(() => api('/settings/smtp/test', { method: 'POST', body: {} }));
     if (r) toast(`Test email sent to ${r.to}`);
   });
+  ownMailPanel(body);
+}
+
+// POV emails from each SE's own Microsoft 365 mailbox, through the Microsoft app (General → SharePoint).
+async function ownMailPanel(body) {
+  const o = await api('/settings/mail-own').catch(() => null);
+  if (!o) return;
+  const box = document.createElement('section');
+  box.className = 'panel st-panel';
+  box.style.marginTop = '16px';
+  box.innerHTML = `<div class="st-ph"><h2>From each SE’s own mailbox (Microsoft 365)</h2><span class="st-aside"><span class="status ${o.enabled && o.appReady ? 'on' : 'off'}"><i></i>${o.enabled && o.appReady ? 'On' : 'Off'}</span></span></div>
+    <p class="st-note">POV emails go out from the SE’s own address (for example name@checkmarx.com) and are kept in their Sent Items, instead of through the email server above. It uses the Microsoft app set up under General → SharePoint.${o.appReady ? '' : ' <b>That app is not set up yet.</b>'} Your Microsoft 365 admin gives the app the <b>Mail.Send</b> application permission with admin consent, and should limit it to the SEs’ mailboxes with an Exchange application access policy (New-ApplicationAccessPolicy, for a mail-enabled group of the SEs).</p>
+    <form id="ownMailForm" class="st-form">
+      <label class="opt"><input type="checkbox" name="enabled" ${o.enabled ? 'checked' : ''}><span><b>Send POV emails from the SE’s own mailbox</b><small>Anyone else still sends through the email server above.</small></span></label>
+      <label class="field">For addresses of <span class="muted small">domains, separated by commas</span><input name="domains" value="${esc(o.domains.join(', '))}" placeholder="checkmarx.com"></label>
+    </form>
+    <div class="st-form row center" style="padding-top:0"><button type="button" class="btn" id="ownMailTest">Send me a test from my mailbox</button></div>
+    <div class="st-foot" id="ownMailSaved">Saved as you change it.</div>`;
+  body.append(box);
+  autosave($('#ownMailForm', box), async (f) => api('/settings/mail-own', { method: 'PUT', body: { enabled: f.enabled.checked, domains: f.domains.value } }), $('#ownMailSaved', box));
+  $('#ownMailTest', box).addEventListener('click', async () => {
+    const r = await attempt(() => api('/settings/mail-own/test', { method: 'POST', body: {} }));
+    if (r) toast(`Sent from your mailbox to ${r.to}`);
+  });
 }
 
 // ——— Sign-in: sessions, forgotten passwords, joining by themselves ———
