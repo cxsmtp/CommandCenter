@@ -2,6 +2,28 @@
 
 Every release, newest first: the version shown at the bottom of the menu, the day it was published, and what it changed. Settings → Update & recovery shows the same notes for each version.
 
+## 1.0.97 · 2026-11-28
+
+**QA fixes: the remaining minor and polish items**
+
+- Portfolio column filters match what is shown ("Nov", "Dec 30", "ended"),
+  and a number filter that is not one is marked.
+- Insights: roll-ups count the same POVs as the headline, so the totals add
+  up; "At risk or unlikely" says what the list holds; the SE's region and the
+  tenant's region are separate roll-ups; gap rows open onto their POVs; the
+  three columns keep their widths when a tab changes; plain zeros.
+- Health follows the outlook (unlikely: Needs you; at risk: Watch); before
+  the POV it says so, not "On track".
+- The criterion just edited keeps the focus after the list redraws.
+- Dialogs are announced as modal dialogs named by their heading; table
+  columns say how they are sorted; Download .eml is described properly.
+- Profile: the Email to Salesforce card stays after changing the look.
+- Wizard: the steps on one line and the same height on every step.
+- Wording: "tickets in Jira", "<customer>'s goals" everywhere, no test item
+  repeating its criterion, one date format (27 Nov 2026).
+- Teams from the FTR command center: a failed sync names its cause and the
+  address, and shows on People too.
+
 ## 1.0.96 · 2026-11-27
 
 **QA fixes: Save button for mail/SSO/sign-in, day counts, gzip, smaller things**

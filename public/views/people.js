@@ -20,6 +20,9 @@ async function load() {
 // ——— People ———
 export async function renderPeople(body, { linked = null } = {}) {
   const stats = await load();
+  // A failed sync with the FTR command center shows here too (teams and regions are stale until it works).
+  const link = linked && can('settings.manage') ? await api('/settings/link').catch(() => null) : null;
+  const syncBad = link?.lastSync && link.lastSync.ok === false ? link.lastSync : null;
   const me = state.session.user;
   const byId = new Map(state.users.map((u) => [u.id, u]));
   const regions = [...new Set(state.users.map((u) => u.region).filter(Boolean))].sort();
@@ -43,6 +46,7 @@ export async function renderPeople(body, { linked = null } = {}) {
     { label: '', html: (u) => `<span class="row-actions"><button class="btn sm link" data-work="${esc(u.id)}">Portfolio</button>${edit(u) ? `<button class="btn sm" data-manage="${esc(u.id)}">Manage</button>` : ''}</span>` },
   ];
   body.innerHTML = `<section class="panel st-panel">
+    ${syncBad ? `<div class="st-warn">Teams from the FTR command center did not update (${esc(new Date(syncBad.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))}): ${esc(syncBad.error)} <a href="#/settings/linked">Linked apps</a></div>` : ''}
     <div class="st-ph"><h2>People</h2><span class="st-aside">${linked ? 'kept in step with the FTR command center every hour' : 'everyone who can sign in, and what they may do'}</span>
       ${can('users.manage') ? '<button class="btn primary" data-act="add">Add person</button>' : ''}</div>
     <div class="st-filters">

@@ -163,7 +163,10 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
         return save({ at: new Date().toISOString(), ok: true, teams: (body.teams ?? []).length, people: (body.people ?? []).length, ...counts });
       } catch (error) {
         audit.record(by, 'people', `Teams from the FTR command center failed: ${error.message}`);
-        return save({ at: new Date().toISOString(), ok: false, error: String(error.message).slice(0, 300) });
+        // "fetch failed" says nothing: name the cause (no route, name not found, certificate, refused) and the address.
+        const cause = error.cause?.code || error.cause?.message || '';
+        const why = /fetch failed/i.test(error.message) ? `Could not reach ${l.ftrUrl || 'the FTR command center'}${cause ? ` (${cause})` : ''}: check the address under Linked apps, and that this server can reach it (network, firewall, its certificate).` : error.message;
+        return save({ at: new Date().toISOString(), ok: false, error: String(why).slice(0, 300) });
       } finally {
         syncing = null;
       }
@@ -2120,7 +2123,7 @@ export function createApp({ dataDir = process.env.CC_DATA_DIR || path.join(ROOT,
           title: c.title,
           goal: c.goal || b?.goal || '',
           statement: c.statement || b?.title || c.title,
-          test: c.test || b?.test || cap?.proof || '',
+          test: [c.test, b?.test, cap?.proof].find((t) => t && t.trim().toLowerCase() !== String(c.title ?? '').trim().toLowerCase()) || '',
           benefit: c.benefit || b?.benefit || '',
           milestone: c.milestone ?? '',
           refs: c.refs ?? '',

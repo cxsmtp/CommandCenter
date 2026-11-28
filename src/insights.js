@@ -163,7 +163,8 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
       if (r.stage === 'lost') g.lost += 1;
       if (r.stage === 'pov') g.running += 1;
       const pr = r.prediction;
-      if (pr?.score !== null && pr?.score !== undefined && !['won', 'lost'].includes(r.stage)) {
+      // Outlooks of the same POVs the headline counts (running or completed), so the groups add up to it.
+      if (pr?.score !== null && pr?.score !== undefined && ['pov', 'completed'].includes(r.stage)) {
         g.scored += 1;
         g.scoreSum += pr.score;
         g.expected += pr.score / 100;
@@ -196,7 +197,13 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
     reportAt: rows.map((r) => r.sf?.reportAt).filter(Boolean).sort().pop() ?? null,
   };
   const gapCounts = new Map();
-  for (const r of live) for (const g of r.gaps ?? []) if (g.level !== 'info') gapCounts.set(g.key, { key: g.key, text: g.text.split(':')[0], count: (gapCounts.get(g.key)?.count ?? 0) + 1, level: g.level });
+  for (const r of live)
+    for (const g of r.gaps ?? []) {
+      if (g.level === 'info') continue;
+      const was = gapCounts.get(g.key);
+      // Which POVs have it, so the row opens onto them.
+      gapCounts.set(g.key, { key: g.key, text: g.text.split(':')[0], count: (was?.count ?? 0) + 1, level: g.level, povs: [...(was?.povs ?? []), { id: r.id, customer: r.customer, owner: r.owner.name }].slice(0, 30) });
+    }
   return {
     totals: {
       open: live.length,
@@ -212,7 +219,8 @@ export function rollups(rows, { teamOf, regionOf, now = Date.now() } = {}) {
       critical: live.reduce((t, r) => t + (r.gaps ?? []).filter((g) => g.level === 'bad').length, 0),
     },
     revenue,
-    byRegion: group((r) => regionOf(r.owner.id) || r.tenant?.regionLabel || ''),
+    // The SE's region (from Teams); the tenant's region is its own roll-up.
+    byRegion: group((r) => regionOf(r.owner.id) || 'No region set'),
     byTenantRegion: group((r) => r.tenant?.regionLabel ?? 'No tenant'),
     byTeam: group((r) => teamOf(r.owner.id)),
     bySe: group((r) => r.owner.name),

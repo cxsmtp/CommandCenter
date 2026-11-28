@@ -336,7 +336,7 @@ function profile(body, data, applyLook) {
       <div class="row"><label class="field">Current<input type="password" name="current" autocomplete="current-password" required></label><label class="field">New (10+ characters)<input type="password" name="next" minlength="10" autocomplete="new-password" required></label></div>
       <div><button class="btn">Change password</button></div>
     </form></section></div>`;
-  sfMe($('#sfMe'));
+  sfMe($('#sfMe', body));
   const savePrefs = async (prefs) => {
     const r = await attempt(() => api('/me', { method: 'PATCH', body: { prefs } }));
     if (r) {
@@ -720,7 +720,11 @@ async function about(body, data) {
 
 // ——— Your Email to Salesforce address ———
 async function sfMe(el) {
-  const me = await api('/me/salesforce');
+  if (!el) return;
+  const me = await api('/me/salesforce').catch(() => null);
+  // The page may have been redrawn meanwhile (a new look): fill the card that is on it now.
+  if (!el.isConnected) el = document.getElementById('sfMe');
+  if (!el || !me) return;
   el.innerHTML = `<div class="head"><h3>Email to Salesforce</h3>${me.set ? '<span class="badge ok">Connected</span>' : ''}</div><form id="sfMeForm" class="body stack" style="gap:10px;max-width:760px">
     <p class="muted small" style="margin:0">Your private address from Salesforce (<b>Settings → Email → My Email to Salesforce</b>). Kendra sends it your tasks, notes, stage changes and POV results, and copies it on the POV emails you send, so they are saved in Salesforce as activities. It is stored encrypted and shown to no one.</p>
     <label class="field">Your Email to Salesforce address<input name="address" type="email" autocomplete="off" placeholder="${me.set ? esc(`${me.hint} (kept — type to replace)`) : 'emailtosalesforce@….salesforce.com'}"></label>

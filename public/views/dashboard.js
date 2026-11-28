@@ -84,15 +84,27 @@ function activeFilters(owner, regions) {
 }
 
 /** What is going on, in one sentence: the worst problem, else the pace, else the next step. */
+/** Health in a word: before the POV there is nothing to be on track with yet. */
+function healthOf(r) {
+  const t = why(r)[0];
+  if (t === 'bad') return 'Needs you';
+  if (t === 'warn') return 'Watch';
+  if (['won', 'lost'].includes(r.stage)) return 'Closed';
+  return ['pov', 'completed'].includes(r.stage) ? 'On track' : 'Before the POV';
+}
 function why(r) {
   const bad = r.alerts.find((a) => a.level === 'bad') ?? null;
   const gapBad = (r.gaps ?? []).find((g) => g.level === 'bad');
   if (r.muted) return ['', 'Muted'];
   if (bad) return ['bad', bad.what];
   if (gapBad) return ['bad', gapBad.text];
+  // The outlook counts too: a running POV Kendra scores unlikely needs someone; one at risk is watched.
+  const score = r.prediction?.score;
+  if (r.stage === 'pov' && score !== null && score !== undefined && score < 40) return ['bad', `Unlikely to succeed (outlook ${score})`];
   // Before the POV, a missing detail is not news: the next step is.
   const warn = r.alerts.find((a) => a.level === 'warn') ?? (['pov', 'completed'].includes(r.stage) ? (r.gaps ?? []).find((g) => g.level === 'warn') : null);
   if (warn) return ['warn', warn.what ?? warn.text];
+  if (r.stage === 'pov' && score !== null && score !== undefined && score < 70) return ['warn', `At risk (outlook ${score})`];
   if (r.stage === 'won') return ['', r.povResult === 'successful' ? 'Won · POV successful' : 'Won'];
   if (r.stage === 'lost') return ['', 'Lost'];
   if (r.forecast?.criteria?.label && r.stage === 'pov') return ['', r.forecast.criteria.label];
@@ -102,7 +114,7 @@ function why(r) {
 
 const wide = () => matchMedia('(min-width: 1100px)').matches;
 /** The dates that matter beside a POV in the list: the tenant's licence end and the Salesforce close date. */
-const shortDay = (d) => { const t = new Date(`${String(d).slice(0, 10)}T12:00:00Z`); return t.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(t.getUTCFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) }); };
+const shortDay = (d) => { const t = new Date(`${String(d).slice(0, 10)}T12:00:00Z`); return t.toLocaleDateString('en-GB', { month: 'short', day: 'numeric', timeZone: 'UTC', ...(t.getUTCFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) }); };
 function datesLine(r) {
   const lic = r.live?.summary?.license;
   const bits = [];
@@ -179,7 +191,7 @@ const COLS = [
   { key: 'credits', label: 'Credits used', on: false, num: true, filter: 'num', v: (r) => n0(r.live?.summary?.credits?.used) },
   { key: 'saved', label: 'AI saved (h)', on: false, num: true, filter: 'num', v: (r) => (r.value?.hours ? Math.round(r.value.hours) : null) },
   { key: 'outlook', label: 'Outlook', on: true, num: true, filter: 'num', v: (r) => n0(r.prediction?.score), html: (r) => { const sc = r.prediction?.score; return sc == null ? '—' : `<span class="score ${sc >= 70 ? 'ok' : sc >= 40 ? 'warn' : 'bad'}" title="${esc(r.prediction?.label ?? '')}">${sc}</span>`; } },
-  { key: 'health', label: 'Health', on: true, filter: 'select', v: (r) => ({ bad: 'Needs you', warn: 'Watch', '': 'On track' })[why(r)[0]] ?? 'On track', html: (r) => { const t = why(r)[0]; return `<span class="badge ${t === 'bad' ? 'bad' : t === 'warn' ? 'warn' : 'ok'}">${t === 'bad' ? 'Needs you' : t === 'warn' ? 'Watch' : 'On track'}</span>`; } },
+  { key: 'health', label: 'Health', on: true, filter: 'select', v: (r) => healthOf(r), html: (r) => { const h = healthOf(r); return `<span class="badge ${h === 'Needs you' ? 'bad' : h === 'Watch' ? 'warn' : h === 'On track' ? 'ok' : ''}">${h}</span>`; } },
   { key: 'status', label: 'What is going on', on: true, filter: 'text', v: (r) => why(r)[1], html: (r) => { const [t, x] = why(r); return `<span class="${t ? `${t}-t` : ''}">${esc(x)}</span>`; } },
   { key: 'next', label: 'Next task', on: false, filter: 'text', v: (r) => (r.nextTask ? `${r.nextTask.title}${r.nextTask.due ? ` (${r.nextTask.due})` : ''}` : '') },
   { key: 'sfStage', label: 'Salesforce stage', on: false, filter: 'select', v: (r) => r.sf?.stage ?? '' },
@@ -209,8 +221,15 @@ function passes(col, r, want) {
     const x = Number(m[2]);
     return { '>': v > x, '<': v < x, '>=': v >= x, '<=': v <= x, '=': v === x, undefined: v === x }[m[1]];
   }
-  return String(v ?? '').toLowerCase().includes(want.toLowerCase());
+  // Text matches what is stored or what is shown ("2026-11", "Nov", "Dec 30", "ended" all find a date).
+  const w = want.toLowerCase();
+  if (String(v ?? '').toLowerCase().includes(w)) return true;
+  if (!col.html) return false;
+  const shown = String(col.html(r) ?? '').replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  return shown.includes(w);
 }
+/** A number filter that is not one (">x", "abc") says so instead of quietly matching nothing. */
+const badNum = (col, want) => col.filter === 'num' && want && !/^\s*(>=|<=|>|<|=)?\s*-?\d+(?:\.\d+)?\s*$/.test(want);
 function tableRows(rows) {
   const cols = shownCols();
   const f = ui.colFilter ?? {};
@@ -237,8 +256,8 @@ function tableHtml(rows, everything = rows.length) {
   const arrow = (c) => (ui.sort?.key === c.key ? (ui.sort.dir === 'desc' ? ' ▼' : ' ▲') : '');
   const any = Object.values(f).some(Boolean);
   return `<div class="panel ptable-wrap"><div class="ptable-meta small muted">${list.length} of ${everything} shown${list.length < everything ? ' · <button class="btn sm ghost" data-act="reset">Show everything</button>' : ''}${any ? ' · <button class="btn sm ghost" data-act="clear-cols">Clear column filters</button>' : ''}<span class="spacer"></span>Filters take text, a choice, or a number like &gt;5, &lt;10, =0</div>
-    <div class="ptable-scroll"><table class="ptable"><thead><tr>${cols.map((c) => `<th class="${c.num ? 'n' : ''}"><button type="button" data-sort="${c.key}" aria-label="Sort by ${esc(c.label)}">${esc(c.label)}${arrow(c)}</button></th>`).join('')}</tr>
-      <tr class="frow">${cols.map((c) => `<th>${c.filter === 'select' ? `<select data-cf="${c.key}" aria-label="Filter ${esc(c.label)}"><option value="">All</option>${opts(c).map((o) => `<option ${f[c.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : `<input data-cf="${c.key}" value="${esc(f[c.key] ?? '')}" placeholder="${c.filter === 'num' ? '>0' : 'Filter'}" aria-label="Filter ${esc(c.label)}">`}</th>`).join('')}</tr></thead>
+    <div class="ptable-scroll"><table class="ptable"><thead><tr>${cols.map((c) => `<th class="${c.num ? 'n' : ''}" aria-sort="${ui.sort?.key === c.key ? (ui.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}"><button type="button" data-sort="${c.key}" aria-label="Sort by ${esc(c.label)}">${esc(c.label)}${arrow(c)}</button></th>`).join('')}</tr>
+      <tr class="frow">${cols.map((c) => `<th>${c.filter === 'select' ? `<select data-cf="${c.key}" aria-label="Filter ${esc(c.label)}"><option value="">All</option>${opts(c).map((o) => `<option ${f[c.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : `<input data-cf="${c.key}" value="${esc(f[c.key] ?? '')}" placeholder="${c.filter === 'num' ? '>0' : 'Filter'}" aria-label="Filter ${esc(c.label)}"${badNum(c, f[c.key]) ? ' aria-invalid="true" title="Use a number, or >, <, = and a number: >5, <10, =0"' : ''}>`}</th>`).join('')}</tr></thead>
       <tbody>${list.map((r) => `<tr data-row="${esc(r.id)}" class="${ui.open === r.id ? 'selected' : ''}" tabindex="0">${cols.map((c) => `<td class="${c.num ? 'n' : ''}" title="${esc(String(c.v(r) ?? ''))}">${c.html ? c.html(r) : esc(c.v(r) ?? '—') || '—'}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">Nothing matches these filters.</td></tr>`}</tbody></table></div></div>`;
 }
 function wireTable(main, rows) {

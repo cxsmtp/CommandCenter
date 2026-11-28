@@ -439,7 +439,7 @@ export async function wipDeck(opp, { story, owner, catalog, template = null, mod
     const plan = opp.plan ?? {};
     const scope = plan.scope?.length ? plan.scope : (story?.goals ?? []).filter((g) => g.key !== 'other').map((g) => g.title).slice(0, 5);
     const cards = [
-      ['Scope', `Focus on ${C} goals`, scope.length ? scope : ['Agreed with the team at the start of the POV']],
+      ['Scope', `Focus on ${C}’s goals`, scope.length ? scope : ['Agreed with the team at the start of the POV']],
       ['Support', 'Ensuring a smooth POV', plan.support?.length ? plan.support : (texts.support?.length ? texts.support : PLAN_DEFAULTS.support)],
       ['Success', 'Real-world outcomes', plan.success?.length ? plan.success : (texts.success?.length ? texts.success : PLAN_DEFAULTS.success)],
     ];

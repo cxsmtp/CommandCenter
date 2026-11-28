@@ -129,7 +129,7 @@ export function flowView(opp, catalog, snapshot = null, summary = null) {
   // Govern
   if (s?.findings) metric.govern = { value: s.findings.critical + s.findings.high, label: 'critical and high open on latest scans' };
   const trackers = toolNames('govern', ['done', 'progress', 'seen', 'planned', 'uses']);
-  if (trackers.length) value.govern.push(`Findings become tickets in ${list(trackers.slice(0, 3))}, and close when the fix is verified.`);
+  if (trackers.length) value.govern.push(`Findings become tickets in ${list(trackers.slice(0, 3).map((t) => t.replace(/\s+(ticketing|tickets|issues)$/i, '')))}, and close when the fix is verified.`);
   if (engines.govern.length) value.govern.push(`${list(engNames('govern'))}: one risk view across every engine and application.`);
 
   const stages = FLOW_STAGES.map((st) => ({ ...st, tools: tools[st.key].slice(0, 6), moreTools: Math.max(0, tools[st.key].length - 6), engines: engines[st.key].slice(0, 7), moreEngines: Math.max(0, engines[st.key].length - 7), value: value[st.key].slice(0, 2), metric: metric[st.key] ?? null, empty: !tools[st.key].length && !engines[st.key].length }));

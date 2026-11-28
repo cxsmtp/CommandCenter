@@ -399,7 +399,11 @@ function criteria(d) {
 }
 
 /** Everything about one criterion, in its own sheet. */
+// The criterion last opened keeps the focus after the list redraws (it may move when its status changes), so the next
+// Enter opens the one meant, not whichever row took its place.
+let lastCritId = '';
 function openCriterion(c) {
+  lastCritId = c?.id ?? '';
   const d = current;
   const ev = d.evidence[c.id];
   const cap = c.capabilityId ? catalog.catalog.find((x) => x.id === c.capabilityId) : null;
@@ -533,7 +537,7 @@ function email(d) {
       <div class="row">
         ${can('mail.send') && current.canEdit ? `<button class="btn primary" data-mail="send" ${d.mailConfigured ? (d.mailFromOwn ? 'title="From your own Microsoft 365 mailbox; kept in your Sent Items"' : '') : 'disabled title="No email server is set up (Settings → Email)"'}>${d.mailFromOwn ? 'Send from my mailbox' : 'Send'}</button>` : ''}
         <button class="btn sm" type="button" data-mail="outlook" title="Opens in Outlook on the web, from your own address: check it and press Send there">Open in Outlook</button>
-        <button class="btn ghost sm" type="button" data-mail="eml" title="Opens in Outlook or your mail app, ready to send">Download .eml</button>
+        <button class="btn ghost sm" type="button" data-mail="eml" title="Download .eml: opens in Outlook or your mail app as an email ready to send">Download .eml</button>
         <button class="btn ghost sm" type="button" data-mail="mailto">Open in mail app</button>
         <button class="btn ghost sm" type="button" data-mail="copy">Copy</button>
       </div>
@@ -767,6 +771,7 @@ const WIRES = {
       row.addEventListener('click', go);
       row.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), go(e)));
     }
+    if (lastCritId) setTimeout(() => main.querySelector(`[data-open-crit="${CSS.escape(lastCritId)}"]`)?.focus({ preventScroll: true }), 80);
   },
   discovery(main, d) {
     const form = $('#discForm');

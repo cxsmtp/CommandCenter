@@ -230,7 +230,7 @@ export function ago(iso) {
   return `${Math.floor(s / 86400)} d ago`;
 }
 export const when = (iso) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—');
-export const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00` : d).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+export const day = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00` : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 
 let toastTimer;
 export function toast(message, { bad = false } = {}) {
@@ -306,6 +306,14 @@ export function openDialog(html, { wide = false, onOpen } = {}) {
   const d = $('#dialog');
   d.className = `dialog${wide ? ' wide' : ''}`;
   d.innerHTML = html;
+  // Said out loud as a modal dialog, named by its heading.
+  d.setAttribute('role', 'dialog');
+  d.setAttribute('aria-modal', 'true');
+  const h = d.querySelector('h1, h2, h3');
+  if (h) {
+    h.id ||= 'dialogTitle';
+    d.setAttribute('aria-labelledby', h.id);
+  } else d.removeAttribute('aria-labelledby');
   d.showModal();
   track(d);
   onOpen?.(d);
@@ -324,6 +332,8 @@ export function ask(message, { title = '', ok = 'OK', cancel = 'Cancel', danger 
     d = Object.assign(document.createElement('dialog'), { id: 'ask', className: 'dialog ask' });
     document.body.append(d);
   }
+  d.setAttribute('role', 'alertdialog');
+  d.setAttribute('aria-modal', 'true');
   d.innerHTML = `<form method="dialog" class="ask-form">
     ${title ? `<h2>${esc(title)}</h2>` : ''}<p class="ask-msg">${esc(message)}</p>${detail ? `<p class="muted small" style="margin:0">${esc(detail)}</p>` : ''}
     ${input !== null ? `<input name="answer" value="${esc(input)}" placeholder="${esc(placeholder)}" autocomplete="off">` : ''}

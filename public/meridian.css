@@ -410,7 +410,7 @@ dialog.reauth { max-width: 420px; }
 .kpi .kd{font-size:11.5px}
 .kpi .spark{position:absolute;right:10px;top:12px;width:42%;height:26px;opacity:.7}
 .spark.ok{color:var(--ok,#3ccf8e)}.spark.warn{color:var(--warn,#f5c518)}.spark.bad{color:var(--bad,#e5484d)}
-.ins2-grid{flex:1;min-height:0;display:grid;grid-template-columns:1.05fr 1fr 1.15fr;gap:12px}
+.ins2-grid{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) minmax(0,1.15fr);gap:12px}
 .ipanel{display:flex;flex-direction:column;min-height:0;margin:0}
 .ipanel .ibody{flex:1;min-height:0;overflow:auto;padding:4px 0}
 .itabs{display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid var(--line)}
@@ -718,3 +718,21 @@ details.pd-sec > summary { cursor: pointer; list-style: none; }
 /* A wizard field's own error, right under it */
 .field-error { margin: 4px 0 0; font-size: 12.5px; color: var(--bad, #c0392b); font-weight: 600; }
 [aria-invalid="true"] { border-color: var(--bad, #c0392b) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--bad, #c0392b) 18%, transparent); }
+/* Insights: a gap opens onto the POVs that have it */
+.igap > summary { list-style: none; cursor: pointer; }
+.igap > summary::-webkit-details-marker { display: none; }
+.igap[open] > summary { font-weight: 600; }
+.irow.sub { padding-left: 28px; font-size: 13px; }
+
+
+/* The wizard: steps on one line (scrolling sideways when narrow), the same height on every step */
+.wz { height: min(82vh, 780px); min-height: 0; }
+.wz-steps { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; padding-bottom: 4px; }
+.wz-steps li { flex: none; }
+.wz-steps button { white-space: nowrap; padding: 4px 10px 4px 4px; font-size: 13px; }
+.wz-body { flex: 1; min-height: 0; overflow-y: auto; }
+.call-person select { min-width: 0; text-overflow: ellipsis; }
+.field > .muted.small, .field > .small.muted { white-space: nowrap; }
+@media (max-width: 720px) { .wz { height: auto; } }
+/* Insights figures in the page's own font: plain zeros (the mono font slashes them, reading as θ) */
+.ins2 .caprow, .ins2 .caprow b, .ins2 .num, .ins2 .kv { font-family: var(--font, inherit); font-variant-numeric: tabular-nums; font-feature-settings: "zero" 0; }
